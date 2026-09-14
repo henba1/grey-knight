@@ -14,32 +14,7 @@ local plugins = {
     },
   },
 
-  -- Toggleterm — persistent named terminals
-  {
-    "akinsho/toggleterm.nvim",
-    version = "*",
-    opts = {
-      size = function(term)
-        if term.direction == "horizontal" then return 15
-        elseif term.direction == "vertical" then return vim.o.columns * 0.4
-        end
-      end,
-      open_mapping = false,  -- manual mapping below (Ctrl+\ eaten by SSH)
-      direction = "horizontal",
-      shade_terminals = true,
-      shade_factor = -30,
-      float_opts = { border = "curved", width = 120, height = 30 },
-    },
-    keys = {
-      { "<leader>tt", "<cmd>ToggleTerm<cr>",                     desc = "Term: Toggle" },
-      { "<leader>tf", "<cmd>ToggleTerm direction=float<cr>",      desc = "Term: Float" },
-      { "<leader>th", "<cmd>ToggleTerm direction=horizontal<cr>", desc = "Term: Horizontal" },
-      { "<leader>tv", "<cmd>ToggleTerm direction=vertical<cr>",   desc = "Term: Vertical" },
-      { "<leader>t1", "<cmd>1ToggleTerm<cr>",                     desc = "Term: #1" },
-      { "<leader>t2", "<cmd>2ToggleTerm<cr>",                     desc = "Term: #2" },
-      { "<leader>t3", "<cmd>3ToggleTerm<cr>",                     desc = "Term: #3" },
-    },
-  },
+  -- Toggleterm now lives in ai.lua (shared with the Qwen Code agent terminal)
 
   -- DAP (Debugging)
   { "mfussenegger/nvim-dap" },

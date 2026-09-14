@@ -13,7 +13,7 @@
 4. [Editing](#editing)
 5. [Code Intelligence (LSP)](#code-intelligence-lsp)
 6. [Autocompletion](#autocompletion)
-7. [AI Assistant (Avante)](#ai-assistant-avante)
+7. [AI Assistant (Qwen Code)](#ai-assistant-qwen-code)
 8. [Terminal](#terminal)
 9. [Git](#git)
 10. [Search & Replace](#search--replace)
@@ -59,7 +59,7 @@ The Grey Knight dashboard is the start screen.
 | `r` | Recent files |
 | `c` | Edit nvim config |
 | `s` | Restore last session |
-| `a` | Open AI chat (Avante) |
+| `a` | Open AI agent (Qwen Code) |
 | `L` | Open Lazy plugin manager |
 | `q` | Quit |
 | `1-8` | Open numbered recent file/project |
@@ -93,15 +93,49 @@ Inside the picker:
 
 ### File Explorer
 
+`<leader>e` toggles the explorer (left sidebar). Focus moves between panes with
+`Ctrl+h` / `Ctrl+l`. Every file operation below runs **in the explorer pane** once it
+has focus.
+
+**Navigate**
+
 | Key | Action |
 |-----|--------|
-| `<leader>e` | Toggle file explorer (left sidebar) |
-| `Ctrl+h` | Move focus to explorer |
-| `Ctrl+l` | Move focus back to editor |
-| `Enter` | Open file / expand folder |
-| `a` | Create new file |
-| `d` | Delete file |
-| `r` | Rename file |
+| `h` / `<BS>` | Up one directory (parent) |
+| `l` / `Enter` | Open file (or toggle folder expand) |
+| `.` | Jump to the current file's directory |
+| `H` / `I` | Toggle hidden / ignored files |
+| `<leader>/` | Grep inside the tree |
+| `<C-t>` | Drop a terminal at the current dir |
+
+**Filesystem ops**
+
+| Key | Action |
+|-----|--------|
+| `a` | New file or dir (trailing `/` makes a directory) |
+| `r` | Rename file / dir |
+| `d` | Delete (to system trash; permanent fallback if no trash) |
+| `c` | Copy selected → current dir (or prompt a target path) |
+| `m` | Move selected → current dir (falls back to rename when nothing selected) |
+| `y` | Yank selected paths to clipboard |
+| `p` | Paste yanked files into current dir |
+
+**Tree structure**
+
+| Key | Action |
+|-----|--------|
+| `Z` | Collapse all folders under the root |
+| `u` | Refresh the tree |
+| `]g` / `[g` | Next / prev git-changed file |
+
+**"Change the root"**: the explorer has no dedicated chroot key. To work a different
+tree root, `cd` nvim there first (`:cd /path`), then open with `<leader>e` — it anchors
+to nvim's cwd. Or navigate the existing tree with `h`/`l`. `Snacks.explorer()` also
+accepts `{ cwd = "/path" }` if you want a one-off rooted view.
+
+> Delete is **trash-first**: it shells to `trash`/`gio trash`/`kioclient` when present,
+> so `d` is recoverable on most desktops. Without a trash backend it falls back to a
+> permanent `:delete` — check with `:checkhealth snacks` before deleting anything precious.
 
 ---
 
@@ -197,86 +231,62 @@ Sources (in priority order): LSP → Snippets → Buffer words → File paths
 
 ---
 
-## AI Assistant (Avante)
+## AI Assistant (Qwen Code)
 
-Avante provides a Cursor-style AI sidebar powered by your local LLM.
+Grey Knight drives the **local Qwen Code** CLI as an agentic coding agent, running it in a
+persistent terminal window inside the editor. It is fully local — same backend as everything
+else (Qwen 3.8 27B on the rig), zero cloud.
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `<leader>at` | n | Toggle AI sidebar |
-| `<leader>ac` | n | Start new AI chat |
-| `<leader>aa` | n | Ask AI about current file |
-| `<leader>aa` | v | Ask AI about selected code |
-| `<leader>ae` | v | Ask AI to edit selected code |
+| `<leader>tt` | n | Toggle AI agent (vertical 50/50 split) |
+| `<leader>tf` | n | Floating AI agent |
+| `<leader>th` | n | Horizontal-split AI agent |
+| `<leader>tv` | n | Vertical-split AI agent |
+| `<leader>t1` | n | Named agent #1 |
+| `<leader>t2` | n | Named agent #2 |
+| `<leader>t3` | n | Named agent #3 |
+| `<leader>ac` | n | Start a fresh agent session |
+| `<leader>aa` | n | Ask about the current file |
+| `<leader>aa` | v | Ask about the selected code |
+| `<leader>ae` | v | Ask the agent to edit the selected code |
 
-### Using Avante
+### Using the agent
 
-1. **Toggle sidebar:** `<leader>at`
-2. **Type your question** in the input area at the bottom
-3. **Press Enter** to send
-4. AI responds with code suggestions, explanations, or edits
-5. **Apply suggestions** — Avante can directly edit your files in agentic mode
+1. **Open:** `<leader>tt` (or `tf`/`th`/`tv` for float/split orientation). Default is a
+   **vertical 50/50** split.
+2. **Type a prompt** in the terminal and press **Enter**
+3. The agent (Qwen Code) responds and, in agentic mode, can read files, edit code, and
+   run commands inside your project
 
-### Agentic Mode
+> **Session persistence:** the agent terminal keeps its process alive when the pane is
+> hidden, so toggling with `<leader>tt` **re-attaches the same live session** instead of
+> restarting it. Conversational context accumulates within one live agent.
 
-Avante runs in agentic mode by default. The AI can:
-- Read files in your project
-- Search your codebase
-- Edit files directly
-- Run shell commands
-- Get LSP diagnostics
+### Context
 
-### Project Context
+- The agent inherits the **current working directory** and any project
+  `QWEN.md` / `AGENTS.md` context files **automatically**.
+- `<leader>aa` / `<leader>ae` additionally **prepend** the current file (or the visual
+  selection) to the prompt so the agent knows exactly what you're pointing at.
+- Inside the agent window, `Esc Esc` exits terminal mode back to the editor.
 
-Place an `avante.md` file in your project root to give the AI context:
-
-```markdown
-# Project: MyApp
-
-## Your Role
-Expert Python developer.
-
-## Tech Stack
-Python 3.11, asyncio, FastAPI
-
-## Coding Standards
-- Type hints on all functions
-- Docstrings for public methods
-```
+> Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 
 ---
 
 ## Terminal
 
-| Key | Action |
-|-----|--------|
-| `<leader>tt` | Toggle terminal (horizontal split) |
-| `<leader>tf` | Floating terminal |
-| `<leader>th` | Horizontal split terminal |
-| `<leader>tv` | Vertical split terminal |
-| `<leader>t1` | Terminal #1 (named, persistent) |
-| `<leader>t2` | Terminal #2 |
-| `<leader>t3` | Terminal #3 |
-
-### Inside a Terminal
-
-| Key | Action |
-|-----|--------|
-| `Esc Esc` | Exit terminal mode (back to normal mode) |
-| `Ctrl+h/j/k/l` | Navigate to other windows |
-| `<leader>tt` | Hide terminal (from normal mode) |
-
-### Send to Terminal (Pentesting Workflow)
-
-Great for sending code snippets to a running REPL or shell:
+The `<leader>t*` keys above launch **Qwen Code** agents. For a plain **shell** (e.g. a
+Python REPL) use `:ToggleTerm`, or send snippets straight into a running shell with:
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `<leader>ts` | v | Send selected lines to terminal #1 |
-| `<leader>tl` | n | Send current line to terminal #1 |
+| `<leader>ts` | v | Send selected lines to shell terminal #2 |
+| `<leader>tl` | n | Send current line to shell terminal #2 |
 
 **Example workflow:**
-1. `<leader>t1` → open terminal, start `python3`
+1. `:2ToggleTerm` → open shell terminal #2, start `python3`
 2. Navigate to code
 3. Select lines with `V`
 4. `<leader>ts` → code appears in the Python REPL
@@ -342,7 +352,7 @@ When editing files in a git repo, you'll see markers in the left gutter:
 | `Ctrl+j` | Focus window below |
 | `Ctrl+k` | Focus window above |
 
-Works for **all** windows: editor splits, explorer, terminal, Avante sidebar.
+Works for **all** windows: editor splits, explorer, terminal, Qwen agent.
 
 ### Resizing Windows
 
@@ -512,7 +522,6 @@ Markdown files render with:
 - Code block highlighting
 - Bullet points
 - Bold/italic styling
-- Also works in Avante AI chat panel
 
 Spell check is enabled automatically for `.md` files.
 
@@ -561,7 +570,7 @@ Neovim doesn't have native multi-cursor, but:
 | **Insert** | `i`, `a`, `o` | Typing text |
 | **Visual** | `v` (char), `V` (line), `Ctrl+v` (block) | Selecting text |
 | **Command** | `:` | Running ex commands |
-| **Terminal** | `<leader>tt` | Shell inside nvim |
+| **Terminal** | `:ToggleTerm` | Shell inside nvim (`<leader>t*` = Qwen agent) |
 
 ---
 

@@ -2,17 +2,17 @@
 
 A curated, agentic Neovim IDE built for security researchers and developers who run local LLMs.
 
-**38 plugins • Cyberdream theme • AI sidebar (Avante) • Zero cloud dependencies**
+**37 plugins • Cyberdream theme • AI agent (Qwen Code) • Zero cloud dependencies**
 
 ![Stack](https://img.shields.io/badge/Neovim-0.12%2B-57A143?logo=neovim)
 ![Theme](https://img.shields.io/badge/Theme-Cyberdream-ff00ff)
-![AI](https://img.shields.io/badge/AI-Avante%20(local%20LLM)-00d4ff)
+![AI](https://img.shields.io/badge/AI-Qwen%20Code%20(local%20LLM)-00d4ff)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## Features
 
-- **AI-powered coding** — Avante.nvim sidebar with agentic mode (read files, edit code, run commands)
-- **Local LLM** — Points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
+- **AI-powered coding** — Qwen Code agent (agentic mode: read files, edit code, run commands)
+- **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications
 - **Hacker tools** — Hex editor, multiple terminals, send-to-terminal workflow
@@ -35,11 +35,11 @@ cd grey-knight-nvim
 | **git** | Yes | Plugin manager |
 | **gcc** | Yes | Treesitter parser compilation |
 | **curl** | Yes | Downloads |
-| **Rust/cargo** | Auto-installed | Avante build + tree-sitter CLI |
+| **Rust/cargo** | Auto-installed | tree-sitter CLI |
+| **Qwen Code** | Yes | The built-in AI agent (requires Node 22+) |
 | **ripgrep** | Auto-installed | Live grep |
 | **fd** | Auto-installed | File finder |
 | **lazygit** | Auto-installed | Git TUI |
-| **Node.js 20+** | Optional | For Qwen Code / OpenCode agents |
 
 The install script handles Rust, tree-sitter CLI, ripgrep, fd, and lazygit automatically.
 
@@ -53,36 +53,38 @@ mv ~/.config/nvim ~/.config/nvim.bak
 mkdir -p ~/.config/nvim
 cp -r init.lua lua/ after/ CHEATSHEET.md ~/.config/nvim/
 
-# 3. Install Rust + tree-sitter CLI
+# 3. Install tree-sitter CLI (Rust)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 cargo install tree-sitter-cli
 
-# 4. Open nvim (plugins auto-install on first launch)
+# 4. Install Qwen Code (the AI agent)
+sudo npm install -g @qwen-code/qwen-code
+
+# 5. Open nvim (plugins auto-install on first launch)
 nvim
 
-# 5. Inside nvim, install treesitter parsers:
+# 6. Inside nvim, install treesitter parsers:
 # :TSInstall markdown markdown_inline python bash lua vim vimdoc query
 ```
 
 ## LLM Configuration
 
-Default endpoint: `http://192.168.2.173:8000/v1` (llama.cpp)
+The AI agent is **Qwen Code**, configured like any other Qwen Code install in
+`~/.qwen/settings.json` (an OpenAI-compatible provider pointed at your local LLM):
 
-To change it, edit `lua/plugins/ai.lua`:
-
-```lua
-providers = {
-  ["qwen-local"] = {
-    __inherited_from = "openai",
-    endpoint = "http://YOUR_LLM_HOST:PORT/v1",  -- ← change this
-    model = "local-model",
-    ...
+```json
+{
+  "model": { "name": "llama-cpp", "baseUrl": "http://YOUR_LLM_HOST:PORT/v1" },
+  "modelProviders": {
+    "openai": [{ "id": "llama-cpp", "baseUrl": "http://YOUR_LLM_HOST:PORT/v1", "envKey": "QWEN_LOCAL_KEY" }]
   },
-},
+  "env": { "QWEN_LOCAL_KEY": "no-key" }
+}
 ```
 
-Works with any OpenAI-compatible API: llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, etc.
+The default on this rig is `http://192.168.2.173:8000/v1` (llama.cpp). Works with any
+OpenAI-compatible API: llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, etc.
 
 ## Structure
 
@@ -94,7 +96,7 @@ init.lua                    4-line entry point
 │   ├── keymaps.lua         all global keymaps + which-key groups
 │   └── autocmds.lua        yank highlight, cursor restore
 ├── lua/plugins/
-│   ├── ai.lua              Avante → local LLM (agentic mode)
+│   ├── ai.lua              Qwen Code agent (shell-out terminal)
 │   ├── colorscheme.lua     Cyberdream (neon cyberpunk)
 │   ├── completion.lua      blink.cmp v1 (Rust-powered)
 │   ├── editor.lua          flash, harpoon, oil, surround, trouble, etc.
@@ -154,7 +156,7 @@ See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
 ```bash
 # Automated smoke tests (33 checks)
 nvim --headless \
-  -c "Lazy load avante.nvim flash.nvim trouble.nvim oil.nvim grug-far.nvim harpoon gitsigns.nvim render-markdown.nvim persisted.nvim conform.nvim mini.surround mini.ai" \
+  -c "Lazy load flash.nvim trouble.nvim oil.nvim grug-far.nvim harpoon gitsigns.nvim render-markdown.nvim persisted.nvim conform.nvim mini.surround mini.ai" \
   -c "luafile tests/smoke_test.lua" \
   -c "qa!"
 ```
@@ -179,7 +181,7 @@ sudo npm install -g opencode-ai
 
 Built with:
 - [lazy.nvim](https://github.com/folke/lazy.nvim) — plugin manager
-- [avante.nvim](https://github.com/yetone/avante.nvim) — AI sidebar
+- [Qwen Code](https://github.com/anthropics/qwen-code) — AI coding agent (local LLM)
 - [snacks.nvim](https://github.com/folke/snacks.nvim) — QoL mega-plugin
 - [blink.cmp](https://github.com/saghen/blink.cmp) — Rust-powered completion
 - [cyberdream.nvim](https://github.com/scottmckendry/cyberdream.nvim) — colorscheme

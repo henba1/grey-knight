@@ -42,7 +42,7 @@ vim.api.nvim_create_autocmd("VimEnter", {
     end
     table.sort(active)
     if #active > 0 then
-      vim.notify("Grey Knight | " .. table.concat(active, ", ") .. " | AI: Qwen 3.8 @ rig", vim.log.levels.INFO)
+      vim.notify("Grey Knight | " .. table.concat(active, ", ") .. " | AI: Qwen Code @ rig", vim.log.levels.INFO)
     end
   end,
 })

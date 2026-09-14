@@ -75,8 +75,10 @@ test("snacks loads", function()
   assert(pcall(require, "snacks"), "snacks failed to load")
 end)
 
-test("avante loads", function()
-  assert(pcall(require, "avante"), "avante failed to load")
+test("qwen binary available", function()
+  local env = vim.loop.os_environ()
+  local q = env.QWEN_BIN or "/home/nix0/.local/bin/qwen"
+  assert(vim.fn.executable(q) == 1, "qwen not found at " .. q)
 end)
 
 test("flash loads", function()
@@ -123,15 +125,16 @@ test("mini.ai loads", function()
   assert(pcall(require, "mini.ai"), "mini.ai failed to load")
 end)
 
--- T7: Avante .so binaries
-test("avante_tokenizers.so exists", function()
-  local path = vim.fn.stdpath("data") .. "/lazy/avante.nvim/lua/avante_tokenizers.so"
-  assert(vim.fn.filereadable(path) == 1, "missing")
-end)
-
-test("avante_templates.so exists", function()
-  local path = vim.fn.stdpath("data") .. "/lazy/avante.nvim/lua/avante_templates.so"
-  assert(vim.fn.filereadable(path) == 1, "missing")
+-- T7: Qwen Code agent keymaps registered
+test("AI keymaps present", function()
+  local maps = vim.api.nvim_get_keymap("n")
+  local found = {}
+  for _, m in ipairs(maps) do
+    if m.lhs:match("^ ") then found[m.lhs] = true end
+  end
+  assert(found[" tt"], "leader-tt (AI toggle) missing")
+  assert(found[" ac"], "leader-ac (AI new) missing")
+  assert(found[" aa"], "leader-aa (AI ask) missing")
 end)
 
 -- T8: Keymaps registered
@@ -168,10 +171,6 @@ test("tree-sitter CLI available", function()
 end)
 
 -- T10: Project files
-test("avante.md exists in Harness", function()
-  assert(vim.fn.filereadable(vim.fn.expand("~/Harness/avante.md")) == 1, "missing")
-end)
-
 test("CHEATSHEET.md exists", function()
   assert(vim.fn.filereadable(vim.fn.stdpath("config") .. "/CHEATSHEET.md") == 1, "missing")
 end)

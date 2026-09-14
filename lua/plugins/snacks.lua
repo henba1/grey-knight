@@ -21,7 +21,7 @@ return {
             { icon = " ", key = "r", desc = "Recent Files",    action = ":lua Snacks.dashboard.pick('oldfiles')" },
             { icon = " ", key = "c", desc = "Config",          action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
             { icon = " ", key = "s", desc = "Restore Session", section = "session" },
-            { icon = "󱌣 ", key = "a", desc = "AI Chat",         action = ":lua require('lazy').load({plugins={'avante.nvim'}}); vim.cmd('AvanteToggle')" },
+            { icon = "󱌣 ", key = "a", desc = "AI (Qwen Code)",    action = ":lua vim.g.qwen_launch('agent', 'vertical')" },
             { icon = "󰒲 ", key = "L", desc = "Lazy",            action = ":Lazy", enabled = package.loaded.lazy ~= nil },
             { icon = " ", key = "q", desc = "Quit",            action = ":qa" },
           },

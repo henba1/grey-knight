@@ -16,7 +16,7 @@ return {
       -- Don't restore sessions for home dir or tmp
       suppressed_dirs = { "~", "/tmp", "/" },
       -- Close these before saving (they don't restore well)
-      bypass_save_filetypes = { "snacks_dashboard", "lazy", "mason", "toggleterm", "Avante", "AvanteInput" },
+      bypass_save_filetypes = { "snacks_dashboard", "lazy", "mason", "toggleterm", "qwen" },
     },
     keys = {
       { "<leader>ps", "<cmd>Persisted save<cr>",   desc = "Session: Save" },

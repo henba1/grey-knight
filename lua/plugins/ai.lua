@@ -1,54 +1,37 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Avante.nvim — Cursor-style AI agent sidebar               ║
--- ║  → Qwen 3.8 27B @ 192.168.2.173:8000 (llama.cpp)          ║
+-- ║  Qwen Code — agentic coding agent terminal                  ║
+-- ║  Shell-out integration: drives the local Qwen Code CLI in a  ║
+-- ║  persistent toggleterm window (replaces Avante.nvim).       ║
+-- ║  Backend: Qwen 3.8 27B @ 192.168.2.173:8000 (llama.cpp)     ║
 -- ╚══════════════════════════════════════════════════════════════╝
+--
+-- The agent is launched from lua/config/keymaps.lua (<leader>t*), which
+-- drives the local Qwen Code CLI (`qwen -i`) in these persistent terminals.
+
 return {
-  -- render-markdown (standalone, also used by Avante)
+  -- Toggleterm — persistent named terminals
   {
-    "MeanderingProgrammer/render-markdown.nvim",
-    ft = { "markdown", "Avante" },
-    dependencies = { "nvim-treesitter/nvim-treesitter", "nvim-tree/nvim-web-devicons" },
-    opts = { file_types = { "markdown", "Avante" } },
+    "akinsho/toggleterm.nvim",
+    version = "*",
+    opts = {
+      size = function(term)
+        if term.direction == "horizontal" then return 15
+        elseif term.direction == "vertical" then return vim.o.columns * 0.4
+        end
+      end,
+      open_mapping = false,  -- manual mapping below (Ctrl+\ eaten by SSH)
+      direction = "horizontal",
+      shade_terminals = true,
+      shade_factor = -30,
+      float_opts = { border = "curved", width = 120, height = 30 },
+    },
   },
 
-  -- Avante
+  -- render-markdown — renders markdown in the agent's terminal output
   {
-    "yetone/avante.nvim",
-    event = "VeryLazy",
-    version = false,
-    build = "make",
-    dependencies = {
-      "nvim-lua/plenary.nvim",
-      "MunifTanjim/nui.nvim",
-      "nvim-tree/nvim-web-devicons",
-    },
-    opts = {
-      provider = "qwen-local",
-      mode = "agentic",
-      hints = { enabled = true },
-      windows = {
-        position = "right",
-        width = 40,
-      },
-      providers = {
-        ["qwen-local"] = {
-          __inherited_from = "openai",
-          endpoint = "http://192.168.2.173:8000/v1",
-          model = "local-model",
-          api_key_name = "",
-          timeout = 120000,
-          extra_request_body = {
-            temperature = 0.7,
-            max_tokens = 8192,
-          },
-        },
-      },
-    },
-    keys = {
-      { "<leader>at", "<cmd>AvanteToggle<cr>",  desc = "AI: Toggle sidebar" },
-      { "<leader>ac", "<cmd>AvanteChat<cr>",     desc = "AI: New chat" },
-      { "<leader>aa", "<cmd>AvanteAsk<cr>",      mode = { "n", "v" }, desc = "AI: Ask" },
-      { "<leader>ae", "<cmd>AvanteEdit<cr>",     mode = "v",          desc = "AI: Edit selection" },
-    },
+    "MeanderingProgrammer/render-markdown.nvim",
+    ft = { "markdown" },
+    dependencies = { "nvim-treesitter/nvim-treesitter", "nvim-tree/nvim-web-devicons" },
+    opts = { file_types = { "markdown" } },
   },
 }

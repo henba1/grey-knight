@@ -2,18 +2,47 @@
 
 > Leader = `Space` | Open this: `nvim ~/.config/nvim/CHEATSHEET.md`
 
-## AI (Avante) — `<leader>a`
+## AI (Qwen Code) — `<leader>a`
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `<leader>at` | n | Toggle AI sidebar |
-| `<leader>ac` | n | New AI chat |
-| `<leader>aa` | n/v | Ask AI (about selection) |
+| `<leader>tt` | n | Toggle AI agent (vertical 50/50) |
+| `<leader>tf` | n | Floating AI agent |
+| `<leader>th` | n | Horizontal AI agent |
+| `<leader>tv` | n | Vertical AI agent |
+| `<leader>t1/t2/t3` | n | Named agents #1/#2/#3 |
+| `<leader>ac` | n | New AI session |
+| `<leader>aa` | n/v | Ask AI (about file / selection) |
 | `<leader>ae` | v | AI edit selection |
-| `<leader>am` | n | Switch AI model |
-| `<leader>ar` | n | Refresh AI response |
 
-> Place `avante.md` in project root for project-specific AI context.
+> The agent runs the local **Qwen Code** CLI in a persistent terminal. It inherits the
+> project's cwd and any `QWEN.md`/`AGENTS.md` context automatically. `aa`/`ae` prepend the
+> current file / selection to the prompt. `tt` is a true toggle — the agent process stays
+> alive when hidden, so re-opening re-attaches the same session. Inside the agent: type
+> normally; `Esc Esc` exits terminal mode back to the editor.
+
+## File Explorer — `<leader>e`
+
+The filesystem tree (snacks explorer). Focus moves with `<C-h>`/`<C-l>`; all ops run in the
+explorer pane once focused.
+
+| Key | Action |
+|-----|--------|
+| `h`/`<BS>` | Up one directory |
+| `l`/`Enter` | Open file / toggle folder |
+| `.` | Jump to current file's dir |
+| `H`/`I` | Toggle hidden / ignored |
+| `a` | New file or dir (trailing `/` = dir) |
+| `r` | Rename |
+| `d` | Delete (system trash; permanent fallback) |
+| `c` | Copy selected → current dir |
+| `m` | Move selected → current dir |
+| `y`/`p` | Yank / paste paths |
+| `Z` | Collapse all folders |
+| `u` | Refresh tree |
+| `]g`/`[g` | Next / prev git-changed |
+
+> Changing the root: `:cd /path` then `<leader>e` (it anchors to nvim's cwd).
 
 ## Find (Snacks Picker) — `<leader>f`
 
@@ -55,15 +84,12 @@
 
 ## Terminal — `<leader>t`
 
+Shell terminals (the `<leader>t*` agent keys above launch Qwen Code, not a shell).
+
 | Key | Action |
 |-----|--------|
-| `<C-\>` | Toggle terminal |
-| `<leader>tf` | Floating terminal |
-| `<leader>th` | Horizontal terminal |
-| `<leader>tv` | Vertical terminal |
-| `<leader>t1/t2/t3` | Named terminals |
-| `<leader>ts` | Send selection → term #1 (visual) |
-| `<leader>tl` | Send line → term #1 |
+| `<leader>ts` | Send selection → shell term #2 (visual) |
+| `<leader>tl` | Send line → shell term #2 |
 
 ## Trouble / Diagnostics — `<leader>x`
 
@@ -148,7 +174,7 @@
 │   ├── keymaps.lua           ← global keymaps
 │   └── autocmds.lua          ← autocommands
 └── lua/plugins/
-    ├── ai.lua                ← Avante (Qwen 3.8 @ rig)
+    ├── ai.lua                ← Qwen Code agent (toggleterm)
     ├── colorscheme.lua       ← Cyberdream
     ├── completion.lua         ← blink.cmp
     ├── editor.lua            ← flash, harpoon, oil, mini, trouble, etc

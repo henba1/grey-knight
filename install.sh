@@ -126,11 +126,16 @@ ok "Config deployed to $NVIM_CONFIG"
 info "Installing plugins (this may take a minute)..."
 nvim --headless "+Lazy! install" +qa 2>&1 | tail -3
 
-# ── Build avante.nvim ───────────────────────────────────────
-info "Building avante.nvim (Rust compilation ~2min)..."
-cd "$NVIM_DATA/lazy/avante.nvim" 2>/dev/null && make 2>&1 | tail -3
-cd "$SCRIPT_DIR"
-ok "Avante built"
+# ── Install Qwen Code (the AI agent) ────────────────────────
+if command -v qwen >/dev/null; then
+  ok "Qwen Code $(qwen --version 2>/dev/null | head -1 || echo 'installed')"
+elif command -v npm >/dev/null; then
+  info "Installing Qwen Code (AI agent)..."
+  npm install -g @qwen-code/qwen-code >/dev/null 2>&1 && ok "Qwen Code installed" \
+    || warn "Qwen Code install failed (install manually: npm install -g @qwen-code/qwen-code)"
+else
+  warn "npm not found. Install Qwen Code manually: npm install -g @qwen-code/qwen-code"
+fi
 
 # ── Install treesitter parsers ──────────────────────────────
 info "Compiling treesitter parsers..."
@@ -140,9 +145,10 @@ ok "Treesitter parsers compiled"
 # ── Configure LLM endpoint ──────────────────────────────────
 echo ""
 info "LLM Configuration"
-echo "  The default endpoint is http://192.168.2.173:8000/v1 (llama.cpp)"
-echo "  To change it, edit: $NVIM_CONFIG/lua/plugins/ai.lua"
-echo "  Look for 'endpoint' in the qwen-local provider config."
+echo "  The AI agent is Qwen Code. Configure it like any other Qwen Code"
+echo "  install in: $HOME/.qwen/settings.json"
+echo "  Point the OpenAI-compatible provider at your local LLM endpoint."
+echo "  The default on this rig is http://192.168.2.173:8000/v1 (llama.cpp)."
 echo ""
 
 # ── Shell aliases (optional) ────────────────────────────────
@@ -174,7 +180,7 @@ echo "════════════════════════�
 echo ""
 echo "  Launch:     nvim"
 echo "  Cheatsheet: nvim ~/.config/nvim/CHEATSHEET.md"
-echo "  AI sidebar: Space+at (requires LLM running)"
+echo "  AI agent:   Space+tt (Qwen Code; requires the local LLM running)"
 echo "  Run tests:  nvim --headless -c 'luafile tests/smoke_test.lua' -c 'qa!'"
 echo ""
 echo "  For full keybinding reference, see CHEATSHEET.md"
