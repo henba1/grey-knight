@@ -203,3 +203,37 @@ map("n", "<leader>dB", function()
 end, { desc = "DAP: Cond breakpoint" })
 map("n", "<leader>dr", function() require("dap").repl.open() end,  { desc = "DAP: REPL" })
 map("n", "<leader>du", function() require("dapui").toggle() end,   { desc = "DAP: Toggle UI" })
+
+-- ── GreyNight Docs (read-only telescope picker) ─────────────
+map("n", "<leader>gd", function()
+  local config_dir = vim.fn.stdpath("config")
+  local docs = {}
+  for _, name in ipairs({ "README.md", "CHEATSHEET.md", "USAGE.md" }) do
+    local path = config_dir .. "/" .. name
+    if vim.fn.filereadable(path) == 1 then
+      table.insert(docs, { name = name, path = path })
+    end
+  end
+  if #docs == 0 then
+    vim.notify("No docs found in " .. config_dir, vim.log.levels.WARN)
+    return
+  end
+  vim.ui.select(
+    vim.tbl_map(function(d) return d.name end, docs),
+    { prompt = "GreyNight Docs:" },
+    function(choice)
+      if not choice then return end
+      for _, d in ipairs(docs) do
+        if d.name == choice then
+          vim.cmd("vsplit " .. d.path)
+          vim.bo.readonly = true
+          vim.bo.modifiable = false
+          vim.bo.bufhidden = "wipe"
+          -- q closes the doc and returns to previous window
+          vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, desc = "Close doc" })
+          break
+        end
+      end
+    end
+  )
+end, { desc = "GreyNight: Read docs" })

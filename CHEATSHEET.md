@@ -183,3 +183,6 @@ Shell terminals (the `<leader>t*` agent keys above launch Qwen Code, not a shell
     ├── session.lua           ← persisted.nvim
     └── snacks.lua            ← picker, explorer, dashboard, notify
 ```
+
+## Docs
+| `<leader>gd` | Read GreyNight docs (README, CHEATSHEET, USAGE) — readonly, `q` to close |
