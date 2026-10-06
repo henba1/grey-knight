@@ -13,17 +13,20 @@ return {
       dashboard = {
         enabled = true,
         width = 64,
+        -- No icons on the start page: Nerd Font glyphs show up as boxes or wrong characters in terminals
+        -- without a Nerd Font (the AI Dashboard's web terminal). Also drops the file-type icons of the lists.
+        formats = { icon = function() return { "" } end },
         preset = {
           keys = {
-            { icon = " ", key = "f", desc = "Find File",      action = ":lua Snacks.dashboard.pick('files')" },
-            { icon = " ", key = "n", desc = "New File",        action = ":ene | startinsert" },
-            { icon = " ", key = "g", desc = "Find Text",       action = ":lua Snacks.dashboard.pick('live_grep')" },
-            { icon = " ", key = "r", desc = "Recent Files",    action = ":lua Snacks.dashboard.pick('oldfiles')" },
-            { icon = " ", key = "c", desc = "Config",          action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
-            { icon = " ", key = "s", desc = "Restore Session", section = "session" },
-            { icon = "󱌣 ", key = "a", desc = "AI (Qwen Code)",    action = ":lua vim.g.qwen_launch('agent', 'vertical')" },
-            { icon = "󰒲 ", key = "L", desc = "Lazy",            action = ":Lazy", enabled = package.loaded.lazy ~= nil },
-            { icon = " ", key = "q", desc = "Quit",            action = ":qa" },
+            { key = "f", desc = "Find File",      action = ":lua Snacks.dashboard.pick('files')" },
+            { key = "n", desc = "New File",        action = ":ene | startinsert" },
+            { key = "g", desc = "Find Text",       action = ":lua Snacks.dashboard.pick('live_grep')" },
+            { key = "r", desc = "Recent Files",    action = ":lua Snacks.dashboard.pick('oldfiles')" },
+            { key = "c", desc = "Config",          action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
+            { key = "s", desc = "Restore Session", section = "session" },
+            { key = "a", desc = "AI (Qwen Code)",    action = ":lua vim.g.qwen_launch('agent', 'vertical')" },
+            { key = "L", desc = "Lazy",            action = ":Lazy", enabled = package.loaded.lazy ~= nil },
+            { key = "q", desc = "Quit",            action = ":qa" },
           },
           header = [[
    ██████╗ ██████╗ ███████╗██╗   ██╗    ██╗  ██╗███╗   ██╗██╗ ██████╗ ██╗  ██╗████████╗
@@ -37,10 +40,9 @@ return {
         sections = {
           { section = "header" },
           { section = "keys",         gap = 1, padding = 1 },
-          { icon = " ", title = "Recent Files",  section = "recent_files", indent = 2, padding = 1 },
-          { icon = " ", title = "Projects",      section = "projects",     indent = 2, padding = 1 },
+          { title = "Recent Files",  section = "recent_files", indent = 2, padding = 1 },
+          { title = "Projects",      section = "projects",     indent = 2, padding = 1 },
           {
-            icon = " ",
             title = "Git Status",
             section = "terminal",
             enabled = function() return Snacks.git.get_root() ~= nil end,
@@ -50,7 +52,7 @@ return {
             ttl = 5 * 60,
             indent = 3,
           },
-          { section = "startup" },
+          { section = "startup", icon = "" },
         },
       },
       explorer  = { enabled = true },
