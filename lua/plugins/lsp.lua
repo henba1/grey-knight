@@ -69,10 +69,25 @@ return {
         capabilities = blink.get_lsp_capabilities(capabilities)
       end
 
+      -- Mason only installs the servers that are missing. Servers already on the PATH (system packages, or
+      -- Mason's own bin directory, which mason.nvim puts on the PATH) are left alone: Mason has no clangd for
+      -- arm64 Linux, so on the pi it failed on every start although Debian's clangd is installed.
+      local server_cmd = {
+        bashls  = "bash-language-server",
+        clangd  = "clangd",
+        lua_ls  = "lua-language-server",
+        pyright = "pyright-langserver",
+        ruff    = "ruff",
+        ts_ls   = "typescript-language-server",
+      }
+      local missing = vim.tbl_filter(function(server)
+        return vim.fn.executable(server_cmd[server] or server) == 0
+      end, vim.tbl_keys(lsp_servers))
+
       local ok_mason_lsp, mason_lsp = pcall(require, "mason-lspconfig")
       if ok_mason_lsp then
         mason_lsp.setup({
-          ensure_installed = vim.tbl_keys(lsp_servers),
+          ensure_installed = missing,
           automatic_enable = false,
         })
       end
