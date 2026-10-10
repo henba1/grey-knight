@@ -175,6 +175,14 @@ test("CHEATSHEET.md exists", function()
   assert(vim.fn.filereadable(vim.fn.stdpath("config") .. "/CHEATSHEET.md") == 1, "missing")
 end)
 
+-- T11: AI Dashboard bridge — loads anywhere, active only inside the dashboard's Dev Environment
+test("Dashboard bridge only inside the dashboard", function()
+  local aidash = require("integrations.aidash")
+  local inside = (vim.env.AIDASH_URL or "") ~= "" and (vim.env.AIDASH_TOKEN or "") ~= ""
+  assert(aidash.active() == inside, "active() disagrees with the environment")
+  assert((vim.fn.exists(":AidashPreview") == 2) == inside, ":AidashPreview defined outside the dashboard")
+end)
+
 -- Print results
 print("")
 print("═══════════════════════════════════════════")

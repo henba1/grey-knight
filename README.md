@@ -89,7 +89,7 @@ OpenAI-compatible API: llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM
 ## Structure
 
 ```
-init.lua                    4-line entry point
+init.lua                    entry point (+ the optional dashboard bridge)
 ├── lua/config/
 │   ├── options.lua         vim opts, language toggles
 │   ├── lazy.lua            lazy.nvim bootstrap
@@ -104,6 +104,9 @@ init.lua                    4-line entry point
 │   ├── lsp.lua             LSP, Mason, Treesitter, conform
 │   ├── session.lua         persisted.nvim
 │   └── snacks.lua          picker, explorer, dashboard, notify
+├── lua/integrations/
+│   └── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
+│                           loaded only inside its Dev Environment (USAGE.md → Terminal)
 ├── after/ftplugin/
 │   ├── python.lua          4-space indent, col 88
 │   └── markdown.lua        wrap + spellcheck

@@ -291,6 +291,25 @@ Python REPL) use `:ToggleTerm`, or send snippets straight into a running shell w
 3. Select lines with `V`
 4. `<leader>ts` → code appears in the Python REPL
 
+### Inside the AI Dashboard (web)
+
+When GreyNight runs in a workspace of the AI Dashboard's **Dev Environment** (the browser page
+shows a tmux session on the Pi), an optional bridge (`lua/integrations/aidash.lua`) lets the
+editor use the browser for what a terminal can't do. It only loads there — the session sets
+`AIDASH_URL`/`AIDASH_TOKEN`; everywhere else nothing changes.
+
+| Key / Command | Action |
+|---------------|--------|
+| `<leader>Wp` · `:AidashPreview [port] [path]` | Show a dev server (`127.0.0.1:<port>` on the Pi) next to the editor — no port: pick from the listening ones |
+| `gx` · `:AidashOpen <url>` | `localhost:<port>` URLs become a preview, others a link in the page |
+| `<leader>Wd` · `:AidashDownload [file]` | Download the current file (or oil entry) to the computer in front of you |
+| `<leader>Wu` · `:AidashUpload [dir]` | Upload files from that computer into the current folder |
+| `:AidashNotify <message>` | A notification in the browser (also when the tab is in the background) |
+
+Clipboard: `"+y` lands in the computer's clipboard (OSC 52, as over SSH); paste from it with
+`Ctrl+Shift+V`. Shells in the same session have the same bridge as a command: `aidash preview 5173`,
+`npm run build; aidash notify "build done"`.
+
 ---
 
 ## Git
