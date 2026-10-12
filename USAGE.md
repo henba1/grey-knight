@@ -470,18 +470,35 @@ Trouble gives you a project-wide panel for all issues.
 
 ## Debugging (DAP)
 
+Grey Knight wires two debug backends through nvim-dap: **debugpy** for
+Python and **CodeLLDB** (LLDB) for C/C++, whose adapter binary Mason ensures.
+Set breakpoints first, then start the session from the buffer you're
+debugging, and drive it with the shared controls below.
+
+### Starting a session
+
+| Key / Command | Action |
+|---------------|--------|
+| `<leader>dl` | Launch: debug the current Python file (debugpy) |
+| `<leader>da` | Attach: connect to a script started with `python -m debugpy.listen` (port prompt) |
+| `:CodelldbLaunch` | Launch: build and run the current C/C++ buffer under LLDB |
+| `:CodelldbAttach` | Attach: attach LLDB to a running process (PID prompt) |
+
+The `:Codelldb*` command surface syncs through lazy.nvim on first use of a
+C buffer (it clones then, so the first launch may need a second attempt).
+
+### Controlling a session
+
 | Key | Action |
 |-----|--------|
-| `F5` | Start / continue debugging |
+| `F5` | Continue |
 | `F10` | Step over |
 | `F11` | Step into |
 | `F12` | Step out |
-| `<leader>db` | Toggle breakpoint |
-| `<leader>dB` | Conditional breakpoint (enter condition) |
-| `<leader>dr` | Open DAP REPL |
-| `<leader>du` | Toggle DAP UI (variables, stack, etc.) |
-
-Supported: Python (debugpy), C/C++ (codelldb)
+| `<leader>db` | Toggle breakpoint at the cursor line |
+| `<leader>dB` | Conditional breakpoint |
+| `<leader>dr` | REPL — evaluate expressions in the stopped frame |
+| `<leader>du` | Toggle DAP UI (variables, stack, watches) |
 
 ---
 

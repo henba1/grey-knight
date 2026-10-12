@@ -23,6 +23,7 @@ return {
             { key = "g", desc = "Find Text",       action = ":lua Snacks.dashboard.pick('live_grep')" },
             { key = "r", desc = "Recent Files",    action = ":lua Snacks.dashboard.pick('oldfiles')" },
             { key = "c", desc = "Config",          action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
+            { key = "d", desc = "Docs",            action = "<leader>gd" },
             { key = "s", desc = "Restore Session", section = "session" },
             { key = "a", desc = "AI (Qwen Code)",    action = ":lua vim.g.qwen_launch('agent', 'vertical')" },
             { key = "L", desc = "Lazy",            action = ":Lazy", enabled = package.loaded.lazy ~= nil },

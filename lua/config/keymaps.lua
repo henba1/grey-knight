@@ -193,6 +193,28 @@ map("v", "<leader>ae", function()
 end, { desc = "AI: Edit selection" })
 
 -- ── DAP keymaps ─────────────────────────────────────────────
+map("n", "<leader>dl", function()
+  if vim.bo.filetype ~= "python" then
+    vim.notify("DAP: launch needs a Python buffer", vim.log.levels.WARN)
+    return
+  end
+  local file = vim.fn.expand("%:p")
+  require("dap").run({
+    type = "python",
+    name = "launch: " .. vim.fn.fnamemodify(file, ":t"),
+    request = "launch",
+    program = file,
+  })
+end, { desc = "DAP: Launch current Python file" })
+map("n", "<leader>da", function()
+  local port = tonumber(vim.fn.input("debugpy port: "))
+  require("dap").run({
+    type = "python",
+    name = "attach: " .. tostring(port),
+    request = "attach",
+    connect = { host = "127.0.0.1", port = port },
+  })
+end, { desc = "DAP: Attach to debugpy listener" })
 map("n", "<F5>",       function() require("dap").continue() end,          { desc = "DAP: Continue" })
 map("n", "<F10>",      function() require("dap").step_over() end,         { desc = "DAP: Step over" })
 map("n", "<F11>",      function() require("dap").step_into() end,         { desc = "DAP: Step into" })
