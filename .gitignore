@@ -1,4 +1,4 @@
 plugin/
-spell/*.spl
+spell/
 lazy-lock.json.bak*
 *.bak.*
