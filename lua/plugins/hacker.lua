@@ -32,11 +32,6 @@ local plugins = {
   { "nvim-neotest/nvim-nio" },
 }
 
--- C/C++ DAP: the ex-command surface (launch, attach, breakpoint) on top of the Mason-installed binary
-if lang.c then
-  table.insert(plugins, { "porkfly/codelldb.nvim", ft = { "c", "cpp" } })
-end
-
 -- Python DAP
 if lang.python then
   table.insert(plugins, {

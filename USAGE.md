@@ -481,11 +481,11 @@ debugging, and drive it with the shared controls below.
 |---------------|--------|
 | `<leader>dl` | Launch: debug the current Python file (debugpy) |
 | `<leader>da` | Attach: connect to a script started with `python -m debugpy.listen` (port prompt) |
-| `:CodelldbLaunch` | Launch: build and run the current C/C++ buffer under LLDB |
-| `:CodelldbAttach` | Attach: attach LLDB to a running process (PID prompt) |
 
-The `:Codelldb*` command surface syncs through lazy.nvim on first use of a
-C buffer (it clones then, so the first launch may need a second attempt).
+C/C++: the CodeLLDB binary itself is ensured via Mason, but its command
+surface (`:CodelldbLaunch` / `:CodelldbAttach`) ships with the
+`porkfly/codelldb.nvim` plugin, which needs GitHub access to sync —
+unavailable from this network for now.
 
 ### Controlling a session
 

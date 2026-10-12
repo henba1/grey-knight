@@ -118,14 +118,13 @@ Shell terminals (the `<leader>t*` agent keys above launch Qwen Code, not a shell
 ## Debug (DAP)
 
 Breakpoints first, then launch from the buffer you're debugging. Full
-workflow: USAGE.md, "Debugging (DAP)".
+workflow: USAGE.md, "Debugging (DAP)". C/C++'s `:Codelldb*` surface is
+pending `porkfly/codelldb.nvim` syncing (needs GitHub access).
 
 | Key / Command | Action |
 |---------------|--------|
 | `<leader>dl` | Launch: current Python file (debugpy) |
 | `<leader>da` | Attach: debugpy listener (port prompt) |
-| `:CodelldbLaunch` | Launch: current C/C++ buffer (LLDB) |
-| `:CodelldbAttach` | Attach: running process (PID prompt) |
 | `<F5>` | Continue |
 | `<F10>` | Step over |
 | `<F11>` | Step into |
