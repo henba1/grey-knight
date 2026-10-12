@@ -43,12 +43,15 @@ if lang.python then
   })
 end
 
--- C/C++ DAP
-if lang.c then
+-- Debugger backends: ensure the ones the enabled languages use (Mason skips what is already present)
+if lang.c or lang.python then
+  local ensure = {}
+  if lang.c then ensure[#ensure + 1] = "codelldb" end
+  if lang.python then ensure[#ensure + 1] = "debugpy" end
   table.insert(plugins, {
     "jay-babu/mason-nvim-dap.nvim",
     dependencies = { "williamboman/mason.nvim", "mfussenegger/nvim-dap" },
-    opts = { ensure_installed = { "codelldb" } },
+    opts = { ensure_installed = ensure },
   })
 end
 
