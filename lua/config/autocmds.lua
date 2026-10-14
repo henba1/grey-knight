@@ -18,11 +18,6 @@ vim.api.nvim_create_autocmd("BufReadPost", {
   end,
 })
 
--- Auto-resize splits on window resize
-vim.api.nvim_create_autocmd("VimResized", {
-  callback = function() vim.cmd("tabdo wincmd =") end,
-})
-
 -- Close certain filetypes with q
 vim.api.nvim_create_autocmd("FileType", {
   pattern = { "help", "qf", "man", "notify", "lspinfo", "checkhealth", "oil" },
