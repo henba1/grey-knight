@@ -50,44 +50,38 @@ end
 
 -- shellcheck: findings as diagnostics on bash buffers (the binary is optional — absent means silent skip)
 if lang.bash and vim.fn.executable("shellcheck") == 1 then
+  local ns = vim.api.nvim_create_namespace('shellcheck')
   local severity = {
     error   = vim.diagnostic.severity.ERROR,
     warning = vim.diagnostic.severity.WARNING,
     info    = vim.diagnostic.severity.INFO,
     style   = vim.diagnostic.severity.HINT,
   }
-  local inflight = {}
   local function check(buf)
-    if inflight[buf] or vim.api.nvim_buf_get_option(buf, "buftype") ~= "" then return end
-    inflight[buf] = true
+    if vim.api.nvim_buf_get_option(buf, "buftype") ~= "" then return end
     local tmp = vim.fn.tempname()
-    vim.fn.write(vim.api.nvim_buf_get_lines(buf, 0, -1, true), tmp)
-    local report, issues = "", {}
-    vim.fn.job({ "shellcheck", "-f", "json", tmp }, {
-      stdout = function(lines) report = report .. table.concat(lines, "") end,
-      exit_cb = function()
-        inflight[buf] = nil
-        vim.fn.delete(tmp)
-        local ok, found = pcall(vim.json.decode, report)
-        if ok and vim.islist(found) then
-          for _, item in ipairs(found) do
-            if item.code then
-              issues[#issues + 1] = {
-                lnum = item.line or 1,
-                col  = 0,
-                message = item.message or item.code,
-                code    = item.code,
-                source  = "shellcheck",
-                severity = severity[item.level],
-              }
-            end
-          end
+    vim.fn.writefile(vim.api.nvim_buf_get_lines(buf, 0, -1, true), tmp)
+    local report = vim.fn.systemlist('shellcheck -f json ' .. tmp)
+    vim.fn.delete(tmp)
+    local issues = {}
+    local ok, found = pcall(vim.json.decode, table.concat(report, '\n'))
+    if ok and vim.islist(found) then
+      for _, item in ipairs(found) do
+        if item.code then
+          issues[#issues + 1] = {
+            lnum = item.line or 1,
+            col  = 0,
+            message = item.message or item.code,
+            code    = item.code,
+            source  = "shellcheck",
+            severity = severity[item.level],
+          }
         end
-        vim.diagnostic.set(buf, issues)
-      end,
-    })
+      end
+    end
+    vim.diagnostic.set(ns, buf, issues)
   end
-  vim.api.nvim_create_autocmd({ "FileType", "BufReadPost", "InsertLeave" }, {
+  vim.api.nvim_create_autocmd({ "FileType", "BufReadPost", "BufWritePost" }, {
     pattern = { "sh", "bash" },
     callback = function(ev) check(ev.buf) end,
   })
