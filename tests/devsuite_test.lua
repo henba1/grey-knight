@@ -594,4 +594,49 @@ test("Harpoon: pin files, see their slot, jump, menu edits kept on q", function(
   assert(ok, err)
 end)
 
+test("Error log: a plugin that wraps vim.notify does not break notifications", function()
+  local el = require("config.errorlog")
+  local previous, calls = vim.notify, 0
+  vim.notify = function(msg, level, opts) -- what plugins do: wrap and call the previous one
+    calls = calls + 1
+    return previous(msg, level, opts)
+  end
+  local ok, err = pcall(function()
+    vim.notify("wrapped warning one", vim.log.levels.WARN, { title = "Wrap" })
+    vim.notify("wrapped warning two", vim.log.levels.WARN, { title = "Wrap" })
+  end)
+  vim.notify = previous
+  assert(ok, "notifications broke: " .. tostring(err))
+  assert(calls == 2, "wrapper called " .. calls .. " times")
+  assert(table.concat(vim.fn.readfile(el.path), "\n"):find("WARN  [Wrap] wrapped warning two", 1, true), "not logged")
+end)
+
+test("Qwen: <leader>am names the model the server runs, and says when none runs", function()
+  local qwen = require("integrations.qwen")
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ vim.json.encode({ model_path = "/m/Fake-27B-Q6_K.gguf", default_generation_settings = { n_ctx = 4096 } }) }, dir .. "/props")
+  local port = 18000 + vim.uv.hrtime() % 1000
+  local base = ("http://127.0.0.1:%d"):format(port)
+  local server = vim.fn.jobstart({ "python3", "-m", "http.server", tostring(port), "--bind", "127.0.0.1", "--directory", dir })
+  local saved = vim.env.QWEN_BASE_URL
+  local ok, err = pcall(function()
+    assert(H.wait(5000, function()
+      return vim.system({ "curl", "-s", "--max-time", "1", base .. "/props" }):wait().code == 0
+    end), "fake server did not start")
+    vim.env.QWEN_BASE_URL = base .. "/v1"
+    local got
+    qwen.model_info(function(msg) got = msg end)
+    assert(H.wait(5000, function() return got end), "no answer")
+    assert(got:find("Fake-27B-Q6_K", 1, true) and got:find("4096", 1, true), got)
+    vim.env.QWEN_BASE_URL = "http://127.0.0.1:9/v1" -- nothing listens there
+    got = nil
+    qwen.model_info(function(msg) got = msg end)
+    assert(H.wait(5000, function() return got end) and got:find("No model is running", 1, true), tostring(got))
+  end)
+  vim.fn.jobstop(server)
+  vim.env.QWEN_BASE_URL = saved
+  assert(ok, err)
+end)
+
 H.report("Dev Suite Test Results")

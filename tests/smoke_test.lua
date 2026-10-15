@@ -173,4 +173,57 @@ test("Dashboard bridge only inside the dashboard", function()
   assert((vim.fn.exists(":AidashPreview") == 2) == inside, ":AidashPreview defined outside the dashboard")
 end)
 
+-- T12: The docs stay in step with the config
+local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end
+local DOCS = read("CHEATSHEET.md") .. "\n" .. read("USAGE.md") .. "\n" .. read("README.md")
+
+test("Docs: every key with a description is documented", function()
+  local missing, seen = {}, {}
+  for _, mode in ipairs({ "n", "v", "x", "o", "t" }) do
+    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+      local lhs = m.lhs:gsub("^ ", "<leader>")
+      local ours = m.desc and m.desc ~= "" and (lhs:match("^<leader>") or lhs:match("^<S?%-?F%d+>"))
+      if ours and not seen[lhs] then
+        seen[lhs] = true
+        local short, plain = lhs:gsub("^<leader>", ""), lhs:gsub("[<>]", "")
+        if not (DOCS:find(lhs, 1, true) or DOCS:find("Space+" .. short, 1, true) or DOCS:find("`" .. plain .. "`", 1, true)
+          or (lhs:match("^<leader>%d$") and DOCS:find("<leader>1-4", 1, true))) then
+          missing[#missing + 1] = mode .. " " .. lhs .. " (" .. m.desc .. ")"
+        end
+      end
+    end
+  end
+  assert(#missing == 0, "not in the docs: " .. table.concat(missing, ", "))
+end)
+
+test("Docs: every documented <leader> key exists", function()
+  -- group prefixes in headings, LSP keys (exist once a server attaches), the AI Dashboard bridge (<leader>W*)
+  local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
+    ["<leader>x"] = 1, ["<leader>ca"] = 1, ["<leader>rn"] = 1, ["<leader>D"] = 1, ["<leader>t1/t2/t3"] = 1 }
+  local stale, checked = {}, {}
+  for key in DOCS:gmatch("<leader>[%w%-%;%/%:%.]+") do
+    if not checked[key] and not known[key] and not key:match("^<leader>W") and not key:match("%d%-%d$") then
+      checked[key] = true
+      if vim.fn.maparg(key, "n") == "" and vim.fn.maparg(key, "v") == "" and vim.fn.maparg(key, "x") == "" then
+        stale[#stale + 1] = key
+      end
+    end
+  end
+  assert(#stale == 0, "documented but not mapped: " .. table.concat(stale, ", "))
+end)
+
+test("Docs: the README and CHEATSHEET file trees list every module and test", function()
+  local missing = {}
+  for _, pattern in ipairs({ "lua/config/*.lua", "lua/devsuite/*.lua", "lua/integrations/*.lua", "lua/plugins/*.lua", "tests/*" }) do
+    for _, path in ipairs(vim.fn.glob(ROOT .. "/" .. pattern, false, true)) do
+      local name = vim.fn.fnamemodify(path, ":t")
+      for _, doc in ipairs({ "README.md", "CHEATSHEET.md" }) do
+        if not read(doc):find(name, 1, true) then missing[#missing + 1] = doc .. ": " .. name end
+      end
+    end
+  end
+  assert(#missing == 0, table.concat(missing, ", "))
+end)
+
 H.report("Smoke Test Results")
