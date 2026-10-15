@@ -30,6 +30,13 @@ local plugins = {
     end,
   },
   { "nvim-neotest/nvim-nio" },
+
+  -- Variable values inline next to the code while a debug session is stopped
+  {
+    "theHamsta/nvim-dap-virtual-text",
+    dependencies = { "mfussenegger/nvim-dap", "nvim-treesitter/nvim-treesitter" },
+    opts = {},
+  },
 }
 
 -- Python DAP
@@ -44,10 +51,11 @@ if lang.python then
 end
 
 -- Debugger backends: ensure the ones the enabled languages use (Mason skips what is already present)
-if lang.c or lang.python then
+if lang.c or lang.python or lang.bash then
   local ensure = {}
   if lang.c then ensure[#ensure + 1] = "codelldb" end
   if lang.python then ensure[#ensure + 1] = "debugpy" end
+  if lang.bash then ensure[#ensure + 1] = "bash" end -- bash-debug-adapter (bashdb)
   table.insert(plugins, {
     "jay-babu/mason-nvim-dap.nvim",
     dependencies = { "williamboman/mason.nvim", "mfussenegger/nvim-dap" },
