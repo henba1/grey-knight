@@ -64,21 +64,22 @@ function M.setup()
     vim.fn.writefile(vim.list_slice(lines, math.max(1, #lines - KEEP_LINES + 1)), M.path)
   end
 
-  -- Wrap vim.notify. snacks installs a stub that replaces vim.notify on its first call: when that
-  -- happens while we notify, wrap the replacement instead of disappearing.
+  -- Wrap vim.notify. snacks' notifier installs a stub that replaces vim.notify with
+  -- Snacks.notifier.notify on its first call: call that notifier directly, so nothing swaps this
+  -- wrapper out. (Never adopt whatever vim.notify becomes later: a plugin that wraps vim.notify
+  -- and calls the previous one would then call us back endlessly.)
   local inner = vim.notify
-  local function notify(msg, level, opts)
+  local snacks = rawget(_G, "Snacks")
+  local ok, enabled = pcall(function() return snacks.config.notifier.enabled end)
+  if snacks and ok and enabled then
+    inner = function(msg, level, opts) return snacks.notifier.notify(msg, level, opts) end
+  end
+  vim.notify = function(msg, level, opts)
     if level and level >= vim.log.levels.WARN then
       pcall(M.write, NAMES[level] or "ERROR", type(opts) == "table" and opts.title or "notify", msg)
     end
-    local result = inner(msg, level, opts)
-    if vim.notify ~= notify then
-      inner = vim.notify
-      vim.notify = notify
-    end
-    return result
+    return inner(msg, level, opts)
   end
-  vim.notify = notify
 
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("greyknight_errorlog", { clear = true }),
