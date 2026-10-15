@@ -4,6 +4,7 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 require("config.options")
 require("config.lazy")      -- bootstrap lazy.nvim + load lua/plugins/*
+require("config.errorlog").setup() -- warnings + errors -> ~/.local/state/nvim/greyknight.log
 require("config.keymaps")   -- after plugins are loaded
 require("config.autocmds")
 

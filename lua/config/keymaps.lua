@@ -38,6 +38,10 @@ map("t", "<C-l>",      "<C-\\><C-n><C-w>l", { desc = "Window right (from term)" 
 -- ── Dashboard ────────────────────────────────────────────────
 map("n", "<leader>;", "<cmd>lua Snacks.dashboard()<cr>", { desc = "Dashboard" })
 
+-- ── Errors: notification history is <leader>un (snacks) ─────
+map("n", "<leader>ue", function() require("config.errorlog").open() end, { desc = "Error log (all sessions)" })
+map("n", "<leader>um", "<cmd>messages<cr>", { desc = "Messages (Lua errors of this session)" })
+
 -- ── Save / Quit ──────────────────────────────────────────────
 map("n", "<leader>w", "<cmd>w<cr>",   { desc = "Save" })
 map("n", "<leader>q", "<cmd>q<cr>",   { desc = "Quit" })
