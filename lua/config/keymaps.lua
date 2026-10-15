@@ -138,6 +138,7 @@ map("n", "<leader>t1", function() qwen().launch("agent1", "horizontal") end, { d
 map("n", "<leader>t2", function() qwen().launch("agent2", "horizontal") end, { desc = "AI: Agent #2 (own session)" })
 map("n", "<leader>t3", function() qwen().launch("agent3", "horizontal") end, { desc = "AI: Agent #3 (own session)" })
 map("n", "<leader>ac", function() qwen().new_session() end, { desc = "AI: New session (/clear)" })
+map("n", "<leader>am", function() qwen().model_info() end,  { desc = "AI: Model running on the rig" })
 map("n", "<leader>aa", function() qwen().ask() end,         { desc = "AI: Ask about file" })
 map("v", "<leader>aa", function() qwen().ask() end,         { desc = "AI: Ask about selection" })
 map("v", "<leader>ae", function() qwen().edit() end,        { desc = "AI: Edit selection" })

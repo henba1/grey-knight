@@ -146,6 +146,37 @@ function M.new_session()
   end
 end
 
+--- Base URL of the model server: $QWEN_BASE_URL, else the default model of ~/.qwen/settings.json.
+function M.base_url()
+  if vim.env.QWEN_BASE_URL and vim.env.QWEN_BASE_URL ~= "" then return vim.env.QWEN_BASE_URL end
+  local ok, settings = pcall(function()
+    return vim.json.decode(table.concat(vim.fn.readfile(vim.fn.expand("~/.qwen/settings.json")), "\n"))
+  end)
+  local url = ok and type(settings) == "table" and type(settings.model) == "table" and settings.model.baseUrl
+  return url or "http://192.168.2.173:8000/v1"
+end
+
+--- Which model the server runs right now (llama-server /props): name and context size.
+--- Several launchers share the port, so this is how you know who the agent talks to.
+function M.model_info(done)
+  local url = M.base_url():gsub("/v1/?$", "") .. "/props"
+  vim.system({ "curl", "-s", "--max-time", "3", url }, { text = true }, function(res)
+    vim.schedule(function()
+      local ok, props = pcall(vim.json.decode, res.stdout or "")
+      local msg, level
+      if res.code ~= 0 or not ok or type(props) ~= "table" or not props.model_path then
+        msg, level = ("No model is running at %s - start a launcher on the AI Dashboard (Models)"):format(url), vim.log.levels.WARN
+      else
+        local settings = type(props.default_generation_settings) == "table" and props.default_generation_settings or {}
+        msg = ("Model: %s\nContext: %s tokens"):format(vim.fn.fnamemodify(props.model_path, ":t:r"), tostring(settings.n_ctx or "?"))
+        level = vim.log.levels.INFO
+      end
+      vim.notify(msg, level, { title = "Qwen" })
+      if done then done(msg) end
+    end)
+  end)
+end
+
 --- Open (or focus) an agent.
 function M.launch(name, direction)
   local term = agent(name or "agent", direction)
