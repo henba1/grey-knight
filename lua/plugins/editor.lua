@@ -163,7 +163,8 @@ return {
     "sindrets/diffview.nvim",
     cmd = { "DiffviewOpen", "DiffviewFileHistory" },
     keys = {
-      { "<leader>gd", "<cmd>DiffviewOpen<cr>",          desc = "Git: Diffview" },
+      -- <leader>gv: <leader>gd is the GreyNight docs picker (lua/config/keymaps.lua)
+      { "<leader>gv", "<cmd>DiffviewOpen<cr>",          desc = "Git: Diffview (side-by-side diff)" },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>",  desc = "Git: File history" },
     },
   },
