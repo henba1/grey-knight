@@ -1,18 +1,6 @@
--- Grey Knight Automated Test Suite
-local results = {}
-local pass_count = 0
-local fail_count = 0
-
-local function test(name, fn)
-  local ok, err = pcall(fn)
-  if ok then
-    results[#results+1] = "✅ " .. name
-    pass_count = pass_count + 1
-  else
-    results[#results+1] = "❌ " .. name .. " → " .. tostring(err)
-    fail_count = fail_count + 1
-  end
-end
+-- Grey Knight smoke tests: config, plugins, parsers, tools. Run all suites with tests/run.sh
+local H = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h") .. "/harness.lua")
+local test = H.test
 
 -- T1: Config loads
 test("Config loads without errors", function()
@@ -167,7 +155,9 @@ test("gcc available", function()
 end)
 
 test("tree-sitter CLI available", function()
-  assert(vim.fn.executable("tree-sitter") == 1, "tree-sitter not found")
+  -- installed by install.sh into ~/.cargo/bin, which non-interactive shells do not have on the PATH
+  local cargo = vim.fn.expand("~/.cargo/bin/tree-sitter")
+  assert(vim.fn.executable("tree-sitter") == 1 or vim.fn.executable(cargo) == 1, "tree-sitter not found")
 end)
 
 -- T10: Project files
@@ -183,12 +173,4 @@ test("Dashboard bridge only inside the dashboard", function()
   assert((vim.fn.exists(":AidashPreview") == 2) == inside, ":AidashPreview defined outside the dashboard")
 end)
 
--- Print results
-print("")
-print("═══════════════════════════════════════════")
-print("  GREY KNIGHT — Automated Test Results")
-print("═══════════════════════════════════════════")
-for _, r in ipairs(results) do print("  " .. r) end
-print("───────────────────────────────────────────")
-print(string.format("  %d passed, %d failed, %d total", pass_count, fail_count, pass_count + fail_count))
-print("═══════════════════════════════════════════")
+H.report("Smoke Test Results")
