@@ -2,7 +2,7 @@
 
 A curated, agentic Neovim IDE built for security researchers and developers who run local LLMs.
 
-**37 plugins • Cyberdream theme • AI agent (Qwen Code) • Zero cloud dependencies**
+**39 plugins • Cyberdream theme • AI agent (Qwen Code) • Bash + Python dev suite • Zero cloud dependencies**
 
 ![Stack](https://img.shields.io/badge/Neovim-0.12%2B-57A143?logo=neovim)
 ![Theme](https://img.shields.io/badge/Theme-Cyberdream-ff00ff)
@@ -12,6 +12,10 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 ## Features
 
 - **AI-powered coding** — Qwen Code agent (agentic mode: read files, edit code, run commands)
+- **Bash + Python dev suite** — one-key runs as tasks (overseer.nvim): files, project scripts, selections,
+  `# %%` cells and pytest, side by side, in a real terminal (`input()`/`read`/`sudo` work); errors marked in
+  the code; debugging for Python and bash (F5, breakpoints, inline values); IPython/bash REPL; a failed
+  run goes to the AI agent with one key
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications
@@ -40,8 +44,14 @@ cd grey-knight-nvim
 | **ripgrep** | Auto-installed | Live grep |
 | **fd** | Auto-installed | File finder |
 | **lazygit** | Auto-installed | Git TUI |
+| **python3** | For Python | Runs scripts; 3.13+ also makes the plain `python3` REPL take pasted blocks |
+| **IPython** | Optional | Preferred Python REPL (`<leader>ri`); falls back to python3 |
+| **pytest** | Optional | `<leader>rt` / `<leader>rT` / `<leader>dt` |
+| **shellcheck** | Optional | Bash diagnostics (through bash-language-server) |
+| **debugpy, bash-debug-adapter** | Auto-installed (Mason) | Python and bash debugging; the bash debugger runs on Node |
 
-The install script handles Rust, tree-sitter CLI, ripgrep, fd, and lazygit automatically.
+The install script handles Rust, tree-sitter CLI, ripgrep, fd, and lazygit automatically; Mason
+installs the language servers and debuggers on the first start.
 
 ### Manual Install
 
@@ -86,6 +96,11 @@ The AI agent is **Qwen Code**, configured like any other Qwen Code install in
 The default on this rig is `http://192.168.2.173:8000/v1` (llama.cpp). Works with any
 OpenAI-compatible API: llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, etc.
 
+For coding, start the launcher **`qwen38official-q6-text-think-mtp-128k`** on the AI Dashboard's
+Models page: the official Qwen3.8-27B weights (no chat persona in the template), thinking on
+(effort medium), MTP, 128k context. The chat launchers prepend a chat persona and have less
+context. The provider `qwen38-official` in `~/.qwen/settings.json` matches the coding launcher.
+
 ## Structure
 
 ```
@@ -96,15 +111,24 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── keymaps.lua         all global keymaps + which-key groups
 │   └── autocmds.lua        yank highlight, cursor restore
 ├── lua/plugins/
-│   ├── ai.lua              Qwen Code agent (shell-out terminal)
+│   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
 │   ├── colorscheme.lua     Cyberdream (neon cyberpunk)
 │   ├── completion.lua      blink.cmp v1 (Rust-powered)
+│   ├── devsuite.lua        overseer.nvim (task engine of the dev suite)
 │   ├── editor.lua          flash, harpoon, oil, surround, trouble, etc.
 │   ├── hacker.lua          hex editor, toggleterm, DAP
 │   ├── lsp.lua             LSP, Mason, Treesitter, conform
 │   ├── session.lua         persisted.nvim
 │   └── snacks.lua          picker, explorer, dashboard, notify
+├── lua/devsuite/           bash + python dev suite (USAGE.md → Running Scripts & REPL, Debugging)
+│   ├── runner.lua          what to run: file / args / sudo / project scripts / selection / cell / pytest
+│   ├── tasks.lua           runs as overseer tasks: output window, args memory, watch, fix with Qwen
+│   ├── errors.lua          tracebacks + bash errors -> quickfix + marks in the code
+│   ├── repl.lua            IPython / python3 / bash REPL, bracketed paste
+│   ├── debug.lua           Python (debugpy) + bash (bashdb) debugging, F5
+│   └── util.lua            venv, #!, cells, dedent, pytest node ids
 ├── lua/integrations/
+│   ├── qwen.lua            Qwen Code agent terminals (ask/edit prompts, own sessions)
 │   └── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
 │                           loaded only inside its Dev Environment (USAGE.md → Terminal)
 ├── after/ftplugin/
@@ -120,8 +144,8 @@ Edit `lua/config/options.lua` to toggle languages:
 
 ```lua
 vim.g.lang = {
-  python     = true,   -- pyright + ruff + debugpy
-  bash       = true,   -- bashls + shfmt
+  python     = true,   -- pyright + ruff + debugpy (+ pytest, IPython)
+  bash       = true,   -- bashls + shellcheck + shfmt + bashdb (debugger)
   c          = true,   -- clangd + codelldb
   typescript = true,   -- ts_ls + prettier
   lua        = true,   -- lua_ls + stylua
@@ -139,13 +163,16 @@ See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
 
 | Key | Action |
 |-----|--------|
-| `Space+at` | AI sidebar toggle |
+| `Space+tt` | Qwen Code agent toggle |
 | `Space+ff` | Find files |
 | `Space+fg` | Live grep |
 | `Space+e` | File explorer |
 | `Space+gg` | Lazygit |
-| `Space+tt` | Toggle terminal |
-| `Space+t1/t2/t3` | Named terminals |
+| `F6` / `Space+rr` | Run file as a task (`input()` works) |
+| `F5` | Debug this file (Python / bash) |
+| `Space+rp` | Run a project script |
+| `Space+ri` | REPL (IPython / bash) |
+| `Space+t1/t2/t3` | Extra Qwen agents (own sessions) |
 | `Space+;` | Dashboard |
 | `Space+1-4` | Harpoon quick files |
 | `Space+hx` | Hex view toggle |
@@ -157,12 +184,16 @@ See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
 ## Running Tests
 
 ```bash
-# Automated smoke tests (33 checks)
-nvim --headless \
-  -c "Lazy load flash.nvim trouble.nvim oil.nvim grug-far.nvim harpoon gitsigns.nvim render-markdown.nvim persisted.nvim conform.nvim mini.surround mini.ai" \
-  -c "luafile tests/smoke_test.lua" \
-  -c "qa!"
+# All suites, headless; exit status 1 when a test failed (about ten seconds)
+tests/run.sh
+
+# One suite: smoke (config, plugins, parsers, tools) or devsuite (run, tasks, errors, debug, REPL,
+# Qwen, completion - starts python3, ipython3, bash, debugpy and bashdb)
+tests/run.sh smoke
+tests/run.sh devsuite
 ```
+
+Warnings and errors that the tests provoke go to a temp log, not to `~/.local/state/nvim/greyknight.log`.
 
 ## Optional: Terminal Coding Agents
 

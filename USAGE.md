@@ -14,21 +14,23 @@
 5. [Code Intelligence (LSP)](#code-intelligence-lsp)
 6. [Autocompletion](#autocompletion)
 7. [AI Assistant (Qwen Code)](#ai-assistant-qwen-code)
-8. [Terminal](#terminal)
-9. [Git](#git)
-10. [Search & Replace](#search--replace)
-11. [Windows & Splits](#windows--splits)
-12. [Buffers](#buffers)
-13. [Harpoon (Quick File Switching)](#harpoon-quick-file-switching)
-14. [Flash (Jump Navigation)](#flash-jump-navigation)
-15. [Surround](#surround)
-16. [Diagnostics & Trouble](#diagnostics--trouble)
-17. [Debugging (DAP)](#debugging-dap)
-18. [Hex Editor](#hex-editor)
-19. [Sessions](#sessions)
-20. [Oil (Filesystem Editing)](#oil-filesystem-editing)
-21. [Markdown Rendering](#markdown-rendering)
-22. [Tips & Tricks](#tips--tricks)
+8. [Running Scripts & REPL](#running-scripts--repl)
+9. [Terminal](#terminal)
+10. [Git](#git)
+11. [Search & Replace](#search--replace)
+12. [Windows & Splits](#windows--splits)
+13. [Buffers](#buffers)
+14. [Harpoon (Quick File Switching)](#harpoon-quick-file-switching)
+15. [Flash (Jump Navigation)](#flash-jump-navigation)
+16. [Surround](#surround)
+17. [Diagnostics & Trouble](#diagnostics--trouble)
+18. [Debugging (DAP)](#debugging-dap)
+19. [Hex Editor](#hex-editor)
+20. [Sessions](#sessions)
+21. [Oil (Filesystem Editing)](#oil-filesystem-editing)
+22. [Markdown Rendering](#markdown-rendering)
+23. [Tips & Tricks](#tips--tricks)
+24. [When Something Goes Wrong](#when-something-goes-wrong)
 
 ---
 
@@ -216,14 +218,15 @@ Completion appears automatically as you type.
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Select next completion item |
-| `Shift+Tab` | Select previous item |
-| `Enter` | Accept selected completion |
+| `Tab` / `Down` / `Ctrl+n` | Pick the next item (it is inserted right away) |
+| `Shift+Tab` / `Up` / `Ctrl+p` | Pick the previous item |
+| `Enter` | Accept the item you picked; with nothing picked it is a normal Enter (new line) |
 | `Ctrl+Space` | Manually trigger completion menu |
 | `Ctrl+e` | Dismiss completion menu |
 | `Ctrl+b/f` | Scroll docs up/down |
 
-**Ghost text** shows a grey preview of the top suggestion. Press `Tab` to accept it.
+Nothing is preselected, so `Enter` at the end of a line never takes a suggestion you did not
+choose. **Ghost text** shows a grey preview of the top suggestion: `Tab` takes it, `Enter` ignores it.
 
 **Signature help** shows function parameters as you type inside `()`.
 
@@ -234,8 +237,10 @@ Sources (in priority order): LSP → Snippets → Buffer words → File paths
 ## AI Assistant (Qwen Code)
 
 Grey Knight drives the **local Qwen Code** CLI as an agentic coding agent, running it in a
-persistent terminal window inside the editor. It is fully local — same backend as everything
-else (Qwen 3.8 27B on the rig), zero cloud.
+persistent terminal window inside the editor. It is fully local — Qwen3.8-27B on the rig via
+llama.cpp, zero cloud. For coding, start the launcher `qwen38official-q6-text-think-mtp-128k` on
+the AI Dashboard's Models page (official weights without a chat persona, thinking on, 128k
+context; see README.md → LLM Configuration).
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -243,13 +248,14 @@ else (Qwen 3.8 27B on the rig), zero cloud.
 | `<leader>tf` | n | Floating AI agent |
 | `<leader>th` | n | Horizontal-split AI agent |
 | `<leader>tv` | n | Vertical-split AI agent |
-| `<leader>t1` | n | Named agent #1 |
-| `<leader>t2` | n | Named agent #2 |
-| `<leader>t3` | n | Named agent #3 |
-| `<leader>ac` | n | Start a fresh agent session |
-| `<leader>aa` | n | Ask about the current file |
-| `<leader>aa` | v | Ask about the selected code |
-| `<leader>ae` | v | Ask the agent to edit the selected code |
+| `<leader>t1` | n | Agent #1 (its own session) |
+| `<leader>t2` | n | Agent #2 (its own session) |
+| `<leader>t3` | n | Agent #3 (its own session) |
+| `<leader>ac` | n | Fresh conversation in the main agent (`/clear`) |
+| `<leader>aa` | n | Ask about the current file (prompts for the question) |
+| `<leader>aa` | v | Ask about the selected code (prompts for the question) |
+| `<leader>ae` | v | Let the agent change the selected code (prompts for the instruction) |
+| `<leader>rf` | n | Send the last failed run to the agent: command, exit code, output and code locations ([When it fails](#when-it-fails)) |
 
 ### Using the agent
 
@@ -267,18 +273,118 @@ else (Qwen 3.8 27B on the rig), zero cloud.
 
 - The agent inherits the **current working directory** and any project
   `QWEN.md` / `AGENTS.md` context files **automatically**.
-- `<leader>aa` / `<leader>ae` additionally **prepend** the current file (or the visual
-  selection) to the prompt so the agent knows exactly what you're pointing at.
+- `<leader>aa` / `<leader>ae` ask for your question / instruction, then send one prompt with
+  the file as `@path` (Qwen Code reads it itself) plus the selected lines and their line
+  numbers. A running agent gets it as one bracketed paste (multi-line safe); a new agent
+  starts with it (`qwen -i`).
 - Inside the agent window, `Esc Esc` exits terminal mode back to the editor.
 
 > Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 
 ---
 
+## Running Scripts & REPL
+
+The `<leader>r` keys (and `F6`) are Grey Knight's bash + python workbench. Every run is a **task**
+(overseer.nvim): a backend, a frontend and an e2e run can go side by side, and running a script
+again replaces its previous run. Output appears in a **real terminal** at the bottom, so everything
+interactive works: `input()`, `getpass`, `read -p`, `sudo` prompts, curses. (`:!python3 %` has no
+terminal: `input()` fails there with `EOFError`.) The cursor goes to the output while the program
+runs (type your input there) and back to the code when it ends. The bar above the output shows
+RUNNING / DONE / FAILED, the exit code, the run time and what to do next.
+
+### Running
+
+| Key | Mode | Action |
+|-----|------|--------|
+| `F6` / `<leader>rr` | n | Run the current file (saved first) with its remembered arguments |
+| `<leader>ra` | n | Edit the file's arguments, then run. Shell syntax: quotes, globs, `< input.txt`. Remembered per file across sessions |
+| `<leader>rR` | n | Run as root: `sudo` asks for the password in the output |
+| `<leader>rp` | n | Pick a project script and run it from the project root (with its remembered arguments) |
+| `<leader>rP` | n | The same, editing its arguments first |
+| `<leader>rs` | v | Run the selection as a script of its own (dedented, so a block out of a function runs) |
+| `<leader>rc` | n | Run the `# %%` cell at the cursor (no cells: the whole file) |
+| `<leader>rx` | n | Trace run of a shell script: `bash -x` prints every command before it runs |
+| `<leader>rt` | n | pytest the current file |
+| `<leader>rT` | n | pytest the test at the cursor (`file::TestClass::test_name`) |
+
+**Project scripts** are the `*.sh` files, executables and runnable `*.py` files (`#!` line or
+`if __name__ == "__main__"`) in the project root and in `scripts/`, `bin/` and `tools/`; the project
+is the git repository of the current file. They run from the project root, like `./launch.sh` in a
+shell, and the picker marks the ones that are running.
+
+### Tasks
+
+| Key | Action |
+|-----|--------|
+| `<leader>rl` | Run the shown (or last) task again |
+| `<leader>rk` | Stop it (the output stays) |
+| `<leader>rw` | Watch: run it again whenever you save a file in its folder (toggle) |
+| `<leader>ro` | Show / hide the output |
+| `<leader>rL` | Task list: every task with status and duration; `<CR>` actions (restart, stop, open output, watch, ...), `o` open the output, `dd` remove, `?` help |
+| `<leader>rO` | Task templates of the project: make targets, npm scripts, `.vscode/tasks.json`, shell commands |
+
+The statusline shows how many tasks are running, done and failed.
+
+### When it fails
+
+- The failing line is **marked in your code** with the error. Python: the innermost frame in your
+  own code gets the exception; bash/sh: the `line N` the shell reports; pytest: the failing assert
+  with its `assert 0 == 4` detail. Snippets and cells point at the lines in the file.
+- The quickfix list has every frame: `]q` / `[q` walk them, `<leader>xq` lists them (Trouble).
+- `<CR>` on an error line in the output jumps to that line of code.
+- `<leader>rf` sends the failed run to the **Qwen Code agent**: the command, the exit code, the last
+  output and the code locations (as `@file`), asking it to find and fix the cause.
+
+**Which interpreter:** Python files use the project's virtualenv (`$VIRTUAL_ENV`, else the
+nearest `.venv/` or `venv/` between the file and your home directory), then the `#!` line, then
+`python3`. Shell scripts use their `#!` line, else `bash`; other files run when they have a `#!`
+line. A venv directly in your home (`~/venv` with pwntools, ...) is a toolbox, not a project
+environment: activate it before starting nvim to use it everywhere. pyright and the debugger
+pick the same virtualenv.
+
+**Where:** programs run in Neovim's current directory (the project root), like in VS Code.
+Selections and cells run from a temp file; Python snippets can still import the modules that
+sit next to the file.
+
+### Cells
+
+`# %%` lines split a file into cells (the marker of VS Code, Jupytext and Spyder), handy for a
+scratch file full of snippets:
+
+```python
+# %% load
+hosts = open("hosts.txt").read().split()
+
+# %% check
+for host in hosts:
+    print(host, len(host))
+```
+
+`<leader>rc` runs the cell at the cursor as a script; `<leader>rE` sends it to the REPL, where
+the variables of earlier cells are still there.
+
+### REPL
+
+| Key | Mode | Action |
+|-----|------|--------|
+| `<leader>ri` | n | Open / hide the REPL of the buffer's language: IPython (from the project's venv when it has one), else python3; bash for shell scripts |
+| `<leader>re` | n | Send the current line |
+| `<leader>re` | v | Send the selection |
+| `<leader>rE` | n | Send the `# %%` cell |
+
+Python code reaches the REPL as **one bracketed paste**: blank lines inside functions do not end
+the block, and a snippet with `input()` waits for you instead of being fed the next line of the
+snippet. The cursor stays in the code, so you can keep sending. Use the REPL to keep state
+between snippets, `<leader>rs` / `<leader>rc` for a clean run.
+
+---
+
 ## Terminal
 
-The `<leader>t*` keys above launch **Qwen Code** agents. For a plain **shell** (e.g. a
-Python REPL) use `:ToggleTerm`, or send snippets straight into a running shell with:
+The `<leader>t*` keys above launch **Qwen Code** agents. For a Python or bash **REPL** use
+`<leader>ri` ([Running Scripts & REPL](#running-scripts--repl)). For a plain **shell** use
+`:2ToggleTerm`, and send shell lines straight into it with:
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -286,10 +392,10 @@ Python REPL) use `:ToggleTerm`, or send snippets straight into a running shell w
 | `<leader>tl` | n | Send current line to shell terminal #2 |
 
 **Example workflow:**
-1. `:2ToggleTerm` → open shell terminal #2, start `python3`
-2. Navigate to code
-3. Select lines with `V`
-4. `<leader>ts` → code appears in the Python REPL
+1. `:2ToggleTerm` → open shell terminal #2 (e.g. ssh into a target)
+2. Navigate to your notes / script
+3. Select command lines with `V`
+4. `<leader>ts` → the commands run in that shell, line by line
 
 ### Inside the AI Dashboard (web)
 
@@ -406,10 +512,30 @@ Files open as **buffers** (like browser tabs). One visible at a time per window.
 
 ## Harpoon (Quick File Switching)
 
-Mark up to 4 files for instant switching. Persists across sessions.
+Harpoon pins the few files you are working on right now (say `app.py`, `utils.py` and
+`run_e2e.sh`) to numbered slots, and `<leader>1` ... `<leader>4` jump straight to them from
+anywhere. It is quicker than the buffer list (`<leader>fb`) or finding files (`<leader>ff`) because
+the slots do not move: slot 2 stays `utils.py` until you change it.
 
 | Key | Action |
 |-----|--------|
+| `<leader>ha` | Pin the current file: it gets the first free slot, and a message tells you which |
+| `<leader>1` ... `<leader>4` | Jump to the file in slot 1 ... 4 |
+| `<leader>hh` | Open the Harpoon menu: the list, one file per line |
+
+**The menu is an editable buffer.** Each line is a slot: move lines to reorder the slots (`dd`,
+then `p`), delete a line to unpin a file, `<CR>` opens the file under the cursor. Closing the menu
+(`q` or `Esc`) keeps your edits; `u` before closing undoes a mistake.
+
+**One list per project, kept across sessions.** Every working directory (`:pwd`, usually the
+project root) has its own list, stored in `~/.local/share/nvim/harpoon/`. Pins and menu edits are
+written there at once, so they survive even when the session is killed; start Neovim in the
+project again and your pins are still there.
+
+**Workflow:** start a task, pin the 2-4 files it touches (`<leader>ha` in each), then move between
+them with `<leader>1-4` instead of searching.
+
+-----|--------|
 | `<leader>ha` | Add current file to harpoon |
 | `<leader>hh` | Open harpoon menu |
 | `<leader>1` | Jump to harpoon file 1 |
@@ -470,16 +596,20 @@ Trouble gives you a project-wide panel for all issues.
 
 ## Debugging (DAP)
 
-Grey Knight wires two debug backends through nvim-dap: **debugpy** for
-Python and **CodeLLDB** (LLDB) for C/C++, whose adapter binary Mason ensures.
-Set breakpoints first, then start the session from the buffer you're
-debugging, and drive it with the shared controls below.
+Grey Knight debugs **Python** (debugpy) and **bash** (bashdb, from Mason's bash-debug-adapter)
+through nvim-dap, plus C/C++ with **CodeLLDB**, whose adapter binary Mason ensures. Set breakpoints,
+then press `F5`. The program gets a real terminal (the **console** pane of the DAP UI), so `input()`
+and `read` work while debugging: type the answer there. Python uses the same interpreter as `F6`
+(the project's virtualenv); programs run in Neovim's current directory. While a session is stopped,
+variable values appear next to the code.
 
 ### Starting a session
 
 | Key / Command | Action |
 |---------------|--------|
-| `<leader>dl` | Launch: debug the current Python file (debugpy) |
+| `F5` | Debug the current file (Python or bash), or continue a stopped session. With a `.vscode/launch.json` in the project, pick one of its configurations |
+| `<leader>dl` / `<leader>dL` | Debug the current file / with arguments (prompt) |
+| `<leader>dt` | Debug the pytest test at the cursor |
 | `<leader>da` | Attach: connect to a script started with `python -m debugpy.listen` (port prompt) |
 
 C/C++: the CodeLLDB binary itself is ensured via Mason, but its command
@@ -492,13 +622,20 @@ unavailable from this network for now.
 | Key | Action |
 |-----|--------|
 | `F5` | Continue |
-| `F10` | Step over |
-| `F11` | Step into |
-| `F12` | Step out |
-| `<leader>db` | Toggle breakpoint at the cursor line |
+| `Shift+F5` / `<leader>dq` | Stop |
+| `<leader>dR` | Restart |
+| `F10` / `F11` / `F12` | Step over / into / out |
+| `<leader>dc` | Run to the cursor |
+| `F9` / `<leader>db` | Toggle breakpoint at the cursor line |
 | `<leader>dB` | Conditional breakpoint |
+| `<leader>dp` | Log point: prints a message (with `{expressions}`) instead of stopping |
+| `<leader>de` | Python: stop on every raised exception, also caught ones (toggle; default: uncaught only) |
+| `<leader>dh` | Value of the expression under the cursor |
 | `<leader>dr` | REPL — evaluate expressions in the stopped frame |
-| `<leader>du` | Toggle DAP UI (variables, stack, watches) |
+| `<leader>du` | Toggle DAP UI (variables, stack, watches, console) |
+
+> `Shift+F5` needs a terminal that sends it (not all do over SSH or in the browser); `<leader>dq`
+> always works.
 
 ---
 
@@ -595,6 +732,30 @@ Neovim doesn't have native multi-cursor, but:
 - `u` — undo (persists across sessions via undofile)
 - `:earlier 5m` — go back 5 minutes in edit history
 - `:later 5m` — go forward
+
+---
+
+## When Something Goes Wrong
+
+| What happened | Where to look |
+|---------------|---------------|
+| Your program failed | The failing line is marked in the code; `]q` / `[q` walk the traceback, `<CR>` on an error line in the output jumps there, `<leader>rf` sends it to Qwen ([When it fails](#when-it-fails)) |
+| Errors and warnings of the project | `<leader>xx` (Trouble): LSP diagnostics and the marks of your runs; `<leader>xq`: the quickfix list of the last failed run |
+| A notification flashed by | `<leader>un`: the notification history of this session |
+| A key or command raised a Lua error | `<leader>um`: `:messages` |
+| Something went wrong in an earlier session | `<leader>ue`: the error log `~/.local/state/nvim/greyknight.log` |
+| A plugin, language server or tool misbehaves | `:checkhealth` (or `:checkhealth overseer`, `dap`, `vim.lsp`), `:Lazy` (plugins), `:Mason` (servers, debuggers), `:LspInfo`, `:LspLog` |
+| The debugger | `:DapShowLog` |
+| Qwen Code | its window; debug logs in `~/.qwen/debug/` |
+
+**The error log** keeps every warning and error notification of every session (with time, source
+and a line per session start) and, when Neovim exits, the Lua errors from `:messages`. It is plain
+text, trimmed to the last 2000 lines when it grows past 512 KB, so it is also the file to read (or
+send) when something broke and you did not see why.
+
+**Tests:** `tests/run.sh` runs the whole test suite headless (about ten seconds; the dev suite
+starts real python, bash and debugger processes) and exits with status 1 when anything fails. Run
+it after changing the config.
 
 ---
 
