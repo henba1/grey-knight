@@ -48,7 +48,8 @@ if lang.lua then
   formatters["lua"] = { "stylua" }
 end
 
--- shellcheck: findings as diagnostics on bash buffers (the binary is optional — absent means silent skip)
+-- shellcheck: bash-language-server runs shellcheck itself and reports its findings, so this only
+-- fills in where bashls is not attached (the binary is optional — absent means silent skip)
 if lang.bash and vim.fn.executable("shellcheck") == 1 then
   local ns = vim.api.nvim_create_namespace('shellcheck')
   local severity = {
@@ -58,7 +59,11 @@ if lang.bash and vim.fn.executable("shellcheck") == 1 then
     style   = vim.diagnostic.severity.HINT,
   }
   local function check(buf)
-    if vim.api.nvim_buf_get_option(buf, "buftype") ~= "" then return end
+    if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then return end
+    if vim.bo[buf].filetype ~= "sh" and vim.bo[buf].filetype ~= "bash" then return end
+    if #vim.lsp.get_clients({ bufnr = buf, name = "bashls" }) > 0 then
+      return vim.diagnostic.reset(ns, buf) -- bashls has the same findings
+    end
     local tmp = vim.fn.tempname()
     vim.fn.writefile(vim.api.nvim_buf_get_lines(buf, 0, -1, true), tmp)
     local report = vim.fn.systemlist('shellcheck -f json ' .. tmp)
@@ -69,11 +74,14 @@ if lang.bash and vim.fn.executable("shellcheck") == 1 then
       for _, item in ipairs(found) do
         if item.code then
           issues[#issues + 1] = {
-            lnum = item.line or 1,
-            col  = 0,
-            message = item.message or item.code,
-            code    = item.code,
-            source  = "shellcheck",
+            -- shellcheck counts lines and columns from 1, diagnostics from 0
+            lnum     = (item.line or 1) - 1,
+            col      = math.max((item.column or 1) - 1, 0),
+            end_lnum = item.endLine and item.endLine - 1 or nil,
+            end_col  = item.endColumn and item.endColumn - 1 or nil,
+            message  = item.message or item.code,
+            code     = item.code,
+            source   = "shellcheck",
             severity = severity[item.level],
           }
         end
@@ -81,8 +89,8 @@ if lang.bash and vim.fn.executable("shellcheck") == 1 then
     end
     vim.diagnostic.set(ns, buf, issues)
   end
-  vim.api.nvim_create_autocmd({ "FileType", "BufReadPost", "BufWritePost" }, {
-    pattern = { "sh", "bash" },
+  -- FileType/BufWritePost: (re)check; LspAttach: bashls took over, drop ours
+  vim.api.nvim_create_autocmd({ "FileType", "BufWritePost", "LspAttach" }, {
     callback = function(ev) check(ev.buf) end,
   })
 end
@@ -133,7 +141,19 @@ return {
 
       local lspconfig = require("lspconfig")
       for server, settings in pairs(lsp_servers) do
-        lspconfig[server].setup({ capabilities = capabilities, settings = settings })
+        local opts = { capabilities = capabilities, settings = settings }
+        if server == "pyright" then
+          -- Resolve imports against the project's virtualenv ($VIRTUAL_ENV, else the nearest .venv/ or venv/);
+          -- pyright alone only sees the python on the PATH
+          opts.on_new_config = function(config, root_dir)
+            local venv = require("devsuite.util").find_venv(root_dir)
+            if venv then
+              config.settings = config.settings or {}
+              config.settings.python = vim.tbl_extend("force", config.settings.python or {}, { pythonPath = venv .. "/bin/python" })
+            end
+          end
+        end
+        lspconfig[server].setup(opts)
       end
 
       -- LSP keymaps
