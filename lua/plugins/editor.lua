@@ -15,15 +15,35 @@ return {
     },
   },
 
-  -- Harpoon v2 — fast file marks
+  -- Harpoon v2 — pin the files of your current task to slots 1-4 (one list per project, kept)
   {
     "ThePrimeagen/harpoon",
     branch = "harpoon2",
     dependencies = { "nvim-lua/plenary.nvim" },
     config = function()
       local harpoon = require("harpoon")
-      harpoon:setup()
-      vim.keymap.set("n", "<leader>ha", function() harpoon:list():add() end,            { desc = "Harpoon: Add file" })
+      harpoon:setup({
+        settings = {
+          save_on_toggle = true,   -- closing the menu with q / Esc keeps your edits (default: drops them)
+          sync_on_ui_close = true, -- and writes them to disk right away, not only when Neovim exits
+        },
+      })
+      -- Pin the current file, save the list at once, and say which slot it got
+      vim.keymap.set("n", "<leader>ha", function()
+        if vim.bo.buftype ~= "" or vim.api.nvim_buf_get_name(0) == "" then
+          return vim.notify("Harpoon: only files can be pinned", vim.log.levels.WARN, { title = "Harpoon" })
+        end
+        local list = harpoon:list()
+        list:add()
+        pcall(harpoon.sync, harpoon)
+        local value = list.config.create_list_item(list.config).value
+        for i = 1, list:length() do
+          if list.items[i] and list.items[i].value == value then
+            local key = i <= 4 and ("<leader>" .. i) or "the menu (<leader>hh)"
+            return vim.notify(("%s is slot %d: %s"):format(value, i, key), vim.log.levels.INFO, { title = "Harpoon" })
+          end
+        end
+      end, { desc = "Harpoon: Pin file" })
       vim.keymap.set("n", "<leader>hh", function() harpoon.ui:toggle_quick_menu(harpoon:list()) end, { desc = "Harpoon: Menu" })
       vim.keymap.set("n", "<leader>1",  function() harpoon:list():select(1) end,        { desc = "Harpoon 1" })
       vim.keymap.set("n", "<leader>2",  function() harpoon:list():select(2) end,        { desc = "Harpoon 2" })
