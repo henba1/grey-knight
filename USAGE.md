@@ -31,6 +31,7 @@
 22. [Markdown Rendering](#markdown-rendering)
 23. [Tips & Tricks](#tips--tricks)
 24. [When Something Goes Wrong](#when-something-goes-wrong)
+25. [Mode Reference](#mode-reference)
 
 ---
 
@@ -238,9 +239,10 @@ Sources (in priority order): LSP → Snippets → Buffer words → File paths
 
 Grey Knight drives the **local Qwen Code** CLI as an agentic coding agent, running it in a
 persistent terminal window inside the editor. It is fully local — Qwen3.8-27B on the rig via
-llama.cpp, zero cloud. For coding, start the launcher `qwen38official-q6-text-think-mtp-128k` on
-the AI Dashboard's Models page (official weights without a chat persona, thinking on, 128k
-context; see README.md → LLM Configuration).
+llama.cpp, zero cloud. For coding, start a coding launcher on the AI Dashboard's Models page:
+`qwen38official-q6-text-think-mtp-128k` (official weights) or `qwen38alt-q6-text-think-mtp-128k`
+(the uncensored "alternative" build), both without a chat persona, thinking on, 128k context.
+`<leader>am` shows which model the rig is running (README.md → LLM Configuration).
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -252,6 +254,7 @@ context; see README.md → LLM Configuration).
 | `<leader>t2` | n | Agent #2 (its own session) |
 | `<leader>t3` | n | Agent #3 (its own session) |
 | `<leader>ac` | n | Fresh conversation in the main agent (`/clear`) |
+| `<leader>am` | n | Which model the rig runs right now: name and context size (several launchers share the port) |
 | `<leader>aa` | n | Ask about the current file (prompts for the question) |
 | `<leader>aa` | v | Ask about the selected code (prompts for the question) |
 | `<leader>ae` | v | Let the agent change the selected code (prompts for the instruction) |
@@ -424,7 +427,7 @@ Clipboard: `"+y` lands in the computer's clipboard (OSC 52, as over SSH); paste 
 |-----|--------|
 | `<leader>gg` | Open Lazygit (full git TUI) |
 | `<leader>gl` | Git log |
-| `<leader>gd` | Diffview (side-by-side diffs) |
+| `<leader>gv` | Diffview (side-by-side diffs) |
 | `<leader>gh` | File history (all commits for current file) |
 
 ### Gitsigns (Gutter)
@@ -701,6 +704,9 @@ Spell check is enabled automatically for `.md` files.
 ---
 
 ## Tips & Tricks
+
+### Reading These Docs in Neovim
+`<leader>gd` picks README, CHEATSHEET or this guide and opens it read-only in a split; `q` closes it.
 
 ### Centered Scrolling
 `Ctrl+d` / `Ctrl+u` keeps the cursor centered on screen. Same for search with `n`/`N`.

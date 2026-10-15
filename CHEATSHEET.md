@@ -12,6 +12,7 @@
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1/t2/t3` | n | Agents #1/#2/#3 (each its own session) |
 | `<leader>ac` | n | New AI session (`/clear`) |
+| `<leader>am` | n | Which model the rig runs right now (name, context) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
@@ -115,7 +116,7 @@ explorer pane once focused.
 |-----|--------|
 | `<leader>gg` | Lazygit |
 | `<leader>gl` | Git log |
-| `<leader>gd` | Diffview |
+| `<leader>gv` | Diffview (side-by-side diffs) |
 | `<leader>gh` | File history |
 
 ## Terminal — `<leader>t`
@@ -224,13 +225,14 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 ```
 ~/.config/nvim/
-├── init.lua                  ← entry point (4 lines)
+├── init.lua                  ← entry point
 ├── CHEATSHEET.md             ← this file
 ├── lua/config/
 │   ├── options.lua           ← vim opts + language toggles
 │   ├── lazy.lua              ← lazy.nvim bootstrap
 │   ├── keymaps.lua           ← global keymaps
-│   └── autocmds.lua          ← autocommands
+│   ├── autocmds.lua          ← autocommands
+│   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
 │   ├── tasks.lua             ← runs as overseer tasks: output window, args, watch, fix with Qwen
@@ -241,16 +243,21 @@ DAP console pane; variable values show next to the code while stopped. Full work
 ├── lua/integrations/
 │   ├── qwen.lua              ← Qwen Code agent terminals
 │   └── aidash.lua            ← AI Dashboard bridge
-└── lua/plugins/
-    ├── ai.lua                ← toggleterm (agents, REPLs)
-    ├── colorscheme.lua       ← Cyberdream
-    ├── completion.lua         ← blink.cmp
-    ├── devsuite.lua          ← overseer.nvim (task engine)
-    ├── editor.lua            ← flash, harpoon, oil, mini, trouble, etc
-    ├── hacker.lua            ← hex, toggleterm, DAP
-    ├── lsp.lua               ← LSP, Mason, Treesitter, conform
-    ├── session.lua           ← persisted.nvim
-    └── snacks.lua            ← picker, explorer, dashboard, notify
+├── lua/plugins/
+│   ├── ai.lua                ← toggleterm (agents, REPLs)
+│   ├── colorscheme.lua       ← Cyberdream
+│   ├── completion.lua        ← blink.cmp
+│   ├── devsuite.lua          ← overseer.nvim (task engine)
+│   ├── editor.lua            ← flash, harpoon, oil, mini, trouble, etc
+│   ├── hacker.lua            ← hex, DAP
+│   ├── lsp.lua               ← LSP, Mason, Treesitter, conform
+│   ├── session.lua           ← persisted.nvim
+│   └── snacks.lua            ← picker, explorer, dashboard, notify
+└── tests/                    ← tests/run.sh runs them all
+    ├── run.sh
+    ├── harness.lua
+    ├── smoke_test.lua
+    └── devsuite_test.lua
 ```
 
 ## Docs

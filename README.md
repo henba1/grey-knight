@@ -2,7 +2,7 @@
 
 A curated, agentic Neovim IDE built for security researchers and developers who run local LLMs.
 
-**39 plugins • Cyberdream theme • AI agent (Qwen Code) • Bash + Python dev suite • Zero cloud dependencies**
+**38 plugins • Cyberdream theme • AI agent (Qwen Code) • Bash + Python dev suite • Zero cloud dependencies**
 
 ![Stack](https://img.shields.io/badge/Neovim-0.12%2B-57A143?logo=neovim)
 ![Theme](https://img.shields.io/badge/Theme-Cyberdream-ff00ff)
@@ -96,10 +96,16 @@ The AI agent is **Qwen Code**, configured like any other Qwen Code install in
 The default on this rig is `http://192.168.2.173:8000/v1` (llama.cpp). Works with any
 OpenAI-compatible API: llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, etc.
 
-For coding, start the launcher **`qwen38official-q6-text-think-mtp-128k`** on the AI Dashboard's
-Models page: the official Qwen3.8-27B weights (no chat persona in the template), thinking on
-(effort medium), MTP, 128k context. The chat launchers prepend a chat persona and have less
-context. The provider `qwen38-official` in `~/.qwen/settings.json` matches the coding launcher.
+For coding, start one of the two coding launchers on the AI Dashboard's Models page. Both have no
+chat persona in the template, thinking on (effort medium), MTP and 128k context, and both passed the
+same Qwen Code checks (tool calls, a bash task, a pytest bug fix; infra-scripts `tools/llm-eval`):
+
+- **`qwen38official-q6-text-think-mtp-128k`**: the official Qwen3.8-27B weights
+- **`qwen38alt-q6-text-think-mtp-128k`**: the "alternative" uncensored Qwen3.8-27B build, about 10 % faster
+
+The chat launchers prepend a chat persona and have less context. `~/.qwen/settings.json` has a
+provider for each coding launcher (`qwen38-official`, `qwen38-alternative`); both point to the rig, so
+whichever launcher runs answers - `<leader>am` shows which model that is.
 
 ## Structure
 
@@ -109,14 +115,15 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── options.lua         vim opts, language toggles
 │   ├── lazy.lua            lazy.nvim bootstrap
 │   ├── keymaps.lua         all global keymaps + which-key groups
-│   └── autocmds.lua        yank highlight, cursor restore
+│   ├── autocmds.lua        yank highlight, cursor restore
+│   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
 │   ├── colorscheme.lua     Cyberdream (neon cyberpunk)
 │   ├── completion.lua      blink.cmp v1 (Rust-powered)
 │   ├── devsuite.lua        overseer.nvim (task engine of the dev suite)
 │   ├── editor.lua          flash, harpoon, oil, surround, trouble, etc.
-│   ├── hacker.lua          hex editor, toggleterm, DAP
+│   ├── hacker.lua          hex editor, DAP (debugpy, bashdb, dap-ui, inline values)
 │   ├── lsp.lua             LSP, Mason, Treesitter, conform
 │   ├── session.lua         persisted.nvim
 │   └── snacks.lua          picker, explorer, dashboard, notify
@@ -134,8 +141,12 @@ init.lua                    entry point (+ the optional dashboard bridge)
 ├── after/ftplugin/
 │   ├── python.lua          4-space indent, col 88
 │   └── markdown.lua        wrap + spellcheck
-├── CHEATSHEET.md           keybinding reference
-└── tests/smoke_test.lua    automated test suite
+├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
+└── tests/
+    ├── run.sh              runs all suites; exit status 1 on failure
+    ├── harness.lua         test(), helpers, report()
+    ├── smoke_test.lua      config, plugins, parsers, tools, docs in step with the keys
+    └── devsuite_test.lua   run / tasks / errors / debug / REPL / Qwen / completion, end to end
 ```
 
 ## Language Support

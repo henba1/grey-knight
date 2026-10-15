@@ -118,6 +118,7 @@ cp "$SCRIPT_DIR/init.lua" "$NVIM_CONFIG/"
 cp -r "$SCRIPT_DIR/lua" "$NVIM_CONFIG/"
 cp -r "$SCRIPT_DIR/after" "$NVIM_CONFIG/"
 cp "$SCRIPT_DIR/CHEATSHEET.md" "$NVIM_CONFIG/"
+cp "$SCRIPT_DIR/USAGE.md" "$NVIM_CONFIG/" 2>/dev/null || true
 cp "$SCRIPT_DIR/README.md" "$NVIM_CONFIG/" 2>/dev/null || true
 
 ok "Config deployed to $NVIM_CONFIG"
@@ -182,7 +183,7 @@ echo "  Launch:     nvim"
 echo "  Cheatsheet: nvim ~/.config/nvim/CHEATSHEET.md"
 echo "  AI agent:   Space+tt (Qwen Code; requires the local LLM running)"
 echo "  Run/debug:  F6 run file, F5 debug, Space+rp project scripts, Space+rL task list"
-echo "  Run tests:  nvim --headless -c 'luafile tests/smoke_test.lua' -c 'qa!'"
+echo "  Run tests:  $SCRIPT_DIR/tests/run.sh"
 echo ""
 echo "  For full keybinding reference, see CHEATSHEET.md"
 echo ""
