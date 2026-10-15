@@ -243,6 +243,7 @@ end)
 
 for _, flavor in ipairs({ "ipython", "python" }) do
 test("REPL (" .. flavor .. "): block with blank lines, then input()", function()
+  if flavor == "ipython" and vim.fn.executable("ipython3") == 0 then H.skip("ipython3 not installed - the REPL uses python3 then") end
   local repl = require("devsuite.repl")
   local command = repl.command
   local exe = flavor == "ipython" and "ipython3 --no-autoindent --no-confirm-exit --no-banner" or "python3"
@@ -511,7 +512,7 @@ test("Dev suite: interpreters from #! lines and filetypes", function()
 end)
 
 test("Bash: shellcheck findings appear once, on the right line (bashls or fallback)", function()
-  if vim.fn.executable("shellcheck") == 0 then return end
+  if vim.fn.executable("shellcheck") == 0 then H.skip("shellcheck not installed") end
   vim.cmd.edit(H.file("check.sh", { "#!/bin/bash", "echo $1" }))
   assert(wait(20000, function()
     return #vim.lsp.get_clients({ bufnr = 0, name = "bashls" }) > 0 and #vim.diagnostic.get(0) > 0

@@ -1,6 +1,7 @@
 -- Grey Knight test harness: test(), helpers for buffers / terminals / tasks, report().
 -- report() exits Neovim with status 1 when a test failed, so tests/run.sh (and scripts) can rely on it.
-local H = { results = {}, passed = 0, failed = 0 }
+local H = { results = {}, passed = 0, failed = 0, skipped = 0 }
+local SKIP = {} -- metatable of the error H.skip() raises
 
 -- Warnings and errors that the tests provoke on purpose do not belong in the real error log
 pcall(function() require("config.errorlog").path = vim.fn.tempname() .. "-greyknight-test.log" end)
@@ -12,11 +13,18 @@ function H.test(name, fn)
   if ok then
     H.passed = H.passed + 1
     H.results[#H.results + 1] = "✅ " .. name
+  elseif getmetatable(err) == SKIP then
+    H.skipped = H.skipped + 1
+    H.results[#H.results + 1] = "⏭  " .. name .. " (skipped: " .. err.reason .. ")"
   else
     H.failed = H.failed + 1
     H.results[#H.results + 1] = "❌ " .. name .. " → " .. tostring(err)
   end
 end
+
+--- Skip the running test: this machine lacks an optional tool. Listed as skipped - not counted as passed,
+--- and the run does not fail. A missing required tool (e.g. a debug adapter) should fail instead.
+function H.skip(reason) error(setmetatable({ reason = reason }, SKIP)) end
 
 --- Wait up to `ms` for fn() to be truthy, processing events meanwhile.
 function H.wait(ms, fn) return vim.wait(ms, function() return fn() and true or false end, 50) end
@@ -53,7 +61,8 @@ function H.report(title)
   local out = { "", "═══════════════════════════════════════════", "  GREY KNIGHT — " .. title, "═══════════════════════════════════════════" }
   for _, r in ipairs(H.results) do out[#out + 1] = "  " .. r end
   out[#out + 1] = "───────────────────────────────────────────"
-  out[#out + 1] = ("  %d passed, %d failed, %d total"):format(H.passed, H.failed, H.passed + H.failed)
+  local skipped = H.skipped > 0 and (", %d skipped"):format(H.skipped) or ""
+  out[#out + 1] = ("  %d passed, %d failed%s, %d total"):format(H.passed, H.failed, skipped, H.passed + H.failed + H.skipped)
   out[#out + 1] = "═══════════════════════════════════════════"
   io.stdout:write(table.concat(out, "\n") .. "\n")
   io.stdout:flush()
