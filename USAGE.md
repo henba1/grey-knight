@@ -104,9 +104,10 @@ has focus.
 
 | Key | Action |
 |-----|--------|
-| `h` / `<BS>` | Up one directory (parent) |
+| `<BS>` / `-` | cd .. — one folder up: the tree **and** Neovim's working directory |
+| `h` | Close the folder (the cursor goes to its parent) |
 | `l` / `Enter` | Open file (or toggle folder expand) |
-| `.` | Jump to the current file's directory |
+| `.` | cd here — the folder under the cursor (on a file: its folder) becomes Neovim's working directory |
 | `H` / `I` | Toggle hidden / ignored files |
 | `<leader>/` | Grep inside the tree |
 | `<C-t>` | Drop a terminal at the current dir |
@@ -131,10 +132,10 @@ has focus.
 | `u` | Refresh the tree |
 | `]g` / `[g` | Next / prev git-changed file |
 
-**"Change the root"**: the explorer has no dedicated chroot key. To work a different
-tree root, `cd` nvim there first (`:cd /path`), then open with `<leader>e` — it anchors
-to nvim's cwd. Or navigate the existing tree with `h`/`l`. `Snacks.explorer()` also
-accepts `{ cwd = "/path" }` if you want a one-off rooted view.
+**Changing the root**: `.` makes the folder under the cursor the working directory, `<BS>` or `-`
+goes one folder up (`cd ..`). Both move the tree **and** Neovim's working directory, so pickers,
+terminals and runs start there too; a message shows the new directory. (Snacks' own `.` / `<BS>`
+moved only the tree.) `Snacks.explorer({ cwd = "/path" })` still opens a one-off rooted view.
 
 > Delete is **trash-first**: it shells to `trash`/`gio trash`/`kioclient` when present,
 > so `d` is recoverable on most desktops. Without a trash backend it falls back to a
@@ -394,6 +395,9 @@ The `<leader>t*` keys above launch **Qwen Code** agents. For a Python or bash **
 | `<leader>ts` | v | Send selected lines to shell terminal #2 |
 | `<leader>tl` | n | Send current line to shell terminal #2 |
 
+In a terminal, `Ctrl+L` belongs to the program: it clears a shell. `Ctrl+h` / `Ctrl+j` / `Ctrl+k` jump to
+the next window; for the right one, leave terminal mode with `Esc Esc`, then `Ctrl+l`.
+
 **Example workflow:**
 1. `:2ToggleTerm` → open shell terminal #2 (e.g. ssh into a target)
 2. Navigate to your notes / script
@@ -605,6 +609,10 @@ then press `F5`. The program gets a real terminal (the **console** pane of the D
 and `read` work while debugging: type the answer there. Python uses the same interpreter as `F6`
 (the project's virtualenv); programs run in Neovim's current directory. While a session is stopped,
 variable values appear next to the code.
+
+Every session gets a fresh console: a program terminal left over from an earlier session (bashdb's
+sometimes outlives it) is stopped first. A program whose session still runs keeps its terminal, and
+the new one opens in a split.
 
 ### Starting a session
 

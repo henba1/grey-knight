@@ -63,9 +63,10 @@ explorer pane once focused.
 
 | Key | Action |
 |-----|--------|
-| `h`/`<BS>` | Up one directory |
+| `<BS>`/`-` | cd .. — one folder up (tree **and** working directory) |
+| `h` | Close the folder (cursor to its parent) |
 | `l`/`Enter` | Open file / toggle folder |
-| `.` | Jump to current file's dir |
+| `.` | cd here — the folder under the cursor becomes the working directory |
 | `H`/`I` | Toggle hidden / ignored |
 | `a` | New file or dir (trailing `/` = dir) |
 | `r` | Rename |
@@ -77,7 +78,7 @@ explorer pane once focused.
 | `u` | Refresh tree |
 | `]g`/`[g` | Next / prev git-changed |
 
-> Changing the root: `:cd /path` then `<leader>e` (it anchors to nvim's cwd).
+> The tree shows Neovim's working directory: `.`, `<BS>` and `-` change both (a message shows the new one).
 
 ## Find (Snacks Picker) — `<leader>f`
 
@@ -217,7 +218,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Action |
 |-----|--------|
-| `<C-h/j/k/l>` | Navigate windows (also from terminal) |
+| `<C-h/j/k/l>` | Navigate windows (from a terminal only `<C-h/j/k>`: there `<C-l>` clears the shell) |
 | `<C-Up/Down/Left/Right>` | Resize windows |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
 
@@ -232,6 +233,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── lazy.lua              ← lazy.nvim bootstrap
 │   ├── keymaps.lua           ← global keymaps
 │   ├── autocmds.lua          ← autocommands
+│   ├── explorer.lua          ← explorer keys: cd here (.), cd .. (<BS>, -)
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest

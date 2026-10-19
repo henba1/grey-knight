@@ -116,6 +116,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── lazy.lua            lazy.nvim bootstrap
 │   ├── keymaps.lua         all global keymaps + which-key groups
 │   ├── autocmds.lua        yank highlight, cursor restore
+│   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -)
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
