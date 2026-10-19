@@ -3,6 +3,12 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 local lang = vim.g.lang or {}
 
+-- Behind a TLS-inspecting proxy (a work laptop) pip trusts only its own CA bundle, so Mason's pip installs
+-- (debugpy) failed; $SSL_CERT_FILE names the bundle that has the proxy's CA
+if (vim.env.PIP_CERT or "") == "" and (vim.env.SSL_CERT_FILE or "") ~= "" then
+  vim.env.PIP_CERT = vim.env.SSL_CERT_FILE
+end
+
 -- Collect per-language config
 local ts_langs    = { "lua", "vim", "vimdoc", "query", "markdown", "markdown_inline", "regex", "diff" }
 local lsp_servers = {}
