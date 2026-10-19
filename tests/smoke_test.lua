@@ -355,7 +355,7 @@ test("Debug: every adapter for Mason is one mason-nvim-dap knows", function()
   end
 end)
 
--- T16: IntelliJ's settings (2026-10-19): GreyNight works on an IntelliJ project the way IntelliJ does - the JDK
+-- T16: IntelliJ's settings (2026-10-19): GreyKnight works on an IntelliJ project the way IntelliJ does - the JDK
 -- and Maven IntelliJ uses (no drift), its Actions on Save and its Reformat Code - and finds its Remote JVM Debug
 -- configurations. A complete IntelliJ world in a temp dir ($GREYKNIGHT_INTELLIJ_CONFIG points at its settings).
 local function intellij_world()
@@ -460,7 +460,7 @@ test("IntelliJ: saving and <leader>fm do what IntelliJ's Actions on Save and Ref
     assert(save.format and save.organize_imports and not save.prettier and not save.changed_lines, vim.inspect(save))
     save = at(w.b .. "/src/app.ts")
     assert(not save.format and save.organize_imports, vim.inspect(save))
-    assert(at(w.base .. "/plain/x.lua") == nil, "outside IntelliJ projects GreyNight's own behavior")
+    assert(at(w.base .. "/plain/x.lua") == nil, "outside IntelliJ projects GreyKnight's own behavior")
     save = at(w.base .. "/plain/X.java")
     assert(save and not save.format, "Java gets IntelliJ's default everywhere: nothing on save")
     -- conform's format_on_save follows it

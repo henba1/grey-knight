@@ -251,7 +251,7 @@ llama.cpp, zero cloud. For coding, start a coding launcher on the AI Dashboard's
 `<leader>am` shows which model the rig is running (README.md → LLM Configuration).
 
 **Qwen Code or OpenCode.** The agent is Qwen Code by default. The environment variable
-`GREYKNIGHT_AGENT=opencode` switches to OpenCode (`qwen` pins Qwen Code); unset, GreyNight takes
+`GREYKNIGHT_AGENT=opencode` switches to OpenCode (`qwen` pins Qwen Code); unset, GreyKnight takes
 Qwen Code where it is installed, else OpenCode, so kali and the pi keep Qwen Code without any setting.
 The keys, `@path` references, ask/edit and `<leader>rf` work the same with both. A new OpenCode agent
 gets its first prompt pasted once it has started; `<leader>ac` sends `/new` there, and `<leader>am`
@@ -419,7 +419,7 @@ the next window; for the right one, leave terminal mode with `Esc Esc`, then `Ct
 
 ### Inside the AI Dashboard (web)
 
-When GreyNight runs in a workspace of the AI Dashboard's **Dev Environment** (the browser page
+When GreyKnight runs in a workspace of the AI Dashboard's **Dev Environment** (the browser page
 shows a tmux session on the Pi), an optional bridge (`lua/integrations/aidash.lua`) lets the
 editor use the browser for what a terminal can't do. It only loads there — the session sets
 `AIDASH_URL`/`AIDASH_TOKEN`; everywhere else nothing changes.
@@ -806,7 +806,7 @@ it after changing the config. On Windows: `tests\run.ps1` - each suite in a mini
 
 ## Java and Angular (IntelliJ Projects)
 
-GreyNight works on a project you also open in IntelliJ IDEA the way IntelliJ does: it reads IntelliJ's settings
+GreyKnight works on a project you also open in IntelliJ IDEA the way IntelliJ does: it reads IntelliJ's settings
 (`lua/integrations/intellij.lua`, never writing them), so nothing drifts apart. The workflow for the G3
 repositories, step by step: [G3-DEVELOPMENT.md](G3-DEVELOPMENT.md).
 
@@ -837,7 +837,7 @@ ESLint runs with the project's config. **AngularJS** (the `*-html5/client` folde
 ESLint with the client's config, templates as plain HTML - no language server knows AngularJS templates.
 Their servers install themselves with the first file that needs them.
 
-Outside IntelliJ projects (no `.idea`) GreyNight keeps its own behavior: formatting on save and `<leader>fm`
+Outside IntelliJ projects (no `.idea`) GreyKnight keeps its own behavior: formatting on save and `<leader>fm`
 with conform's formatters.
 
 ---

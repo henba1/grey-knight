@@ -1,7 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  IntelliJ IDEA's settings, read (never written): its JDKs,  ║
 -- ║  a project's JDK and Maven, Actions on Save, Prettier and   ║
--- ║  Remote JVM Debug configurations - GreyNight works on an    ║
+-- ║  Remote JVM Debug configurations - GreyKnight works on an   ║
 -- ║  IntelliJ project the way IntelliJ does (no JDK drift)      ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local M = {}
@@ -273,7 +273,7 @@ local function project_of(buf)
   return M.project(M.project_root(file)), vim.fs.normalize(file)
 end
 
---- What saving does to a buffer, like IntelliJ's Actions on Save: nil outside IntelliJ projects (GreyNight's own
+--- What saving does to a buffer, like IntelliJ's Actions on Save: nil outside IntelliJ projects (GreyKnight's own
 --- behavior - except Java, which gets IntelliJ's defaults everywhere: nothing), else
 --- { format, changed_lines, prettier, organize_imports }.
 function M.save_actions(buf)
@@ -294,7 +294,7 @@ function M.save_actions(buf)
   }
 end
 
---- How <leader>fm formats, like IntelliJ's Reformat Code: nil outside IntelliJ projects (GreyNight's own way),
+--- How <leader>fm formats, like IntelliJ's Reformat Code: nil outside IntelliJ projects (GreyKnight's own way),
 --- else conform options - the project's prettier where IntelliJ would run it, else the language server
 --- (IntelliJ's own formatter cannot run while IntelliJ is open: the server comes closest).
 function M.reformat_options(buf)

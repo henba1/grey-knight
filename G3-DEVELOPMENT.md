@@ -1,6 +1,6 @@
-# G3 Development with GreyNight
+# G3 Development with GreyKnight
 
-GreyNight for the G3 repositories: the Java backends (Maven multi-module), **ngx-his** (Angular, Nx) and the
+GreyKnight for the G3 repositories: the Java backends (Maven multi-module), **ngx-his** (Angular, Nx) and the
 `*-html5/client` folders (AngularJS in TypeScript). It works next to IntelliJ IDEA and reads IntelliJ's settings -
 never writing them - so the JDK, Maven and what saving does are the same in both editors.
 
@@ -15,7 +15,7 @@ Leader = `Space`. Open this file: `<leader>gd`, or **Config** on the start scree
 ## Before You Start
 
 1. **Open the repository in IntelliJ once.** That creates its `.idea` folder with the project's JDK and the Maven
-   settings GreyNight takes over. Start Neovim in the repository root: the folder with `.idea` is the project.
+   settings GreyKnight takes over. Start Neovim in the repository root: the folder with `.idea` is the project.
 2. **A JDK 21 or newer in IntelliJ** (File → Project Structure → SDKs). The Java language server (jdtls) runs on
    it; your project keeps compiling with its own JDK. Without one, set `JDTLS_JAVA_HOME` to a JDK 21.
 3. **ngx-his: `npm ci` once.** The Angular language server uses the project's own Angular and TypeScript from
@@ -27,7 +27,7 @@ and test runner with the first `.java` file, the Angular, ESLint, HTML and CSS s
 
 ## What Comes from IntelliJ
 
-| Setting | In IntelliJ | In GreyNight |
+| Setting | In IntelliJ | In GreyKnight |
 |---|---|---|
 | Project JDK | File → Project Structure → Project → SDK | Errors, runs and tests use this JDK (per repository: 17 or 21) |
 | JDK for jdtls | File → Project Structure → SDKs | The newest JDK 21+ there runs the language server |
@@ -125,12 +125,12 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 - **Templates** are plain HTML (HTML server: tags, attributes, closing tags). No language server knows AngularJS
   templates - no completion of `ng-*` attributes or scope variables.
 - **`<leader>fm`**: Prettier is not enabled for these projects in IntelliJ, so the language server formats them;
-  turn on Automatic Prettier there (Settings → Languages & Frameworks → JavaScript → Prettier) and GreyNight
+  turn on Automatic Prettier there (Settings → Languages & Frameworks → JavaScript → Prettier) and GreyKnight
   follows with the client's `.prettierrc.js`.
 
 ## Working Next to IntelliJ
 
-- Both can have the same repository open. GreyNight never writes `.idea`; its jdtls index lives in Neovim's data
+- Both can have the same repository open. GreyKnight never writes `.idea`; its jdtls index lives in Neovim's data
   directory.
 - Java files keep their line endings (CRLF in a Windows checkout).
 - The coding agent (`<leader>tt`, `<leader>aa` - OpenCode on the work laptop) works in the same repository.
@@ -162,4 +162,4 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 | `<leader>fm` | Format (selection: only those lines) |
 | `<leader>xx` | All problems |
 | `<leader>gg` | Lazygit |
-| `<leader>gd` | GreyNight docs, this one included |
+| `<leader>gd` | GreyKnight docs, this one included |

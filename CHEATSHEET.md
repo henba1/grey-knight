@@ -32,7 +32,7 @@
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
 
 > **Which agent:** Qwen Code by default; the environment variable `GREYKNIGHT_AGENT=opencode` switches to OpenCode.
-> Unset, GreyNight takes Qwen Code where it is installed, else OpenCode.
+> Unset, GreyKnight takes Qwen Code where it is installed, else OpenCode.
 >
 > The agent runs the local **Qwen Code** CLI in a persistent terminal. It inherits the
 > project's cwd and any `QWEN.md`/`AGENTS.md` context automatically. `aa`/`ae` send the file
@@ -298,7 +298,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Action |
 |-----|--------|
-| `<leader>gd` | Read GreyNight docs (README, CHEATSHEET, USAGE, G3-DEVELOPMENT): read-only, `q` closes |
+| `<leader>gd` | Read GreyKnight docs (README, CHEATSHEET, USAGE, G3-DEVELOPMENT): read-only, `q` closes |
 | `gd` / `Enter` | On a link in a markdown file: follow it (heading, other file, URL) |
 | `Ctrl+o` | Back to where you came from |
 | `gO` | All headings of the file (outline); `Enter` jumps |

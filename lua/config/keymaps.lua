@@ -183,7 +183,7 @@ end, { desc = "Debug: Log point" })
 map("n", "<leader>dr", function() require("dap").repl.open() end,  { desc = "Debug: REPL" })
 map("n", "<leader>du", function() require("dapui").toggle() end,   { desc = "Debug: Toggle UI" })
 
--- ── GreyNight Docs (read-only telescope picker) ─────────────
+-- ── GreyKnight Docs (read-only telescope picker) ─────────────
 map("n", "<leader>gd", function()
   local config_dir = vim.fn.stdpath("config")
   local docs = {}
@@ -199,7 +199,7 @@ map("n", "<leader>gd", function()
   end
   vim.ui.select(
     vim.tbl_map(function(d) return d.name end, docs),
-    { prompt = "GreyNight Docs:" },
+    { prompt = "GreyKnight Docs:" },
     function(choice)
       if not choice then return end
       for _, d in ipairs(docs) do
@@ -212,4 +212,4 @@ map("n", "<leader>gd", function()
       end
     end
   )
-end, { desc = "GreyNight: Read docs" })
+end, { desc = "GreyKnight: Read docs" })

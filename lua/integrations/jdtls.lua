@@ -12,7 +12,7 @@ M.PACKAGES = { "jdtls", "java-debug-adapter", "java-test" }
 -- An Eclipse formatter profile close to IntelliJ's default Java code style (formatting is approximate: IntelliJ's
 -- own formatter cannot run while IntelliJ is open)
 M.FORMAT_PROFILE = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/resources/intellij-java-format.xml"
-M.FORMAT_PROFILE_NAME = "IntelliJ IDEA default (GreyNight)"
+M.FORMAT_PROFILE_NAME = "IntelliJ IDEA default (GreyKnight)"
 
 
 local WARN = vim.log.levels.WARN
@@ -80,7 +80,7 @@ function M.maven_settings(project)
   local repo = (m.local_repository:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
   vim.fn.writefile({
     '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">',
-    "  <!-- written by GreyNight: the local repository IntelliJ uses for this project -->",
+    "  <!-- written by GreyKnight: the local repository IntelliJ uses for this project -->",
     "  <localRepository>" .. repo .. "</localRepository>",
     "</settings>",
   }, file)

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
-  GreyNight: an Eclipse formatter profile for jdtls, close to IntelliJ IDEA's default Java code style - the style
+  GreyKnight: an Eclipse formatter profile for jdtls, close to IntelliJ IDEA's default Java code style - the style
   of the G3 repositories (IntelliJ's default scheme, no project code style). Approximate by nature: IntelliJ's own
   formatter cannot run while IntelliJ is open. Made for small diffs: existing line breaks stay, nothing gets
   wrapped, comments are left alone - format a selection to touch only those lines.
 -->
 <profiles version="23">
-<profile kind="CodeFormatterProfile" name="IntelliJ IDEA default (GreyNight)" version="23">
+<profile kind="CodeFormatterProfile" name="IntelliJ IDEA default (GreyKnight)" version="23">
 <!-- indentation: 4 spaces, continuation indent 8 -->
 <setting id="org.eclipse.jdt.core.formatter.tabulation.char" value="space"/>
 <setting id="org.eclipse.jdt.core.formatter.tabulation.size" value="4"/>

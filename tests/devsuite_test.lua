@@ -118,7 +118,7 @@ test("Runner: python input() reads from the terminal (task in a pty)", function(
 end)
 
 -- 2026-10-19: tasks carried overseer's display_duration, a deprecated stub that only warned at every start
--- (GreyNight measures the duration itself). Every component a task gets must be current in overseer.
+-- (GreyKnight measures the duration itself). Every component a task gets must be current in overseer.
 test("Tasks: no deprecated overseer components", function()
   local tasks = require("devsuite.tasks")
   local task = tasks.run({ key = "test:components", name = "components", cmd = py_cmd("pass"), cwd = tmpdir(), focus = false })
@@ -769,7 +769,7 @@ test("Bash: shellcheck findings appear once, on the right line (bashls or fallba
   assert(#f == 1 and f[1].lnum == 1 and tostring(f[1].code) == "2086", vim.inspect(f))
 end)
 
-test("Errors in GreyNight itself reach the error log (task callbacks do not fail silently)", function()
+test("Errors in GreyKnight itself reach the error log (task callbacks do not fail silently)", function()
   local el, errors, tasks = require("config.errorlog"), require("devsuite.errors"), require("devsuite.tasks")
   vim.notify("a test error\nsecond line", vim.log.levels.ERROR, { title = "Test" })
   vim.notify("only info", vim.log.levels.INFO)

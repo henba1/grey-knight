@@ -83,10 +83,10 @@ nvim
 
 ### Windows
 
-GreyNight runs on Windows 11 as well, without admin rights:
+GreyKnight runs on Windows 11 as well, without admin rights:
 
 - Neovim 0.12+, ripgrep, fd, lazygit and the tree-sitter CLI as portable binaries on the `PATH`, and
-  MinGW-w64 gcc (WinLibs) for the parsers: GreyNight sets `CC=gcc` when `CC` is unset (the CLI looks
+  MinGW-w64 gcc (WinLibs) for the parsers: GreyKnight sets `CC=gcc` when `CC` is unset (the CLI looks
   for MSVC otherwise).
 - The config as a junction: `mklink /J %LOCALAPPDATA%\nvim C:\path\to\grey-knight-nvim`.
 - Python as `python` or the `py` launcher: `python3` is usually the Microsoft Store's placeholder there.

@@ -102,7 +102,7 @@ function M.upload(dir)
   M.call("upload", { dir = dir }, function() notify("Choose the files in the browser → " .. vim.fn.fnamemodify(dir, ":~:.")) end)
 end
 
-function M.notify(message, title) return M.call("notify", { message = message, title = title or "GreyNight" }) end
+function M.notify(message, title) return M.call("notify", { message = message, title = title or "GreyKnight" }) end
 
 -- ── Setup ─────────────────────────────────────────────────────────────────────
 
