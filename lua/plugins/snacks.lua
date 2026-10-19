@@ -59,7 +59,19 @@ return {
       indent    = { enabled = true },
       input     = { enabled = true },
       notifier  = { enabled = true, timeout = 3000 },
-      picker    = { enabled = true },
+      picker    = {
+        enabled = true,
+        sources = {
+          -- explorer: "." = cd to the folder under the cursor, "<BS>" / "-" = cd .. (config/explorer.lua)
+          explorer = {
+            actions = {
+              gk_cd_here = { action = function(p) require("config.explorer").cd_here(p) end, desc = "cd here (working directory)" },
+              gk_cd_up   = { action = function(p) require("config.explorer").cd_up(p) end,   desc = "cd .. (one folder up)" },
+            },
+            win = { list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up" } } },
+          },
+        },
+      },
       quickfile = { enabled = true },
       scope     = { enabled = true },
       scroll    = { enabled = true },
