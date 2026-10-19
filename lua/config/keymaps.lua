@@ -202,11 +202,8 @@ map("n", "<leader>gd", function()
       for _, d in ipairs(docs) do
         if d.name == choice then
           vim.cmd("vsplit " .. d.path)
-          vim.bo.readonly = true
-          vim.bo.modifiable = false
-          vim.bo.bufhidden = "wipe"
-          -- q closes the doc and returns to previous window
-          vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, desc = "Close doc" })
+          -- read-only, q closes it; links followed from it open the same way (config/mdlinks.lua)
+          require("config.mdlinks").read_only(0)
           break
         end
       end
