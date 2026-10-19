@@ -241,6 +241,73 @@ test("Debug: a python program reads input() in the DAP console", function()
   dap.listeners.after.event_terminated["gk_smoke"] = nil
 end)
 
+-- 2026-10-19: dap-ui hands out one console buffer; when an earlier program's terminal still ran in it
+-- (bashdb's sometimes outlives its session), the next start failed with
+-- "jobstart(...,{term=true}) requires unmodified buffer"
+test("Debug: dap-ui's console goes through fresh_console", function()
+  require("lazy").load({ plugins = { "nvim-dap-ui" } })
+  local dbg = require("devsuite.debug")
+  assert(dbg.console_cmd and require("dap").defaults.fallback.terminal_win_cmd == dbg.console_cmd, "terminal_win_cmd is not wrapped")
+end)
+
+test("Debug: a fresh console when an old program's terminal still runs", function()
+  local dbg = require("devsuite.debug")
+  local console = vim.api.nvim_create_buf(false, true)
+  local function get_buf() -- like dap-ui: the same buffer until it is gone
+    if not vim.api.nvim_buf_is_valid(console) then console = vim.api.nvim_create_buf(false, true) end
+    return console
+  end
+  local old, job = console, nil
+  vim.api.nvim_buf_call(old, function() job = vim.fn.jobstart({ "sleep", "60" }, { term = true }) end)
+  assert(job > 0 and vim.bo[old].buftype == "terminal", "no leftover terminal")
+  local buf = dbg.fresh_console(get_buf, {})
+  assert(buf ~= old and vim.api.nvim_buf_is_valid(buf), "the same buffer was handed out again")
+  assert(not vim.api.nvim_buf_is_valid(old), "the old console buffer is still there")
+  assert(wait(3000, function() return vim.fn.jobwait({ job }, 0)[1] ~= -1 end), "the old program still runs")
+  local started
+  vim.api.nvim_buf_call(buf, function() started = vim.fn.jobstart({ "true" }, { term = true }) end)
+  assert(started > 0, "jobstart(term) failed in the fresh console")
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end)
+
+test("Debug: a program whose session still runs keeps its terminal", function()
+  local dbg, dap = require("devsuite.debug"), require("dap")
+  local console, job = vim.api.nvim_create_buf(false, true), nil
+  vim.api.nvim_buf_call(console, function() job = vim.fn.jobstart({ "sleep", "60" }, { term = true }) end)
+  local sessions = dap.sessions
+  dap.sessions = function() return { { term_buf = console } } end
+  local ok, buf, win = pcall(dbg.fresh_console, function() return console end, {})
+  dap.sessions = sessions
+  if ok and win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+  local alive = vim.fn.jobwait({ job }, 0)[1] == -1
+  vim.fn.jobstop(job)
+  pcall(vim.api.nvim_buf_delete, console, { force = true })
+  if ok and buf ~= console then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  assert(ok, buf)
+  assert(buf ~= console, "the running program's terminal was handed out again")
+  assert(alive, "the running program was stopped")
+end)
+
+test("Debug: four bash sessions in a row", function()
+  local dbg, dap = require("devsuite.debug"), require("dap")
+  assert(dbg.setup_bash(), "bash-debug-adapter not installed (:MasonInstall bash-debug-adapter)")
+  local file = vim.fn.tempname() .. ".sh"
+  vim.fn.writefile({ "#!/bin/bash", 'echo "run"' }, file)
+  vim.cmd.edit(file)
+  for i = 1, 4 do
+    dap.run(dbg.bash_config(file))
+    local deadline = vim.uv.hrtime() + 30e9
+    while dap.session() and vim.uv.hrtime() < deadline do -- F5 until the end: bashdb stops on the first line
+      wait(8000, function() local s = dap.session(); return s == nil or s.stopped_thread_id ~= nil end)
+      local s = dap.session()
+      if s and s.stopped_thread_id then dap.continue(); wait(300, function() return false end) end
+    end
+    local ended = dap.session() == nil
+    if not ended then dap.terminate() end
+    assert(ended, "session " .. i .. " did not end")
+  end
+end)
+
 for _, flavor in ipairs({ "ipython", "python" }) do
 test("REPL (" .. flavor .. "): block with blank lines, then input()", function()
   if flavor == "ipython" and vim.fn.executable("ipython3") == 0 then H.skip("ipython3 not installed - the REPL uses python3 then") end

@@ -24,6 +24,8 @@ local plugins = {
     config = function()
       local dap, dapui = require("dap"), require("dapui")
       dapui.setup()
+      -- the program terminal in dap-ui's console, but never in one that still runs an earlier program
+      dap.defaults.fallback.terminal_win_cmd = require("devsuite.debug").wrap_console(dap.defaults.fallback.terminal_win_cmd)
       dap.listeners.after.event_initialized["dapui_config"] = function() dapui.open()  end
       dap.listeners.before.event_terminated["dapui_config"]  = function() dapui.close() end
       dap.listeners.before.event_exited["dapui_config"]      = function() dapui.close() end

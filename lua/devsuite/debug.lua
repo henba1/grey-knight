@@ -119,6 +119,46 @@ function M.debug_test()
   require("dap").run(M.pytest_config(file, target))
 end
 
+--- terminal_win_cmd for the program terminal: dap-ui's console (`get_buf`), but never a buffer that still
+--- runs an earlier program. dap-ui returns the same "DAP Console" buffer every time, and nvim-dap takes a
+--- terminal buffer back only when its job ends. bashdb's terminal sometimes outlives its session, so the
+--- next start used a buffer that still ran the old program and failed with "jobstart(...,{term=true})
+--- requires unmodified buffer" (reproduced 2026-10-19: the 4th bash run in a row).
+--- A leftover job whose session is over is stopped and dap-ui gets a fresh buffer, shown in the same
+--- windows. A program whose session still runs keeps its terminal; the new one gets a split of its own.
+function M.fresh_console(get_buf, config)
+  local buf, win = get_buf(config)
+  if not (buf and vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == "terminal") then return buf, win end
+  for _, s in pairs(require("dap").sessions()) do
+    if s.term_buf == buf then
+      local cur = vim.api.nvim_get_current_win()
+      vim.cmd("belowright new")
+      local split_buf, split_win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
+      vim.api.nvim_set_current_win(cur)
+      return split_buf, split_win
+    end
+  end
+  local job = vim.b[buf].terminal_job_id
+  if job then pcall(vim.fn.jobstop, job) end
+  local wins = vim.fn.win_findbuf(buf)
+  local placeholder = vim.api.nvim_create_buf(false, true)
+  for _, w in ipairs(wins) do pcall(vim.api.nvim_win_set_buf, w, placeholder) end
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  buf, win = get_buf(config)
+  for _, w in ipairs(wins) do
+    if vim.api.nvim_win_is_valid(w) then pcall(vim.api.nvim_win_set_buf, w, buf) end
+  end
+  pcall(vim.api.nvim_buf_delete, placeholder, { force = true })
+  return buf, win
+end
+
+--- Wraps dap-ui's terminal_win_cmd in fresh_console (plugins/hacker.lua, right after dapui.setup()).
+function M.wrap_console(get_buf)
+  if type(get_buf) ~= "function" then return get_buf end
+  M.console_cmd = function(config) return M.fresh_console(get_buf, config) end
+  return M.console_cmd
+end
+
 M.break_on_raised = false
 
 --- Python: stop at every raised exception (also caught ones), or only at uncaught ones (default).
