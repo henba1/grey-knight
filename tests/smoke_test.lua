@@ -230,6 +230,50 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
   assert(ok, err)
 end)
 
+-- T14: Markdown links (2026-10-19)
+test("Markdown: anchors like GitLab (and GitHub)", function()
+  local md = require("config.mdlinks")
+  assert(md.slug("Running Scripts & REPL") == "running-scripts-repl", md.slug("Running Scripts & REPL"))
+  assert(md.slug("Running Scripts & REPL", true) == "running-scripts--repl")
+  assert(md.slug("Debugging (DAP)") == "debugging-dap")
+  assert(md.slug("AI (Qwen Code) — `<leader>a`") == "ai-qwen-code-leadera", md.slug("AI (Qwen Code) — `<leader>a`"))
+  local a = md.anchors({ "# Top", "```", "# not a heading", "```", "## Top", "## Über uns" })
+  assert(a["top"] == 1 and a["top-1"] == 5 and a["not-a-heading"] == nil and a["über-uns"] == 6, vim.inspect(a))
+  local links = md.links({ "[a](#x) `[b](#code)` [c](b.md#y \"title\")" })
+  assert(#links == 2 and links[1].target == "#x" and links[2].target == "b.md#y", vim.inspect(links))
+end)
+
+test("Markdown: gd / Enter follow links, Ctrl+o comes back", function()
+  local dir = vim.fn.resolve(vim.fn.tempname())
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ "# Top", "", "See [part two](#part-two-more) and [b](b.md#target-here).", "", "plain line", "", "## Part Two & More", "text" }, dir .. "/a.md")
+  vim.fn.writefile({ "# B", "", "## Target Here", "x" }, dir .. "/b.md")
+  local ok, err = pcall(function()
+    vim.cmd.edit(dir .. "/a.md")
+    assert(vim.bo.filetype == "markdown", "filetype " .. vim.bo.filetype)
+    for _, key in ipairs({ "gd", "<CR>" }) do
+      local m = vim.fn.maparg(key, "n", false, true)
+      assert(m.buffer == 1 and m.desc == "Follow link", key .. " does not follow links")
+    end
+    local line = vim.fn.getline(3)
+    vim.api.nvim_win_set_cursor(0, { 3, (line:find("part two", 1, true)) })
+    vim.api.nvim_feedkeys(vim.keycode("gd"), "x", false)
+    assert(vim.fn.line(".") == 7, "gd went to line " .. vim.fn.line("."))
+    vim.api.nvim_feedkeys(vim.keycode("<C-o>"), "x", false)
+    assert(vim.fn.line(".") == 3, "Ctrl+o went to line " .. vim.fn.line("."))
+    vim.api.nvim_win_set_cursor(0, { 3, (line:find("[b]", 1, true)) })
+    vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+    assert(vim.fn.expand("%:t") == "b.md" and vim.fn.line(".") == 3, "Enter went to " .. vim.fn.expand("%:t") .. ":" .. vim.fn.line("."))
+    vim.cmd.edit(dir .. "/a.md")
+    vim.api.nvim_win_set_cursor(0, { 5, 0 })
+    vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+    assert(vim.fn.line(".") == 6, "Enter off a link: line " .. vim.fn.line("."))
+  end)
+  for _, f in ipairs({ "a.md", "b.md" }) do vim.cmd("silent! bwipeout! " .. vim.fn.fnameescape(dir .. "/" .. f)) end
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
 -- T12: The docs stay in step with the config
 local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end
@@ -281,6 +325,44 @@ test("Docs: the README and CHEATSHEET file trees list every module and test", fu
     end
   end
   assert(#missing == 0, table.concat(missing, ", "))
+end)
+
+test("Docs: every link to a heading or file resolves (GitLab anchors)", function()
+  local md = require("config.mdlinks")
+  local bad = {}
+  for _, doc in ipairs(vim.fn.glob(ROOT .. "/*.md", false, true)) do
+    for _, l in ipairs(md.links(vim.fn.readfile(doc))) do
+      if not l.target:match("^%a[%w+.-]*:") then
+        local file, anchor = l.target:match("^([^#]*)#?(.*)$")
+        local path = file == "" and doc or vim.fs.normalize(vim.fs.joinpath(vim.fs.dirname(doc), file))
+        local where = vim.fn.fnamemodify(doc, ":t") .. ":" .. l.lnum .. " " .. l.target
+        if vim.fn.filereadable(path) ~= 1 and vim.fn.isdirectory(path) ~= 1 then
+          bad[#bad + 1] = where .. " (no such file)"
+        elseif anchor ~= "" and not md.anchors(vim.fn.readfile(path), "gitlab")[anchor] then
+          bad[#bad + 1] = where .. " (no such heading on GitLab)"
+        end
+      end
+    end
+  end
+  assert(#bad == 0, table.concat(bad, ", "))
+end)
+
+test("Docs: the CHEATSHEET lists every leader and F key", function()
+  local cs, missing, seen = read("CHEATSHEET.md"), {}, {}
+  for _, mode in ipairs({ "n", "v", "x", "o", "t" }) do
+    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+      local lhs = m.lhs:gsub("^ ", "<leader>")
+      if m.desc and m.desc ~= "" and (lhs:match("^<leader>") or lhs:match("^<S?%-?F%d+>")) and not seen[lhs] then
+        seen[lhs] = true
+        local short, plain = lhs:gsub("^<leader>", ""), lhs:gsub("[<>]", "")
+        if not (cs:find(lhs, 1, true) or cs:find("`" .. plain .. "`", 1, true) or cs:find("`" .. short .. "`", 1, true)
+          or (lhs:match("^<leader>%d$") and cs:find("<leader>1-4", 1, true))) then
+          missing[#missing + 1] = mode .. " " .. lhs .. " (" .. m.desc .. ")"
+        end
+      end
+    end
+  end
+  assert(#missing == 0, "not in the CHEATSHEET: " .. table.concat(missing, ", "))
 end)
 
 H.report("Smoke Test Results")
