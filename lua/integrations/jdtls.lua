@@ -14,6 +14,7 @@ M.PACKAGES = { "jdtls", "java-debug-adapter", "java-test" }
 M.FORMAT_PROFILE = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/resources/intellij-java-format.xml"
 M.FORMAT_PROFILE_NAME = "IntelliJ IDEA default (GreyNight)"
 
+
 local WARN = vim.log.levels.WARN
 
 local function notify(msg, level) vim.notify(msg, level or vim.log.levels.INFO, { title = "Java" }) end
@@ -175,6 +176,39 @@ function M.bundles()
   return out
 end
 
+local testng_patched = false
+
+--- nvim-jdtls' TestNG reporter cuts the protocol frame off each line ("@@<TestRunner-{json}-TestRunner>"); on
+--- Windows the runner ends its lines with \r\n, the \r stayed in and no line decoded - in a window that error
+--- was a prompt that blocked Neovim, and no test got its mark (2026-10-19). Its reader gets the data without \r.
+function M.patch_testng()
+  if testng_patched then return end
+  local ok, testng = pcall(require, "jdtls.testng")
+  if not ok then return end
+  testng_patched = true
+  local mk_test_results = testng.mk_test_results
+  testng.mk_test_results = function(bufnr)
+    local results = mk_test_results(bufnr)
+    local mk_reader = results.mk_reader
+    results.mk_reader = function(sock)
+      local reader = mk_reader(sock)
+      return function(err, chunk) return reader(err, chunk and (chunk:gsub("\r", ""))) end
+    end
+    return results
+  end
+end
+
+--- Overrides for every launch (tests, main classes). The classpath of a G3 module is far longer than Windows'
+--- 32 767 characters ("E903: name too long", 2026-10-19): java-debug passes it in a file, as IntelliJ does - an
+--- @argfile from Java 9 on, a manifest jar for Java 8. java-debug itself does not know "auto" (VS Code's
+--- extension decides that before the launch), so it is decided here from the project's JDK.
+function M.dap_overrides(path)
+  local project = path and intellij.project(intellij.project_root(path))
+  local major = project and project.jdk and project.jdk.major
+  if not major and vim.env.JAVA_HOME and vim.env.JAVA_HOME ~= "" then major = intellij.java_major(vim.fs.normalize(vim.env.JAVA_HOME)) end
+  return { shortenCommandLine = (major and major < 9) and "jarmanifest" or "argfile" }
+end
+
 --- IntelliJ's Remote JVM Debug configurations as nvim-dap attach configurations.
 function M.remote_configurations(path)
   return vim.tbl_map(function(r)
@@ -261,7 +295,9 @@ function M.config(file)
     capabilities = capabilities(),
     on_attach = function()
       pcall(function()
-        require("jdtls.dap").setup_dap({ hotcodereplace = "auto" })
+        require("jdtls.dap").setup_dap({ hotcodereplace = "auto", config_overrides = M.dap_overrides(file) })
+        -- java-debug resolves a G3 module's classpath before it answers: no "adapter didn't respond" after 4 s
+        require("dap").defaults.java.initialize_timeout_sec = 30
         require("jdtls.dap").setup_dap_main_class_configs()
       end)
       add_remote_configurations(file)
@@ -281,6 +317,7 @@ function M.start(buf)
       warned = true
       return
     end
+    M.patch_testng()
     require("jdtls").start_or_attach(config, {}, { bufnr = buf })
   end, "Java")
 end

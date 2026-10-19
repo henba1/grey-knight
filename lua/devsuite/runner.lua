@@ -240,7 +240,13 @@ function M.java_test(nearest, debug)
   if not ok or #vim.lsp.get_clients({ bufnr = 0, name = "jdtls" }) == 0 then
     return notify("Run: Java tests need jdtls - it starts with the first Java file", WARN)
   end
-  local opts = debug and {} or { config_overrides = { noDebug = true } }
+  -- explicit overrides replace nvim-jdtls' defaults: the shortened command line goes in again. The output goes
+  -- to the debug REPL (dap-ui shows it), not into a terminal: TestNG's summary and stack traces land there
+  local file = vim.api.nvim_buf_get_name(0)
+  local overrides = vim.tbl_extend("force", require("integrations.jdtls").dap_overrides(file),
+    { console = "internalConsole" }, debug and {} or { noDebug = true })
+  local opts = { config_overrides = overrides }
+  require("integrations.jdtls").patch_testng()
   if nearest then jdap.test_nearest_method(opts) else jdap.test_class(opts) end
 end
 
