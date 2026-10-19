@@ -272,7 +272,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── agent.lua             ← coding agent terminals: Qwen Code or OpenCode
 │   ├── aidash.lua            ← AI Dashboard bridge
 │   ├── intellij.lua          ← IntelliJ's settings: JDK, Maven, on save, reformat, remote debug
-│   ├── jdtls.lua             ← Java: jdtls the way IntelliJ has the project
+│   ├── jdtls.lua             ← Java: jdtls with IntelliJ's settings, else the machine's JDKs and Maven
 │   ├── mason.lua             ← Mason packages on first use (Java, Angular)
 │   └── web.lua               ← Angular / AngularJS servers
 ├── lua/plugins/

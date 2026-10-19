@@ -2,22 +2,26 @@
 
 GreyKnight for the G3 repositories: the Java backends (Maven multi-module), **ngx-his** (Angular, Nx) and the
 `*-html5/client` folders (AngularJS in TypeScript). It works next to IntelliJ IDEA and reads IntelliJ's settings -
-never writing them - so the JDK, Maven and what saving does are the same in both editors.
+never writing them - so the JDK, Maven and what saving does are the same in both editors. It needs no IntelliJ
+either: without it (Linux, another machine) it takes the JDKs and the Maven of the machine, as the `mvn` command
+line does - see [Without IntelliJ](#without-intellij).
 
 Leader = `Space`. Open this file: `<leader>gd`, or **Config** on the start screen.
 
 **Contents:** [Before You Start](#before-you-start) · [What Comes from IntelliJ](#what-comes-from-intellij) ·
-[Java Backend](#java-backend) · [ngx-his (Angular)](#ngx-his-angular) · [html5 Clients (AngularJS)](#html5-clients-angularjs) ·
-[Working Next to IntelliJ](#working-next-to-intellij) · [Troubleshooting](#troubleshooting) · [Quick Reference](#quick-reference)
+[Without IntelliJ](#without-intellij) · [Java Backend](#java-backend) · [ngx-his (Angular)](#ngx-his-angular) ·
+[html5 Clients (AngularJS)](#html5-clients-angularjs) · [Working Next to IntelliJ](#working-next-to-intellij) ·
+[Troubleshooting](#troubleshooting) · [Quick Reference](#quick-reference)
 
 ---
 
 ## Before You Start
 
-1. **Open the repository in IntelliJ once.** That creates its `.idea` folder with the project's JDK and the Maven
-   settings GreyKnight takes over. Start Neovim in the repository root: the folder with `.idea` is the project.
-2. **A JDK 21 or newer in IntelliJ** (File → Project Structure → SDKs). The Java language server (jdtls) runs on
-   it; your project keeps compiling with its own JDK. Without one, set `JDTLS_JAVA_HOME` to a JDK 21.
+1. **With IntelliJ: open the repository there once.** That creates its `.idea` folder with the project's JDK and
+   the Maven settings GreyKnight takes over. Start Neovim in the repository root: the folder with `.idea` is the
+   project. No IntelliJ: [Without IntelliJ](#without-intellij).
+2. **A JDK 21 or newer** - in IntelliJ (File → Project Structure → SDKs) or installed on the machine. The Java
+   language server (jdtls) runs on it; your project keeps compiling with its own JDK.
 3. **ngx-his: `npm ci` once.** The Angular language server uses the project's own Angular and TypeScript from
    `node_modules`.
 4. **Windows:** start Neovim from a new terminal after installing tools, so their `PATH` is current.
@@ -30,7 +34,7 @@ and test runner with the first `.java` file, the Angular, ESLint, HTML and CSS s
 | Setting | In IntelliJ | In GreyKnight |
 |---|---|---|
 | Project JDK | File → Project Structure → Project → SDK | Errors, runs and tests use this JDK (per repository: 17 or 21) |
-| JDK for jdtls | File → Project Structure → SDKs | The newest JDK 21+ there runs the language server |
+| JDK for jdtls | File → Project Structure → SDKs | The newest JDK 21+ there runs the language server (`JDTLS_JAVA_HOME`, when set, comes first) |
 | Maven | Settings → Build Tools → Maven: home, settings file, local repository | jdtls imports the project with exactly these; Maven only, never Gradle |
 | Actions on Save | Settings → Tools → Actions on Save | Saving does the same: reformat (also "only changed lines"), optimize imports - by default nothing |
 | Prettier | Settings → Languages & Frameworks → JavaScript → Prettier | `<leader>fm` uses the project's prettier where IntelliJ would ("Run for files"); "Run on save" works on save |
@@ -38,6 +42,25 @@ and test runner with the first `.java` file, the Angular, ESLint, HTML and CSS s
 
 Changes in IntelliJ count at once for saving and formatting; JDK and Maven settings when jdtls starts the next
 time - restart Neovim (`:JdtRestart` keeps the settings it started with).
+
+## Without IntelliJ
+
+GreyKnight needs no IntelliJ: on Linux, or on a machine without it, it takes what the machine has - the way the
+`mvn` command line does. A repository IntelliJ has not opened on this machine (no `.idea/workspace.xml`) gets the
+same; one it has opened keeps the Maven settings of its `.idea`, also when IntelliJ is gone.
+
+| Setting | Without IntelliJ |
+|---|---|
+| Project JDK | `JAVA_HOME`, else the `java` on the `PATH` - the JDK `mvn` runs on. A project on another Java version gets an installed JDK of that version |
+| JDK for jdtls | `JDTLS_JAVA_HOME`; else `JAVA_HOME` or the `java` on the `PATH` when it is 21+; else the newest JDK 21+ installed |
+| Installed JDKs | Next to `JAVA_HOME`, `JDTLS_JAVA_HOME` and the `java` on the `PATH` (JDKs unpacked side by side), in the usual places (`/usr/lib/jvm`, SDKMAN, `~/.jdks`, `C:\Program Files\Java`, Eclipse Adoptium, ...) and in the folders `GREYKNIGHT_JDK_DIRS` names (separated like `PATH`) |
+| Maven | The `mvn` on the `PATH` (else `MAVEN_HOME`, `M2_HOME`): its `conf/settings.xml` - mirror, local repository - and `~/.m2/settings.xml`. Maven only, never Gradle |
+| Saving, `<leader>fm` | Java as IntelliJ's defaults: nothing on save, `<leader>fm` with the IntelliJ-like profile. Other files: GreyKnight's own [format on save](USAGE.md#format-on-save) |
+| Debugging | `<leader>da` attaches to `host:port`; `F5` offers the main classes |
+
+On Linux (Debian, Ubuntu, Kali): `sudo apt install openjdk-21-jdk maven`, plus the JDK of the project when that is
+another version. G3 needs the company's Maven settings (the mirror) there as for the command line: in Maven's
+`conf/settings.xml` or in `~/.m2/settings.xml`.
 
 ## Java Backend
 
@@ -141,7 +164,8 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 
 | Symptom | What to do |
 |---|---|
-| "jdtls needs Java 21+" | Add a JDK 21 in IntelliJ (Project Structure → SDKs) or set `JDTLS_JAVA_HOME`, then reopen the file |
+| "jdtls needs Java 21+" | Install a JDK 21+ (or add one in IntelliJ: Project Structure → SDKs); one in a folder of your own: `JDTLS_JAVA_HOME` or `GREYKNIGHT_JDK_DIRS`. Then reopen the file |
+| Which JDKs and Maven settings jdtls got | `:lua =require("integrations.jdtls").config(vim.fs.normalize(vim.fn.expand("%:p"))).settings.java.configuration` in a Java file |
 | Imports stay unresolved | Wait for the import (notifications); after `pom.xml` changes `:JdtUpdateConfig`; still wrong: `:JdtRestart` |
 | The index is broken | `:lua require("jdtls.setup").wipe_data_and_restart()` - a fresh import (minutes) |
 | What jdtls did | `:lua require("jdtls.setup").show_logs()`; servers and their state: `:checkhealth vim.lsp` |

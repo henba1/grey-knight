@@ -18,7 +18,8 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   run goes to the AI agent with one key
 - **Java and Angular, the IntelliJ way** — jdtls with the project's JDK and IntelliJ's Maven settings, TestNG /
   JUnit and debugging (also IntelliJ's remote debug configurations); angularls, ESLint, AngularJS through ts_ls;
-  saving and reformatting as IntelliJ's settings say ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
+  saving and reformatting as IntelliJ's settings say. No IntelliJ needed: without it (Linux) the JDKs and the
+  Maven of the machine, as the `mvn` command line ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications
@@ -161,7 +162,8 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   │                       loaded only inside its Dev Environment (USAGE.md → Terminal)
 │   ├── intellij.lua        IntelliJ's settings, read only: JDKs, a project's JDK and Maven, Actions on Save,
 │   │                       Prettier, Remote JVM Debug configurations
-│   ├── jdtls.lua           Java: jdtls with the project's JDK and IntelliJ's Maven, tests, debugging, attach
+│   ├── jdtls.lua           Java: jdtls with the project's JDK and Maven (IntelliJ's, else the machine's,
+│   │                       as mvn), tests, debugging, attach
 │   ├── mason.lua           Mason packages on demand: installed with the first file that needs them
 │   └── web.lua             Angular / AngularJS: angularls, eslint, html and css servers
 ├── after/ftplugin/
@@ -170,7 +172,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 ├── resources/
 │   └── intellij-java-format.xml   jdtls formatter profile close to IntelliJ's default Java code style
 ├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
-├── G3-DEVELOPMENT.md       G3 work next to IntelliJ: Java, ngx-his, html5 clients
+├── G3-DEVELOPMENT.md       G3 work with or without IntelliJ: Java, ngx-his, html5 clients
 └── tests/
     ├── run.sh              runs all suites; exit status 1 on failure
     ├── run.ps1             the same on Windows, each suite in a real (minimized) Neovim window
@@ -190,7 +192,7 @@ vim.g.lang = {
   c          = true,   -- clangd + codelldb
   typescript = true,   -- ts_ls + prettier
   lua        = true,   -- lua_ls + stylua
-  java       = true,   -- jdtls + java-debug + java-test, set up the way IntelliJ has the project
+  java       = true,   -- jdtls + java-debug + java-test, the way IntelliJ has the project (or on its own)
   angular    = true,   -- angularls + eslint + html / css servers (Angular 2+; AngularJS: ts_ls + eslint)
 }
 ```

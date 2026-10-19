@@ -32,7 +32,7 @@
 23. [Tips & Tricks](#tips-tricks)
 24. [When Something Goes Wrong](#when-something-goes-wrong)
 25. [Mode Reference](#mode-reference)
-26. [Java and Angular (IntelliJ Projects)](#java-and-angular-intellij-projects)
+26. [Java and Angular](#java-and-angular)
 
 ---
 
@@ -747,7 +747,7 @@ Press `<leader>` and **wait** — a popup shows all available keybindings groupe
 ### Format on Save
 Files auto-format when you save. To format manually: `<leader>fm`. In projects you also open in IntelliJ
 (an `.idea` folder) saving does what IntelliJ's Actions on Save do - by default nothing; Java files get that
-default everywhere (see [Java and Angular](#java-and-angular-intellij-projects)).
+default everywhere (see [Java and Angular](#java-and-angular)).
 
 ### Todo Comments
 `TODO`, `FIXME`, `HACK`, `NOTE` in comments are highlighted automatically.
@@ -804,15 +804,16 @@ it after changing the config. On Windows: `tests\run.ps1` - each suite in a mini
 
 ---
 
-## Java and Angular (IntelliJ Projects)
+## Java and Angular
 
 GreyKnight works on a project you also open in IntelliJ IDEA the way IntelliJ does: it reads IntelliJ's settings
-(`lua/integrations/intellij.lua`, never writing them), so nothing drifts apart. The workflow for the G3
-repositories, step by step: [G3-DEVELOPMENT.md](G3-DEVELOPMENT.md).
+(`lua/integrations/intellij.lua`, never writing them), so nothing drifts apart. Without IntelliJ it works on its
+own ([below](#without-intellij)). The workflow for the G3 repositories, step by step:
+[G3-DEVELOPMENT.md](G3-DEVELOPMENT.md).
 
 | | From IntelliJ |
 |---|---|
-| JDK | The project's SDK (`.idea/misc.xml` and IntelliJ's JDK table): errors, runs and tests use the JDK IntelliJ uses. jdtls itself runs on IntelliJ's newest JDK 21+ |
+| JDK | The project's SDK (`.idea/misc.xml` and IntelliJ's JDK table): errors, runs and tests use the JDK IntelliJ uses. jdtls itself runs on IntelliJ's newest JDK 21+ (`JDTLS_JAVA_HOME` first, when set) |
 | Maven | IntelliJ's Maven home, settings file and local repository (Settings → Build Tools → Maven). jdtls imports with Maven, never with Gradle |
 | Saving | IntelliJ's Actions on Save (reformat, also "only changed lines"; optimize imports) and Prettier's "Run on save" - by default nothing happens |
 | `<leader>fm` | IntelliJ's Reformat Code: the project's prettier where IntelliJ runs it (JS / TS in Automatic mode), else the language server |
@@ -837,8 +838,24 @@ ESLint runs with the project's config. **AngularJS** (the `*-html5/client` folde
 ESLint with the client's config, templates as plain HTML - no language server knows AngularJS templates.
 Their servers install themselves with the first file that needs them.
 
+### Without IntelliJ
+
+On Linux, on a machine without IntelliJ, or in a repository IntelliJ has not opened there (no
+`.idea/workspace.xml`), GreyKnight takes what the machine has, as the `mvn` command line does
+(`lua/integrations/jdtls.lua`):
+
+- **Project JDK:** `JAVA_HOME`, else the `java` on the `PATH`; a project on another Java version gets an installed
+  JDK of that version.
+- **jdtls** runs on `JDTLS_JAVA_HOME`, else on `JAVA_HOME` or the `java` on the `PATH` when it is 21+, else on the
+  newest JDK 21+ installed - next to those (JDKs unpacked side by side), in `/usr/lib/jvm`, SDKMAN, `~/.jdks`,
+  `C:\Program Files\Java`, Eclipse Adoptium, ... or in the folders `GREYKNIGHT_JDK_DIRS` names (separated like
+  `PATH`).
+- **Maven:** the settings of the `mvn` on the `PATH` (else `MAVEN_HOME` / `M2_HOME`): its `conf/settings.xml` and
+  `~/.m2/settings.xml`.
+
 Outside IntelliJ projects (no `.idea`) GreyKnight keeps its own behavior: formatting on save and `<leader>fm`
-with conform's formatters.
+with conform's formatters. Java files get IntelliJ's defaults there too: nothing on save, `<leader>fm` through
+jdtls with the IntelliJ-like profile.
 
 ---
 
