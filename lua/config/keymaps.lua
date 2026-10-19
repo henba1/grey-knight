@@ -33,7 +33,7 @@ map("t", "<Esc><Esc>", "<C-\\><C-n>",       { desc = "Exit terminal mode" })
 map("t", "<C-h>",      "<C-\\><C-n><C-w>h", { desc = "Window left (from term)" })
 map("t", "<C-j>",      "<C-\\><C-n><C-w>j", { desc = "Window down (from term)" })
 map("t", "<C-k>",      "<C-\\><C-n><C-w>k", { desc = "Window up (from term)" })
-map("t", "<C-l>",      "<C-\\><C-n><C-w>l", { desc = "Window right (from term)" })
+-- no <C-l> here: in a terminal, Ctrl+L belongs to the program (clears a shell). Window right: Esc Esc, <C-l>
 
 -- ── Dashboard ────────────────────────────────────────────────
 map("n", "<leader>;", "<cmd>lua Snacks.dashboard()<cr>", { desc = "Dashboard" })
