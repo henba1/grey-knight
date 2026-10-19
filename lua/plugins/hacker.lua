@@ -47,17 +47,21 @@ if lang.python then
     "mfussenegger/nvim-dap-python",
     ft = "python",
     config = function()
-      require("dap-python").setup(vim.fn.stdpath("data") .. "/mason/packages/debugpy/venv/bin/python")
+      -- Mason's debugpy virtualenv: Scripts\python.exe on Windows, bin/python elsewhere
+      local venv = vim.fn.stdpath("data") .. "/mason/packages/debugpy/venv"
+      require("dap-python").setup(venv .. (vim.fn.has("win32") == 1 and "/Scripts/python.exe" or "/bin/python"))
     end,
   })
 end
 
--- Debugger backends: ensure the ones the enabled languages use (Mason skips what is already present)
+-- Debugger backends: ensure the ones the enabled languages use (Mason skips what is already present).
+-- The names are nvim-dap's adapter names, not Mason's packages: mason-nvim-dap drops unknown names without a
+-- word ("debugpy" was one, so a fresh machine never got the Python debugger).
 if lang.c or lang.python or lang.bash then
   local ensure = {}
   if lang.c then ensure[#ensure + 1] = "codelldb" end
-  if lang.python then ensure[#ensure + 1] = "debugpy" end
-  if lang.bash then ensure[#ensure + 1] = "bash" end -- bash-debug-adapter (bashdb)
+  if lang.python then ensure[#ensure + 1] = "python" end -- debugpy
+  if lang.bash and vim.fn.has("win32") == 0 then ensure[#ensure + 1] = "bash" end -- bash-debug-adapter, Linux only
   table.insert(plugins, {
     "jay-babu/mason-nvim-dap.nvim",
     dependencies = { "williamboman/mason.nvim", "mfussenegger/nvim-dap" },
