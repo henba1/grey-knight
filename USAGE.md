@@ -826,7 +826,9 @@ statics; `*` from 5 classes / 3 static names).
 and java-test, and the first import of a G3 repository takes a few minutes; later starts reuse it (the index
 lives in Neovim's data directory). `gd`, `gr`, `K` and `<leader>ca` (organize imports, extract variable /
 method, ...) work as in every language; `<leader>rt` / `<leader>rT` run the test class / the test at the cursor
-(TestNG or JUnit), `<leader>dt` debugs it.
+(TestNG or JUnit), `<leader>dt` debugs it. Passed tests get a ✔️ next to them, failed ones a diagnostic with the
+message; the test output (TestNG's summary, stack traces) is in the debug REPL (`<leader>dr`). The classpath of
+a G3 module is too long for Windows' command line: the JVM gets it in a file, as in IntelliJ.
 
 **Angular** (ngx-his): a `*.component.html` in an Angular workspace (`angular.json` or `nx.json`) is
 `htmlangular` - angularls knows the component in its template, with the project's own Angular and TypeScript;
