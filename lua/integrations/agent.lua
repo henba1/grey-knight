@@ -25,10 +25,11 @@ M.BACKENDS = {
     name = "Qwen Code",
     short = "Qwen",
     --- $QWEN_BIN, ~/.local/bin/qwen (the current release), else qwen on the PATH
+    -- (one check after the other: in a list, an unset $QWEN_BIN is nil and ipairs stopped before ~/.local/bin)
     bin = function()
-      for _, candidate in ipairs({ vim.env.QWEN_BIN, vim.fn.expand("~/.local/bin/qwen") }) do
-        if executable(candidate) then return candidate end
-      end
+      if executable(vim.env.QWEN_BIN) then return vim.env.QWEN_BIN end
+      local own = vim.fn.expand("~/.local/bin/qwen")
+      if executable(own) then return own end
       return "qwen"
     end,
     first_prompt = "-i", -- a new agent takes its first prompt as an argument

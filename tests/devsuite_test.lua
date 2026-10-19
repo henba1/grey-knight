@@ -381,6 +381,22 @@ test("Qwen: new agent gets -i, a running agent one bracketed paste", function()
   assert(ok, err)
 end)
 
+-- 2026-10-19: with $QWEN_BIN unset, ~/.local/bin/qwen was never looked at (ipairs stops at a nil), so an
+-- older qwen first on the PATH could run (kali: /usr/bin/qwen 0.23.0 next to 0.25.1 in ~/.local/bin)
+test("Agent: without QWEN_BIN, Qwen Code comes from ~/.local/bin", function()
+  local agent = require("integrations.agent")
+  local home = vim.fn.tempname()
+  vim.fn.mkdir(home .. "/.local/bin", "p")
+  local own = home .. "/.local/bin/qwen"
+  vim.fn.writefile({ "#!/bin/sh" }, own)
+  vim.fn.setfperm(own, "rwx------")
+  local saved = { vim.env.HOME, vim.env.QWEN_BIN }
+  vim.env.HOME, vim.env.QWEN_BIN = home, nil
+  local ok, got = pcall(agent.BACKENDS.qwen.bin)
+  vim.env.HOME, vim.env.QWEN_BIN = saved[1], saved[2]
+  assert(ok and got == own, tostring(got))
+end)
+
 test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is installed", function()
   local agent = require("integrations.agent")
   local fake = vim.fn.tempname() .. "-qwen"
