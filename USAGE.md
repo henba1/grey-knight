@@ -14,22 +14,22 @@
 5. [Code Intelligence (LSP)](#code-intelligence-lsp)
 6. [Autocompletion](#autocompletion)
 7. [AI Assistant (Qwen Code)](#ai-assistant-qwen-code)
-8. [Running Scripts & REPL](#running-scripts--repl)
+8. [Running Scripts & REPL](#running-scripts-repl)
 9. [Terminal](#terminal)
 10. [Git](#git)
-11. [Search & Replace](#search--replace)
-12. [Windows & Splits](#windows--splits)
+11. [Search & Replace](#search-replace)
+12. [Windows & Splits](#windows-splits)
 13. [Buffers](#buffers)
 14. [Harpoon (Quick File Switching)](#harpoon-quick-file-switching)
 15. [Flash (Jump Navigation)](#flash-jump-navigation)
 16. [Surround](#surround)
-17. [Diagnostics & Trouble](#diagnostics--trouble)
+17. [Diagnostics & Trouble](#diagnostics-trouble)
 18. [Debugging (DAP)](#debugging-dap)
 19. [Hex Editor](#hex-editor)
 20. [Sessions](#sessions)
 21. [Oil (Filesystem Editing)](#oil-filesystem-editing)
 22. [Markdown Rendering](#markdown-rendering)
-23. [Tips & Tricks](#tips--tricks)
+23. [Tips & Tricks](#tips-tricks)
 24. [When Something Goes Wrong](#when-something-goes-wrong)
 25. [Mode Reference](#mode-reference)
 
@@ -387,7 +387,7 @@ between snippets, `<leader>rs` / `<leader>rc` for a clean run.
 ## Terminal
 
 The `<leader>t*` keys above launch **Qwen Code** agents. For a Python or bash **REPL** use
-`<leader>ri` ([Running Scripts & REPL](#running-scripts--repl)). For a plain **shell** use
+`<leader>ri` ([Running Scripts & REPL](#running-scripts-repl)). For a plain **shell** use
 `:2ToggleTerm`, and send shell lines straight into it with:
 
 | Key | Mode | Action |
@@ -715,6 +715,9 @@ Spell check is enabled automatically for `.md` files.
 
 ### Reading These Docs in Neovim
 `<leader>gd` picks README, CHEATSHEET or this guide and opens it read-only in a split; `q` closes it.
+In any markdown file, `gd` or `Enter` on a link follows it: a `#heading` in the same file (like the
+table of contents above), another file, or a URL. `Ctrl+o` jumps back. `gO` lists all headings of
+the file; `Enter` on one jumps there.
 
 ### Centered Scrolling
 `Ctrl+d` / `Ctrl+u` keeps the cursor centered on screen. Same for search with `n`/`N`.

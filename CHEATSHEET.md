@@ -1,6 +1,20 @@
 # Grey Knight Neovim — Cheatsheet
 
-> Leader = `Space` | Open this: `nvim ~/.config/nvim/CHEATSHEET.md`
+> Leader = `Space` | Open this: `nvim ~/.config/nvim/CHEATSHEET.md` or `<leader>gd`
+> On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
+
+**Contents:** [General](#general) · [AI](#ai-qwen-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
+
+## General
+
+| Key | Action |
+|-----|--------|
+| `<leader>w` | Save |
+| `<leader>Q` | Quit all **without saving** (`:qa!`) |
+| `<leader>;` | Dashboard |
+| `<Esc>` | Clear the search highlight |
+| `<C-d>` / `<C-u>` | Half a page down / up, cursor centered |
+| `n` / `N` | Next / previous search hit, centered |
 
 ## AI (Qwen Code) — `<leader>a`
 
@@ -10,7 +24,7 @@
 | `<leader>tf` | n | Floating AI agent |
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
-| `<leader>t1/t2/t3` | n | Agents #1/#2/#3 (each its own session) |
+| `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
 | `<leader>ac` | n | New AI session (`/clear`) |
 | `<leader>am` | n | Which model the rig runs right now (name, context) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
@@ -101,7 +115,7 @@ explorer pane once focused.
 | Key | Action |
 |-----|--------|
 | `<leader>e` | File explorer (snacks) |
-| `-` | Oil (edit fs as buffer) |
+| `-` | Oil: edit the folder as a buffer (in the explorer `-` is cd ..) |
 | `<leader>o` | Oil float |
 | `s` | Flash jump |
 | `S` | Flash treesitter select |
@@ -166,6 +180,9 @@ Python/bash REPL use `<leader>ri`).
 | `[d` / `]d` | Prev/next diagnostic |
 | `<leader>fm` | Format buffer |
 
+> Neovim's own LSP keys work too: `grn` rename, `grr` references, `gra` code action, `gO` symbols.
+> Because of them `gr` waits a moment before it runs; `grr` is the instant one.
+
 ## Debug — `<F5>` / `<leader>d` (Python + bash)
 
 Breakpoints first, then `F5`. Python via debugpy, bash via bashdb; the program's input goes in the
@@ -211,7 +228,10 @@ DAP console pane; variable values show next to the code while stopped. Full work
 | `sa`/`sd`/`sr` | n | Surround add/delete/replace |
 | `J`/`K` | v | Move selection down/up |
 | `<leader>p` | x | Paste without yank |
-| `<leader>d` | n/v | Delete to void register |
+| `J` | n | Join lines, the cursor stays |
+| `<C-Space>` | n / x | Select the node at the cursor / grow the selection (treesitter) |
+| `<BS>` | x | Shrink the selection |
+| `<leader>d` | v | Delete without yanking (in normal mode the `<leader>d…` keys debug) |
 | `<leader>bd` | n | Delete buffer |
 
 ## Windows / Buffers
@@ -221,6 +241,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 | `<C-h/j/k/l>` | Navigate windows (from a terminal only `<C-h/j/k>`: there `<C-l>` clears the shell) |
 | `<C-Up/Down/Left/Right>` | Resize windows |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
+| `<Esc><Esc>` | Leave terminal mode (back to normal mode) |
 
 ## Config Structure
 
@@ -234,6 +255,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── keymaps.lua           ← global keymaps
 │   ├── autocmds.lua          ← autocommands
 │   ├── explorer.lua          ← explorer keys: cd here (.), cd .. (<BS>, -)
+│   ├── mdlinks.lua           ← markdown links: gd / Enter follow them
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
@@ -263,4 +285,10 @@ DAP console pane; variable values show next to the code while stopped. Full work
 ```
 
 ## Docs
-| `<leader>gd` | Read GreyNight docs (README, CHEATSHEET, USAGE) — readonly, `q` to close |
+
+| Key | Action |
+|-----|--------|
+| `<leader>gd` | Read GreyNight docs (README, CHEATSHEET, USAGE): read-only, `q` closes |
+| `gd` / `Enter` | On a link in a markdown file: follow it (heading, other file, URL) |
+| `Ctrl+o` | Back to where you came from |
+| `gO` | All headings of the file (outline); `Enter` jumps |
