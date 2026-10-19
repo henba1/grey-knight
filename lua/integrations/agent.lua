@@ -75,6 +75,18 @@ end
 
 -- The agent's terminal, and whether its process is new. A process starts when there is none
 -- (or it exited); `first_prompt` goes to that new process as an argument when the CLI takes one.
+--- The command line that starts the agent. The binary by its full path: cmd.exe gives a quoted .cmd it found on
+--- the PATH the current directory as its own folder (%~dp0), so on Windows opencode.cmd did not find its launcher.
+function M.command(first_prompt)
+  local backend = M.backend()
+  local bin = backend.bin()
+  local cmd = vim.fn.shellescape(vim.fn.exepath(bin) ~= "" and vim.fn.exepath(bin) or bin)
+  if first_prompt and backend.first_prompt then
+    cmd = cmd .. " " .. backend.first_prompt .. " " .. vim.fn.shellescape(first_prompt)
+  end
+  return cmd
+end
+
 local function agent(name, direction, first_prompt)
   local T = require("toggleterm.terminal")
   local backend = M.backend()
@@ -86,13 +98,9 @@ local function agent(name, direction, first_prompt)
     return nil
   end
   if term then pcall(term.shutdown, term) end
-  local cmd = vim.fn.shellescape(backend.bin())
-  if first_prompt and backend.first_prompt then
-    cmd = cmd .. " " .. backend.first_prompt .. " " .. vim.fn.shellescape(first_prompt)
-  end
   term = T.Terminal:new({
     id = id,
-    cmd = cmd,
+    cmd = M.command(first_prompt),
     direction = direction,
     display_name = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1)),
     close_on_exit = false, -- keep the transcript when the CLI exits
