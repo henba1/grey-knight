@@ -632,6 +632,104 @@ test("Angular: angularls in Angular workspaces, eslint where its config is, html
   assert(ok, err)
 end)
 
+-- T19: Java without IntelliJ (2026-10-19): GreyKnight needs no IntelliJ - on Linux, or on a machine without it, it
+-- takes the JDKs and the Maven of the machine, as the mvn command line does. Before, it knew only $JAVA_HOME and
+-- the java on the PATH: with both 17 (the work laptop) jdtls did not start although a JDK 21 sat next to them.
+-- A machine in a temp dir: JDKs 17 and 21 side by side (and a folder that is none), a JDK 11 named in
+-- $GREYKNIGHT_JDK_DIRS, a JDK 8 where nothing looks, a Maven; IntelliJ hidden, $JAVA_HOME and the java on the PATH
+-- the 17, the machine's real JDK places left out.
+local function without_intellij(fn)
+  local WIN = vim.fn.has("win32") == 1
+  local ij, jdtls = require("integrations.intellij"), require("integrations.jdtls")
+  local base = vim.fs.normalize(vim.fn.tempname())
+  local m = {
+    base = base, jdk17 = base .. "/jdks/jdk-17.0.2", jdk21 = base .. "/jdks/jdk-21.0.1", jdk11 = base .. "/extra/jdk-11",
+    jdk8 = base .. "/old/jdk8", maven = base .. "/maven", empty = base .. "/empty-bin",
+  }
+  local function write(path, lines)
+    vim.fn.mkdir(vim.fs.dirname(path), "p")
+    vim.fn.writefile(lines, path)
+  end
+  local function exe(path)
+    write(path, { "" })
+    vim.fn.setfperm(path, "rwx------")
+  end
+  for home, version in pairs({ [m.jdk17] = "17.0.2", [m.jdk21] = "21.0.1", [m.jdk11] = "11.0.25", [m.jdk8] = "1.8.0_402" }) do
+    write(home .. "/release", { 'JAVA_VERSION="' .. version .. '"' })
+    exe(ij.java_bin(home))
+  end
+  vim.fn.mkdir(base .. "/jdks/not-a-jdk/bin", "p")
+  write(m.maven .. "/conf/settings.xml", { "<settings/>" })
+  exe(m.maven .. "/bin/" .. (WIN and "mvn.cmd" or "mvn"))
+  vim.fn.mkdir(m.empty, "p")
+  write(base .. "/plain/X.java", { "class X {}" })
+  write(base .. "/committed/.idea/misc.xml", { -- an .idea from git: IntelliJ never opened it on this machine
+    '<project version="4"><component name="ProjectRootManager" version="2" languageLevel="JDK_17" project-jdk-name="17" project-jdk-type="JavaSDK" /></project>',
+  })
+  local function native(p) return WIN and (p:gsub("/", "\\")) or p end
+  local sep = WIN and ";" or ":"
+  local names = { "GREYKNIGHT_INTELLIJ_CONFIG", "JAVA_HOME", "JDTLS_JAVA_HOME", "GREYKNIGHT_JDK_DIRS", "MAVEN_HOME", "M2_HOME", "PATH" }
+  local saved, places = {}, jdtls.jdk_places
+  for _, n in ipairs(names) do saved[n] = vim.env[n] end
+  vim.env.GREYKNIGHT_INTELLIJ_CONFIG = base .. "/no-intellij" -- not there: no IntelliJ
+  vim.env.JAVA_HOME, vim.env.JDTLS_JAVA_HOME, vim.env.MAVEN_HOME, vim.env.M2_HOME = native(m.jdk17), nil, nil, nil
+  vim.env.GREYKNIGHT_JDK_DIRS = native(m.jdk11) .. sep .. native(base .. "/nowhere")
+  vim.env.PATH = native(m.jdk17 .. "/bin") .. sep .. native(m.maven .. "/bin") .. sep .. saved.PATH
+  jdtls.jdk_places = function() return {} end
+  local ok, err = pcall(fn, jdtls, m, ij)
+  for _, n in ipairs(names) do vim.env[n] = saved[n] end
+  jdtls.jdk_places = places
+  vim.fn.delete(base, "rf")
+  assert(ok, err)
+end
+
+-- A path as the file system has it (Windows' temp directory comes with 8.3 short names)
+local function real(path) return path and vim.fs.normalize(vim.uv.fs_realpath(path) or path) end
+
+test("Java without IntelliJ: jdtls runs on an installed JDK 21, projects get $JAVA_HOME's JDK and the others", function()
+  without_intellij(function(jdtls, m, ij)
+    assert(ij.config_dir() == nil, "IntelliJ not hidden: " .. tostring(ij.config_dir()))
+    local java = jdtls.server_java()
+    assert(java and real(java) == real(ij.java_bin(m.jdk21)), "jdtls' Java: " .. tostring(java))
+    local function runtimes(project)
+      return vim.tbl_map(function(r) return r.name .. (r.default and "*" or "") .. "=" .. real(r.path) end, jdtls.runtimes(project))
+    end
+    local want = { "JavaSE-17*=" .. real(m.jdk17), "JavaSE-11=" .. real(m.jdk11), "JavaSE-21=" .. real(m.jdk21) }
+    assert(vim.deep_equal(runtimes(nil), want), vim.inspect(runtimes(nil)))
+    -- an .idea from git (no workspace.xml, a JDK IntelliJ's table does not have here): the machine's as well
+    local committed = ij.project(m.base .. "/committed")
+    assert(committed and not committed.workspace and not committed.jdk, vim.inspect(committed))
+    assert(vim.deep_equal(runtimes(committed), want), "committed .idea: " .. vim.inspect(runtimes(committed)))
+    -- launches shorten the command line for the project's JDK: an @argfile from Java 9 on, a manifest jar for 8
+    local file = m.base .. "/plain/X.java"
+    assert(jdtls.dap_overrides(file).shortenCommandLine == "argfile", vim.inspect(jdtls.dap_overrides(file)))
+    vim.env.JAVA_HOME = m.jdk8
+    assert(jdtls.dap_overrides(file).shortenCommandLine == "jarmanifest", "Java 8: " .. vim.inspect(jdtls.dap_overrides(file)))
+    vim.env.JAVA_HOME = m.jdk17
+    -- no JDK 21 anywhere: the message says what to do (not only "add one to IntelliJ")
+    vim.fn.delete(m.jdk21, "rf")
+    local still = jdtls.server_java()
+    assert(still == nil, "still a Java for jdtls: " .. tostring(still))
+    local config, why = jdtls.config(file)
+    assert(config == nil and why and why:find("install a JDK 21", 1, true) and why:find("JDTLS_JAVA_HOME", 1, true), tostring(why))
+  end)
+end)
+
+test("Java without IntelliJ: Maven's settings as the mvn command line reads them", function()
+  without_intellij(function(jdtls, m, ij)
+    local global = real(m.maven .. "/conf/settings.xml")
+    local s = jdtls.maven_settings(nil) -- the mvn on the PATH: its conf/settings.xml, ~/.m2 as jdtls' default
+    assert(s.user == nil and real(s.global) == global, vim.inspect(s))
+    assert(real(jdtls.settings(nil).java.configuration.maven.globalSettings) == global, "not in jdtls' settings")
+    assert(real(jdtls.maven_settings(ij.project(m.base .. "/committed")).global) == global, "an .idea from git")
+    vim.env.PATH = m.empty -- no mvn on the PATH: $MAVEN_HOME
+    vim.env.MAVEN_HOME = m.maven
+    assert(real(jdtls.maven_settings(nil).global) == global, vim.inspect(jdtls.maven_settings(nil)))
+    vim.env.MAVEN_HOME = nil -- no Maven at all: jdtls' defaults
+    assert(vim.deep_equal(jdtls.maven_settings(nil), {}), vim.inspect(jdtls.maven_settings(nil)))
+  end)
+end)
+
 -- T12: The docs stay in step with the config
 local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end

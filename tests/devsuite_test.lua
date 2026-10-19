@@ -885,7 +885,7 @@ test("Qwen: <leader>am names the model the server runs, and says when none runs"
 end)
 
 -- 2026-10-19: Java through jdtls (lua/integrations/jdtls.lua) - started like for a G3 file, end to end
-test("Java: jdtls starts on a project, marks a type error and finds the definition in another class", function()
+local function jdtls_end_to_end()
   local jdtls = require("integrations.jdtls")
   if not jdtls.server_java() then H.skip("no Java 21+ for jdtls") end
   local launcher = vim.fn.glob(vim.fn.stdpath("data") .. "/mason/packages/jdtls/plugins/org.eclipse.equinox.launcher_*.jar")
@@ -922,6 +922,19 @@ test("Java: jdtls starts on a project, marks a type error and finds the definiti
   vim.fn.delete(jdtls.workspace(root), "rf")
   vim.fn.delete(root, "rf")
   assert(ok, err)
+end
+
+test("Java: jdtls starts on a project, marks a type error and finds the definition in another class", jdtls_end_to_end)
+
+-- 2026-10-19: the same without IntelliJ - jdtls on a JDK GreyKnight finds on the machine (on the work laptop
+-- $JAVA_HOME is 17, the JDK 21 sits next to it). Where IntelliJ is not installed the test above ran that way.
+test("Java without IntelliJ: jdtls starts on a JDK found on the machine, end to end as above", function()
+  if not require("integrations.intellij").config_dir() then H.skip("no IntelliJ here: the test above ran without it") end
+  local saved = vim.env.GREYKNIGHT_INTELLIJ_CONFIG
+  vim.env.GREYKNIGHT_INTELLIJ_CONFIG = vim.fn.tempname() -- nothing there: no IntelliJ
+  local ok, err = pcall(jdtls_end_to_end)
+  vim.env.GREYKNIGHT_INTELLIJ_CONFIG = saved
+  if not ok then error(err, 0) end -- a skip stays a skip
 end)
 
 -- 2026-10-19: Angular templates get angularls (lua/integrations/web.lua)
