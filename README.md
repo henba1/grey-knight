@@ -44,11 +44,11 @@ cd grey-knight-nvim
 | **ripgrep** | Auto-installed | Live grep |
 | **fd** | Auto-installed | File finder |
 | **lazygit** | Auto-installed | Git TUI |
-| **python3** | For Python | Runs scripts; 3.13+ also makes the plain `python3` REPL take pasted blocks |
-| **IPython** | Optional | Preferred Python REPL (`<leader>ri`); falls back to python3 |
+| **python3** (Windows: **python**) | For Python | Runs scripts; the REPL takes sent blocks as one paste from 3.13, older Pythons run them through `exec()` |
+| **IPython** | Optional | Preferred Python REPL (`<leader>ri`); falls back to python |
 | **pytest** | Optional | `<leader>rt` / `<leader>rT` / `<leader>dt` |
 | **shellcheck** | Optional | Bash diagnostics (through bash-language-server) |
-| **debugpy, bash-debug-adapter** | Auto-installed (Mason) | Python and bash debugging; the bash debugger runs on Node |
+| **debugpy, bash-debug-adapter** | Auto-installed (Mason) | Python and bash debugging; the bash debugger runs on Node (Linux only) |
 
 The install script handles Rust, tree-sitter CLI, ripgrep, fd, and lazygit automatically; Mason
 installs the language servers and debuggers on the first start.
@@ -77,6 +77,21 @@ nvim
 # 6. Inside nvim, install treesitter parsers:
 # :TSInstall markdown markdown_inline python bash lua vim vimdoc query
 ```
+
+### Windows
+
+GreyNight runs on Windows 11 as well, without admin rights:
+
+- Neovim 0.12+, ripgrep, fd, lazygit and the tree-sitter CLI as portable binaries on the `PATH`, and
+  MinGW-w64 gcc (WinLibs) for the parsers: GreyNight sets `CC=gcc` when `CC` is unset (the CLI looks
+  for MSVC otherwise).
+- The config as a junction: `mklink /J %LOCALAPPDATA%\nvim C:\path\to\grey-knight-nvim`.
+- Python as `python` or the `py` launcher: `python3` is usually the Microsoft Store's placeholder there.
+- OpenCode as the agent when Qwen Code is not installed. Behind a TLS-inspecting proxy, point
+  `SSL_CERT_FILE` at its CA bundle; Mason's pip gets it as `PIP_CERT`.
+
+Python runs, tasks, the REPL, Python debugging and error locations work; bash scripts (run, REPL,
+debugging) and sudo runs are Linux only for now. Tests: `tests\run.ps1` (see Running Tests).
 
 ## LLM Configuration
 
@@ -133,7 +148,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── runner.lua          what to run: file / args / sudo / project scripts / selection / cell / pytest
 │   ├── tasks.lua           runs as overseer tasks: output window, args memory, watch, fix with Qwen
 │   ├── errors.lua          tracebacks + bash errors -> quickfix + marks in the code
-│   ├── repl.lua            IPython / python3 / bash REPL, bracketed paste
+│   ├── repl.lua            IPython / python / bash REPL, bracketed paste (exec() before 3.13)
 │   ├── debug.lua           Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua            venv, #!, cells, dedent, pytest node ids
 ├── lua/integrations/
@@ -202,10 +217,14 @@ See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
 tests/run.sh
 
 # One suite: smoke (config, plugins, parsers, tools) or devsuite (run, tasks, errors, debug, REPL,
-# Qwen, completion - starts python3, ipython3, bash, debugpy and bashdb)
+# Qwen, completion - starts python, ipython3, bash, debugpy and bashdb)
 tests/run.sh smoke
 tests/run.sh devsuite
 ```
+
+On Windows, `powershell -ExecutionPolicy Bypass -File tests\run.ps1` (or `... tests\run.ps1 devsuite`)
+runs each suite in a real, minimized Neovim window - a headless Neovim on Windows gets no output from
+terminal jobs - and skips the bash tests.
 
 Warnings and errors that the tests provoke go to a temp log, not to `~/.local/state/nvim/greyknight.log`.
 

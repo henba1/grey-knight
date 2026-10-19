@@ -353,7 +353,8 @@ The statusline shows how many tasks are running, done and failed.
 
 **Which interpreter:** Python files use the project's virtualenv (`$VIRTUAL_ENV`, else the
 nearest `.venv/` or `venv/` between the file and your home directory), then the `#!` line, then
-`python3`. Shell scripts use their `#!` line, else `bash`; other files run when they have a `#!`
+`python3` (Windows: `python`, and no `#!` line - there is no `/usr/bin/env`; a virtualenv's python is
+`Scripts\python.exe`). Shell scripts use their `#!` line, else `bash`; other files run when they have a `#!`
 line. A venv directly in your home (`~/venv` with pwntools, ...) is a toolbox, not a project
 environment: activate it before starting nvim to use it everywhere. pyright and the debugger
 pick the same virtualenv.
@@ -383,7 +384,7 @@ the variables of earlier cells are still there.
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `<leader>ri` | n | Open / hide the REPL of the buffer's language: IPython (from the project's venv when it has one), else python3; bash for shell scripts |
+| `<leader>ri` | n | Open / hide the REPL of the buffer's language: IPython (from the project's venv when it has one), else python3 (Windows: python; before Python 3.13 the code goes in through `exec()` of a temp file); bash for shell scripts (Linux) |
 | `<leader>re` | n | Send the current line |
 | `<leader>re` | v | Send the selection |
 | `<leader>rE` | n | Send the `# %%` cell |
@@ -783,7 +784,8 @@ send) when something broke and you did not see why.
 
 **Tests:** `tests/run.sh` runs the whole test suite headless (about ten seconds; the dev suite
 starts real python, bash and debugger processes) and exits with status 1 when anything fails. Run
-it after changing the config.
+it after changing the config. On Windows: `tests\run.ps1` - each suite in a minimized Neovim window
+(a headless one gets no terminal output there), the bash tests skipped.
 
 ---
 

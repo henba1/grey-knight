@@ -49,7 +49,7 @@ goes there while it runs and back to the code when it ends. Errors are marked in
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `<F6>` / `<leader>rr` | n | Run file with its remembered args (project `.venv` python, else `#!` / python3 / bash) |
+| `<F6>` / `<leader>rr` | n | Run file with its remembered args (project `.venv` python, else `#!` / python3 / bash; Windows: python) |
 | `<leader>ra` | n | Edit the file's args, then run (shell syntax; remembered across sessions) |
 | `<leader>rR` | n | Run file as root (sudo) |
 | `<leader>rp` / `rP` | n | Project script (./, scripts/, bin/, tools/) / with args |
@@ -64,7 +64,7 @@ goes there while it runs and back to the code when it ends. Errors are marked in
 | `<leader>rL` | n | Task list (`<CR>` actions, `o` output, `dd` remove, `?` help) |
 | `<leader>rf` | n | Send the failed run (command, output, code) to the agent: fix it |
 | `<leader>rO` | n | Task templates: make, npm, `.vscode/tasks.json`, shell |
-| `<leader>ri` | n | REPL toggle (IPython / python3 / bash) |
+| `<leader>ri` | n | REPL toggle (IPython / python / bash) |
 | `<leader>re` | n/v | Send line / selection to the REPL |
 | `<leader>rE` | n | Send the `# %%` cell to the REPL |
 
@@ -158,6 +158,7 @@ Python/bash REPL use `<leader>ri`).
 | `<leader>ue` | Error log of all sessions (`~/.local/state/nvim/greyknight.log`) |
 | `:checkhealth` | Plugins, LSP, DAP, overseer health |
 | `tests/run.sh` | All tests; exit status 1 on failure |
+| `tests\run.ps1` | The same on Windows (bash tests skipped) |
 
 ## Trouble / Diagnostics — `<leader>x`
 
@@ -264,7 +265,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
 │   ├── tasks.lua             ← runs as overseer tasks: output window, args, watch, fix with Qwen
 │   ├── errors.lua            ← tracebacks + bash errors -> quickfix + marks in the code
-│   ├── repl.lua              ← IPython / python3 / bash REPL
+│   ├── repl.lua              ← IPython / python / bash REPL
 │   ├── debug.lua             ← Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua              ← venv, #!, cells, dedent
 ├── lua/integrations/
