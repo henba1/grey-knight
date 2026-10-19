@@ -516,7 +516,14 @@ test("Java: <leader>rt / rT / dt run tests through jdtls, <leader>da offers Inte
       assert(#calls == 3, vim.inspect(calls))
       assert(calls[1][1] == "class" and calls[1][2].config_overrides.noDebug, "rt: " .. vim.inspect(calls[1]))
       assert(calls[2][1] == "nearest" and calls[2][2].config_overrides.noDebug, "rT: " .. vim.inspect(calls[2]))
-      assert(calls[3][1] == "nearest" and not calls[3][2].config_overrides, "dt runs without the debugger: " .. vim.inspect(calls[3]))
+      assert(calls[3][1] == "nearest" and not calls[3][2].config_overrides.noDebug, "dt runs without the debugger: " .. vim.inspect(calls[3]))
+      -- 2026-10-19: a G3 module's classpath is longer than Windows' command line ("E903: name too long"): every
+      -- launch shortens it (the overrides replace nvim-jdtls' defaults, so they must carry it). java-debug
+      -- itself knows no "auto": an @argfile for the project's JDK 17
+      for _, call in ipairs(calls) do
+        assert(call[2].config_overrides.shortenCommandLine == "argfile", "long command line: " .. vim.inspect(call))
+        assert(call[2].config_overrides.console == "internalConsole", "test output not in the debug REPL: " .. vim.inspect(call))
+      end
       vim.api.nvim_feedkeys(" da", "x", false)
       assert(chosen and chosen[1].name:find("myVM", 1, true) and chosen[#chosen].name:find("Other", 1, true), vim.inspect(chosen))
       assert(ran and ran.request == "attach" and ran.hostName == "dev.example" and ran.port == 8000, vim.inspect(ran))
@@ -524,6 +531,35 @@ test("Java: <leader>rt / rT / dt run tests through jdtls, <leader>da offers Inte
     package.loaded["jdtls.dap"], vim.lsp.get_clients, vim.ui.select, require("dap").run = saved[1], saved[2], saved[3], saved[4]
     assert(ok, err)
   end)
+end)
+
+-- 2026-10-19: on Windows java-test's TestNG runner ends its result lines with \r\n; nvim-jdtls cut its frame off
+-- with the \r still in, no line decoded (in a window: an error prompt that blocked Neovim), no test got a mark
+test("Java: TestNG results with Windows line ends mark the tests (passed: a mark, failed: a diagnostic)", function()
+  require("lazy").load({ plugins = { "nvim-jdtls" } })
+  require("integrations.jdtls").patch_testng()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "class T {", "  @Test void ok() {}", "  @Test void bad() {}", "}" })
+  local function frame(name, test, extra)
+    return "@@<TestRunner-" .. vim.json.encode({ name = name, attributes = vim.tbl_extend("force", { name = test }, extra or {}) }) .. "-TestRunner>\r\n"
+  end
+  local ok, err = pcall(function()
+    local results = require("jdtls.testng").mk_test_results(buf)
+    local reader = results.mk_reader({ close = function() end })
+    reader(nil, frame("testStarted", "p.T#ok()") .. frame("testFinished", "p.T#ok()", { duration = "1" })
+      .. frame("testFailed", "p.T#bad()", { message = "expected 1", trace = "at p.T.bad" }))
+    reader(nil, nil) -- the runner closed the socket
+    vim.wait(200)
+    results.show({ { fullName = "p.T#ok()", range = { start = { line = 1 } } }, { fullName = "p.T#bad()", range = { start = { line = 2 } } } })
+    local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
+    local passed = vim.tbl_filter(function(m) return m[2] == 1 and m[4].virt_text end, marks)
+    assert(#passed == 1, "no mark on the passed test: " .. vim.inspect(marks))
+    local failed = vim.diagnostic.get(buf)
+    assert(#failed == 1 and failed[1].lnum == 2 and failed[1].message == "expected 1", vim.inspect(failed))
+  end)
+  vim.diagnostic.reset(nil, buf)
+  vim.api.nvim_buf_delete(buf, { force = true })
+  assert(ok, err)
 end)
 
 -- T18: Angular (2+) and AngularJS (2026-10-19)
