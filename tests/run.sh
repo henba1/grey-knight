@@ -11,7 +11,8 @@ suites=(tests/smoke_test.lua tests/devsuite_test.lua)
 
 status=0
 for suite in "${suites[@]}"; do
-  timeout 900 nvim --headless -c "luafile $suite" -c 'qa!' || status=1
+  # report() exits; "cquit 2" only runs when the suite crashed before it (a crash is not a pass)
+  timeout 900 nvim --headless -c "luafile $suite" -c 'cquit 2' || status=1
 done
 echo
 [ $status -eq 0 ] && echo "ALL SUITES PASSED" || echo "SOME TESTS FAILED"

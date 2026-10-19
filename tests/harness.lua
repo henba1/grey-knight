@@ -66,7 +66,9 @@ function H.report(title)
   out[#out + 1] = "═══════════════════════════════════════════"
   io.stdout:write(table.concat(out, "\n") .. "\n")
   io.stdout:flush()
-  if H.failed > 0 then vim.cmd("cquit 1") end
+  -- exit here, also on success: tests/run.sh ends with "cquit 2", reached only when a suite crashed before
+  -- its report - a crash must not count as passed
+  vim.cmd(H.failed > 0 and "cquit 1" or "qall!")
 end
 
 return H

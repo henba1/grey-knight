@@ -173,6 +173,63 @@ test("Dashboard bridge only inside the dashboard", function()
   assert((vim.fn.exists(":AidashPreview") == 2) == inside, ":AidashPreview defined outside the dashboard")
 end)
 
+-- T13: Keys that once misbehaved (2026-10-19)
+test("Terminal: Ctrl+L goes to the program (clears a shell), Ctrl+h/j/k still move", function()
+  assert(vim.fn.maparg("<C-l>", "t") == "", "<C-l> is mapped in terminal mode: " .. vim.fn.maparg("<C-l>", "t"))
+  for _, k in ipairs({ "<C-h>", "<C-j>", "<C-k>" }) do
+    assert(vim.fn.maparg(k, "t") ~= "", k .. " no longer moves to the next window")
+  end
+end)
+
+test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", function()
+  local before = vim.fn.getcwd()
+  local root = vim.fn.resolve(vim.fn.tempname())
+  vim.fn.mkdir(root .. "/a/b", "p")
+  vim.fn.chdir(root .. "/a")
+  Snacks.explorer()
+  local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
+  local ok, err = pcall(function()
+    assert(H.wait(5000, picker), "explorer did not open")
+    local p = picker()
+    -- like a user: act once the first listing is there (a cd while snacks still lists shows entries twice,
+    -- with its own keys too)
+    assert(H.wait(5000, function() return not p:is_active() and p.list:count() > 0 end), "explorer did not list")
+    for key, action in pairs({ ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up" }) do
+      local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(key, "n", false, true) end)
+      assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
+    end
+    p:action("gk_cd_up")
+    assert(H.wait(3000, function() return not p:is_active() and vim.fn.getcwd() == root and p:cwd() == root end), "cd ..: " .. vim.fn.getcwd())
+    -- the tree is listed again after a cd: wait for the new listing, where a is an entry (not the old root)
+    local function folder_a()
+      if p:is_active() then return nil end
+      for i = 1, p.list:count() do
+        local it = p.list:get(i)
+        if it.file == root .. "/a" and it.parent then return i end
+      end
+    end
+    assert(H.wait(5000, folder_a), "folder a not in the tree")
+    local shown = {}
+    for i = 1, p.list:count() do
+      local file = p.list:get(i).file
+      assert(not shown[file], "shown twice: " .. file)
+      shown[file] = true
+    end
+    -- the explorer sets its own cursor target after a listing: put the cursor on a until it stays there
+    assert(H.wait(3000, function()
+      local cur = p:current()
+      if cur and cur.file == root .. "/a" then return true end
+      p.list:view(folder_a())
+    end), "the cursor does not stay on folder a")
+    p:action("gk_cd_here")
+    assert(H.wait(2000, function() return vim.fn.getcwd() == root .. "/a" and p:cwd() == root .. "/a" end), "cd here: " .. vim.fn.getcwd())
+  end)
+  if picker() then picker():close() end
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
 -- T12: The docs stay in step with the config
 local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end
