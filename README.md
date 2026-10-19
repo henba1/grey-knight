@@ -11,7 +11,7 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 
 ## Features
 
-- **AI-powered coding** — Qwen Code agent (agentic mode: read files, edit code, run commands)
+- **AI-powered coding** — Qwen Code or OpenCode agent (`GREYKNIGHT_AGENT`; agentic mode: read files, edit code, run commands)
 - **Bash + Python dev suite** — one-key runs as tasks (overseer.nvim): files, project scripts, selections,
   `# %%` cells and pytest, side by side, in a real terminal (`input()`/`read`/`sudo` work); errors marked in
   the code; debugging for Python and bash (F5, breakpoints, inline values); IPython/bash REPL; a failed
@@ -40,7 +40,7 @@ cd grey-knight-nvim
 | **gcc** | Yes | Treesitter parser compilation |
 | **curl** | Yes | Downloads |
 | **Rust/cargo** | Auto-installed | tree-sitter CLI |
-| **Qwen Code** | Yes | The built-in AI agent (requires Node 22+) |
+| **Qwen Code** or **OpenCode** | Yes | The coding agent (Qwen Code needs Node 22+; `GREYKNIGHT_AGENT=opencode` picks OpenCode) |
 | **ripgrep** | Auto-installed | Live grep |
 | **fd** | Auto-installed | File finder |
 | **lazygit** | Auto-installed | Git TUI |
@@ -137,7 +137,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── debug.lua           Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua            venv, #!, cells, dedent, pytest node ids
 ├── lua/integrations/
-│   ├── qwen.lua            Qwen Code agent terminals (ask/edit prompts, own sessions)
+│   ├── agent.lua           coding agent terminals: Qwen Code or OpenCode (ask/edit prompts, own sessions)
 │   └── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
 │                           loaded only inside its Dev Environment (USAGE.md → Terminal)
 ├── after/ftplugin/
@@ -176,7 +176,7 @@ See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
 
 | Key | Action |
 |-----|--------|
-| `Space+tt` | Qwen Code agent toggle |
+| `Space+tt` | Agent toggle (Qwen Code or OpenCode) |
 | `Space+ff` | Find files |
 | `Space+fg` | Live grep |
 | `Space+e` | File explorer |

@@ -245,6 +245,13 @@ llama.cpp, zero cloud. For coding, start a coding launcher on the AI Dashboard's
 (the uncensored "alternative" build), both without a chat persona, thinking on, 128k context.
 `<leader>am` shows which model the rig is running (README.md → LLM Configuration).
 
+**Qwen Code or OpenCode.** The agent is Qwen Code by default. The environment variable
+`GREYKNIGHT_AGENT=opencode` switches to OpenCode (`qwen` pins Qwen Code); unset, GreyNight takes
+Qwen Code where it is installed, else OpenCode, so kali and the pi keep Qwen Code without any setting.
+The keys, `@path` references, ask/edit and `<leader>rf` work the same with both. A new OpenCode agent
+gets its first prompt pasted once it has started; `<leader>ac` sends `/new` there, and `<leader>am`
+points to `/models` (OpenCode picks its model itself).
+
 | Key | Mode | Action |
 |-----|------|--------|
 | `<leader>tt` | n | Toggle AI agent (vertical 50/50 split) |
@@ -386,7 +393,7 @@ between snippets, `<leader>rs` / `<leader>rc` for a clean run.
 
 ## Terminal
 
-The `<leader>t*` keys above launch **Qwen Code** agents. For a Python or bash **REPL** use
+The `<leader>t*` keys above launch the coding agent (**Qwen Code** or OpenCode, see [AI Assistant](#ai-assistant-qwen-code)). For a Python or bash **REPL** use
 `<leader>ri` ([Running Scripts & REPL](#running-scripts-repl)). For a plain **shell** use
 `:2ToggleTerm`, and send shell lines straight into it with:
 

@@ -1,9 +1,12 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Qwen Code agent: the local Qwen Code CLI in toggleterm     ║
--- ║  A new agent gets its first prompt with `qwen -i`; a running ║
--- ║  one gets it as one bracketed paste + Enter (multi-line     ║
--- ║  safe). Ask/edit capture file + selection before the agent  ║
--- ║  window opens and reference the file as @path.              ║
+-- ║  Coding agent in toggleterm: Qwen Code or OpenCode          ║
+-- ║  Per machine: $GREYKNIGHT_AGENT = qwen | opencode; unset =  ║
+-- ║  Qwen Code where it is installed, else OpenCode.            ║
+-- ║  A new agent gets its first prompt on start (qwen -i) or    ║
+-- ║  pasted once its TUI is up (opencode); a running one gets   ║
+-- ║  it as one bracketed paste + Enter (multi-line safe).       ║
+-- ║  Ask/edit capture file + selection before the agent window  ║
+-- ║  opens and reference the file as @path (both CLIs read it). ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local util = require("devsuite.util")
 local M = {}
@@ -12,13 +15,53 @@ local M = {}
 -- (2 = the shell of <leader>ts/tl, 91/92 = REPLs)
 M.AGENTS = { agent = 1, agent1 = 11, agent2 = 12, agent3 = 13 }
 
---- The Qwen Code binary: $QWEN_BIN, ~/.local/bin/qwen (the current release), else qwen on the PATH.
-function M.bin()
-  for _, candidate in ipairs({ vim.env.QWEN_BIN, vim.fn.expand("~/.local/bin/qwen") }) do
-    if candidate and candidate ~= "" and vim.fn.executable(candidate) == 1 then return candidate end
+-- ms between a new OpenCode TUI's first output and the paste of the first prompt (it sets up its input)
+M.READY_DELAY = 1500
+
+local function executable(path) return path ~= nil and path ~= "" and vim.fn.executable(path) == 1 end
+
+M.BACKENDS = {
+  qwen = {
+    name = "Qwen Code",
+    short = "Qwen",
+    --- $QWEN_BIN, ~/.local/bin/qwen (the current release), else qwen on the PATH
+    bin = function()
+      for _, candidate in ipairs({ vim.env.QWEN_BIN, vim.fn.expand("~/.local/bin/qwen") }) do
+        if executable(candidate) then return candidate end
+      end
+      return "qwen"
+    end,
+    first_prompt = "-i", -- a new agent takes its first prompt as an argument
+    new_session = "/clear",
+  },
+  opencode = {
+    name = "OpenCode",
+    short = "OpenCode",
+    --- $OPENCODE_BIN, else opencode on the PATH
+    bin = function() return executable(vim.env.OPENCODE_BIN) and vim.env.OPENCODE_BIN or "opencode" end,
+    first_prompt = nil, -- pasted once the TUI is up: multi-line prompts survive every shell, cmd.exe too
+    new_session = "/new",
+  },
+}
+
+--- The agent of this machine: $GREYKNIGHT_AGENT (or vim.g.greyknight_agent), else Qwen Code where it is
+--- installed, else OpenCode where that is - kali and the pi keep Qwen Code without any setting.
+function M.backend_id()
+  local wanted = vim.g.greyknight_agent or vim.env.GREYKNIGHT_AGENT
+  if wanted and wanted ~= "" then
+    if M.BACKENDS[wanted] then return wanted end
+    vim.notify_once(("GREYKNIGHT_AGENT=%s is not an agent (qwen, opencode) - choosing by what is installed"):format(wanted),
+      vim.log.levels.WARN)
   end
+  if executable(M.BACKENDS.qwen.bin()) then return "qwen" end
+  if executable(M.BACKENDS.opencode.bin()) then return "opencode" end
   return "qwen"
 end
+
+function M.backend() return M.BACKENDS[M.backend_id()] end
+
+--- The agent's binary.
+function M.bin() return M.backend().bin() end
 
 local function running(term)
   return term ~= nil and term.job_id ~= nil and vim.fn.jobwait({ term.job_id }, 0)[1] == -1
@@ -30,27 +73,30 @@ local function size(direction)
 end
 
 -- The agent's terminal, and whether its process is new. A process starts when there is none
--- (or it exited); `first_prompt` goes to that new process with -i.
+-- (or it exited); `first_prompt` goes to that new process as an argument when the CLI takes one.
 local function agent(name, direction, first_prompt)
   local T = require("toggleterm.terminal")
+  local backend = M.backend()
   local id = M.AGENTS[name] or M.AGENTS.agent
   local term = T.get(id, true)
   if running(term) then
-    if term.qwen_agent or (term.cmd or ""):find("qwen", 1, true) then return term, false end
-    vim.notify(("Qwen: terminal %d is not an agent - close it first"):format(id), vim.log.levels.WARN)
+    if term.gk_agent then return term, false end
+    vim.notify(("%s: terminal %d is not an agent - close it first"):format(backend.short, id), vim.log.levels.WARN)
     return nil
   end
   if term then pcall(term.shutdown, term) end
-  local cmd = vim.fn.shellescape(M.bin())
-  if first_prompt then cmd = cmd .. " -i " .. vim.fn.shellescape(first_prompt) end
+  local cmd = vim.fn.shellescape(backend.bin())
+  if first_prompt and backend.first_prompt then
+    cmd = cmd .. " " .. backend.first_prompt .. " " .. vim.fn.shellescape(first_prompt)
+  end
   term = T.Terminal:new({
     id = id,
     cmd = cmd,
     direction = direction,
-    display_name = name == "agent" and "Qwen Code" or ("Qwen Code #" .. name:sub(-1)),
+    display_name = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1)),
     close_on_exit = false, -- keep the transcript when the CLI exits
   })
-  term.qwen_agent = true
+  term.gk_agent = true
   return term, true
 end
 
@@ -73,6 +119,26 @@ local function submit(term, text)
   end, 150)
 end
 
+-- fn() once a new agent's TUI has drawn something, plus READY_DELAY for it to set up its input
+local function when_ready(term, fn)
+  local waited = 0
+  local function poll()
+    if not running(term) then return end
+    local lines = vim.api.nvim_buf_is_valid(term.bufnr) and vim.api.nvim_buf_get_lines(term.bufnr, 0, -1, false) or {}
+    for _, line in ipairs(lines) do
+      if vim.trim(line) ~= "" then
+        return vim.defer_fn(function() if running(term) then fn() end end, M.READY_DELAY)
+      end
+    end
+    waited = waited + 200
+    if waited >= 30000 then
+      return vim.notify(M.backend().short .. ": the agent did not start within 30 s", vim.log.levels.WARN)
+    end
+    vim.defer_fn(poll, 200)
+  end
+  vim.defer_fn(poll, 200)
+end
+
 --- What a prompt needs from the editor; call it before any window changes.
 function M.context()
   local file = vim.api.nvim_buf_get_name(0)
@@ -85,7 +151,7 @@ function M.context()
   return ctx
 end
 
---- Prompt for an "ask" or "edit" request. @path makes Qwen Code read the file itself.
+--- Prompt for an "ask" or "edit" request. @path makes the agent read the file itself.
 function M.prompt(kind, ctx, request)
   local ref = "the current buffer"
   if ctx.rel then
@@ -109,13 +175,15 @@ function M.send(text, name, direction)
   local term, new = agent(name or "agent", direction, text)
   if not term then return end
   show(term, direction)
-  if not new then submit(term, text) end
+  if not new then return submit(term, text) end
+  if not M.backend().first_prompt then when_ready(term, function() submit(term, text) end) end
 end
 
 --- Ask about the file or the selection (read-only); asks for the question first.
 function M.ask()
   local ctx = M.context()
-  local prompt = ctx.sel and "Ask Qwen about the selection: " or "Ask Qwen about this file: "
+  local who = M.backend().short
+  local prompt = ctx.sel and ("Ask %s about the selection: "):format(who) or ("Ask %s about this file: "):format(who)
   vim.ui.input({ prompt = prompt }, function(request)
     if request == nil then return end
     if vim.trim(request) == "" then request = ctx.sel and "Explain this code." or "Explain what this file does." end
@@ -126,27 +194,28 @@ end
 --- Let the agent change the selected lines; asks for the instruction first.
 function M.edit()
   local ctx = M.context()
-  if not ctx.sel then return vim.notify("Qwen: select the lines to edit first", vim.log.levels.WARN) end
-  vim.ui.input({ prompt = "Qwen, change the selection: " }, function(request)
+  local who = M.backend().short
+  if not ctx.sel then return vim.notify(who .. ": select the lines to edit first", vim.log.levels.WARN) end
+  vim.ui.input({ prompt = who .. ", change the selection: " }, function(request)
     if request == nil or vim.trim(request) == "" then return end
     M.send(M.prompt("edit", ctx, request))
   end)
 end
 
---- Fresh conversation in the main agent (/clear), or a new agent.
+--- Fresh conversation in the main agent (/clear for Qwen Code, /new for OpenCode), or a new agent.
 function M.new_session()
   local term, new = agent("agent", "vertical")
   if not term then return end
   show(term, "vertical")
   if not new then
-    vim.fn.chansend(term.job_id, "/clear")
+    vim.fn.chansend(term.job_id, M.backend().new_session)
     vim.defer_fn(function()
       if running(term) then vim.fn.chansend(term.job_id, "\r") end
     end, 150)
   end
 end
 
---- Base URL of the model server: $QWEN_BASE_URL, else the default model of ~/.qwen/settings.json.
+--- Base URL of Qwen Code's model server: $QWEN_BASE_URL, else the default model of ~/.qwen/settings.json.
 function M.base_url()
   if vim.env.QWEN_BASE_URL and vim.env.QWEN_BASE_URL ~= "" then return vim.env.QWEN_BASE_URL end
   local ok, settings = pcall(function()
@@ -157,8 +226,15 @@ function M.base_url()
 end
 
 --- Which model the server runs right now (llama-server /props): name and context size.
---- Several launchers share the port, so this is how you know who the agent talks to.
+--- Several launchers share the port, so this is how you know who Qwen Code talks to.
+--- OpenCode picks its model itself (/models in the agent).
 function M.model_info(done)
+  if M.backend_id() ~= "qwen" then
+    local msg = M.backend().name .. " picks its model itself: /models in the agent shows and switches it"
+    vim.notify(msg, vim.log.levels.INFO, { title = M.backend().short })
+    if done then done(msg) end
+    return
+  end
   local url = M.base_url():gsub("/v1/?$", "") .. "/props"
   vim.system({ "curl", "-s", "--max-time", "3", url }, { text = true }, function(res)
     vim.schedule(function()

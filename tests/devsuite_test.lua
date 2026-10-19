@@ -3,7 +3,7 @@
 local H = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h") .. "/harness.lua")
 local test = H.test
 
--- T12: Bash + Python dev suite (lua/devsuite/) and the Qwen Code agent (lua/integrations/qwen.lua)
+-- T12: Bash + Python dev suite (lua/devsuite/) and the Qwen Code agent (lua/integrations/agent.lua)
 local function wait(ms, fn) return vim.wait(ms, function() return fn() and true or false end, 50) end
 local function text(buf)
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then return "" end
@@ -350,19 +350,19 @@ end)
 end
 
 test("Qwen: ask/edit prompts reference the file", function()
-  local qwen = require("integrations.qwen")
+  local qwen = require("integrations.agent")
   local p = qwen.prompt("edit", { rel = "src/my file.py", ft = "python", sel = { text = "x = 1", first = 3, last = 3 } }, "rename x to y")
   assert(p:find("@src/my\\ file.py", 1, true) and p:find("lines 3-3", 1, true) and p:find("rename x to y", 1, true), p)
 end)
 
 test("Qwen: new agent gets -i, a running agent one bracketed paste", function()
-  local qwen = require("integrations.qwen")
+  local qwen = require("integrations.agent")
   local T = require("toggleterm.terminal")
   local fake = vim.fn.tempname() .. "-qwen"
   vim.fn.writefile({ "#!/bin/sh", 'printf "ARGV:%s\\n" "$*"', "exec cat -v" }, fake)
   vim.fn.setfperm(fake, "rwx------")
-  local saved = vim.env.QWEN_BIN
-  vim.env.QWEN_BIN = fake
+  local saved, saved_agent = vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = fake, "qwen"
   local old = T.get(qwen.AGENTS.agent, true)
   if old then old:shutdown() end
   local ok, err = pcall(function()
@@ -377,7 +377,54 @@ test("Qwen: new agent gets -i, a running agent one bracketed paste", function()
     end), "no bracketed paste: " .. text(term.bufnr))
     term:shutdown()
   end)
-  vim.env.QWEN_BIN = saved
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = saved, saved_agent
+  assert(ok, err)
+end)
+
+test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is installed", function()
+  local agent = require("integrations.agent")
+  local fake = vim.fn.tempname() .. "-qwen"
+  vim.fn.writefile({ "#!/bin/sh" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT }
+  local ok, err = pcall(function()
+    vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = fake, nil
+    assert(agent.backend_id() == "qwen", "unset: " .. agent.backend_id())
+    vim.env.GREYKNIGHT_AGENT = "opencode"
+    assert(agent.backend_id() == "opencode" and agent.backend().new_session == "/new", "opencode: " .. agent.backend_id())
+    vim.env.GREYKNIGHT_AGENT = "qwen"
+    assert(agent.backend_id() == "qwen" and agent.bin() == fake, "qwen: " .. agent.bin())
+  end)
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2]
+  assert(ok, err)
+end)
+
+test("Agent (OpenCode): the first prompt is pasted once the TUI is up, /new starts a session", function()
+  local agent, T = require("integrations.agent"), require("toggleterm.terminal")
+  local fake = vim.fn.tempname() .. "-opencode"
+  vim.fn.writefile({ "#!/bin/sh", 'printf "ARGV:%s|\\n" "$*"', "exec cat -v" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT, agent.READY_DELAY }
+  vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT, agent.READY_DELAY = fake, "opencode", 100
+  local old = T.get(agent.AGENTS.agent, true)
+  if old then old:shutdown() end
+  local ok, err = pcall(function()
+    agent.send("first line\nsecond line")
+    local term = T.get(agent.AGENTS.agent, true)
+    assert(term and term.display_name == "OpenCode", "no OpenCode terminal")
+    assert(wait(10000, function()
+      local t = text(term.bufnr)
+      return t:find("^[[200~first line", 1, true) and t:find("second line^[[201~", 1, true)
+    end), "first prompt not pasted: " .. text(term.bufnr))
+    assert(text(term.bufnr):find("ARGV:|", 1, true), "the prompt went on the command line: " .. text(term.bufnr))
+    agent.new_session()
+    assert(wait(5000, function() return text(term.bufnr):find("/new", 1, true) end), "no /new: " .. text(term.bufnr))
+    local msg
+    agent.model_info(function(m) msg = m end)
+    assert(msg and msg:find("/models", 1, true), tostring(msg))
+    term:shutdown()
+  end)
+  vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT, agent.READY_DELAY = saved[1], saved[2], saved[3]
   assert(ok, err)
 end)
 
@@ -452,7 +499,7 @@ test("Keys: <leader>rs runs the visual selection (lines 2-3 only)", function()
 end)
 
 test("Keys: <leader>aa / <leader>ae send the file and the selected lines to Qwen", function()
-  local qwen = require("integrations.qwen")
+  local qwen = require("integrations.agent")
   local send, input, cwd = qwen.send, vim.ui.input, vim.fn.getcwd()
   local sent = {}
   qwen.send = function(text) sent[#sent + 1] = text end
@@ -696,14 +743,15 @@ test("Error log: a plugin that wraps vim.notify does not break notifications", f
 end)
 
 test("Qwen: <leader>am names the model the server runs, and says when none runs", function()
-  local qwen = require("integrations.qwen")
+  local qwen = require("integrations.agent")
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
   vim.fn.writefile({ vim.json.encode({ model_path = "/m/Fake-27B-Q6_K.gguf", default_generation_settings = { n_ctx = 4096 } }) }, dir .. "/props")
   local port = 18000 + vim.uv.hrtime() % 1000
   local base = ("http://127.0.0.1:%d"):format(port)
   local server = vim.fn.jobstart({ "python3", "-m", "http.server", tostring(port), "--bind", "127.0.0.1", "--directory", dir })
-  local saved = vim.env.QWEN_BASE_URL
+  local saved, saved_agent = vim.env.QWEN_BASE_URL, vim.env.GREYKNIGHT_AGENT
+  vim.env.GREYKNIGHT_AGENT = "qwen"
   local ok, err = pcall(function()
     assert(H.wait(5000, function()
       return vim.system({ "curl", "-s", "--max-time", "1", base .. "/props" }):wait().code == 0
@@ -719,7 +767,7 @@ test("Qwen: <leader>am names the model the server runs, and says when none runs"
     assert(H.wait(5000, function() return got end) and got:find("No model is running", 1, true), tostring(got))
   end)
   vim.fn.jobstop(server)
-  vim.env.QWEN_BASE_URL = saved
+  vim.env.QWEN_BASE_URL, vim.env.GREYKNIGHT_AGENT = saved, saved_agent
   assert(ok, err)
 end)
 

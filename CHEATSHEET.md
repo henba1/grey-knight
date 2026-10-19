@@ -3,7 +3,7 @@
 > Leader = `Space` | Open this: `nvim ~/.config/nvim/CHEATSHEET.md` or `<leader>gd`
 > On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
 
-**Contents:** [General](#general) · [AI](#ai-qwen-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
+**Contents:** [General](#general) · [AI](#ai-qwen-code-or-opencode-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
 
 ## General
 
@@ -16,7 +16,7 @@
 | `<C-d>` / `<C-u>` | Half a page down / up, cursor centered |
 | `n` / `N` | Next / previous search hit, centered |
 
-## AI (Qwen Code) — `<leader>a`
+## AI (Qwen Code or OpenCode) — `<leader>a`
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -25,12 +25,15 @@
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
-| `<leader>ac` | n | New AI session (`/clear`) |
-| `<leader>am` | n | Which model the rig runs right now (name, context) |
+| `<leader>ac` | n | New AI session (`/clear` in Qwen Code, `/new` in OpenCode) |
+| `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
 
+> **Which agent:** Qwen Code by default; the environment variable `GREYKNIGHT_AGENT=opencode` switches to OpenCode.
+> Unset, GreyNight takes Qwen Code where it is installed, else OpenCode.
+>
 > The agent runs the local **Qwen Code** CLI in a persistent terminal. It inherits the
 > project's cwd and any `QWEN.md`/`AGENTS.md` context automatically. `aa`/`ae` send the file
 > as `@path` plus the selected lines and your question/instruction as one prompt (a new agent
@@ -59,7 +62,7 @@ goes there while it runs and back to the code when it ends. Errors are marked in
 | `<leader>rk` | n | Kill |
 | `<leader>ro` | n | Show / hide the output |
 | `<leader>rL` | n | Task list (`<CR>` actions, `o` output, `dd` remove, `?` help) |
-| `<leader>rf` | n | Send the failed run (command, output, code) to Qwen: fix it |
+| `<leader>rf` | n | Send the failed run (command, output, code) to the agent: fix it |
 | `<leader>rO` | n | Task templates: make, npm, `.vscode/tasks.json`, shell |
 | `<leader>ri` | n | REPL toggle (IPython / python3 / bash) |
 | `<leader>re` | n/v | Send line / selection to the REPL |
@@ -265,7 +268,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── debug.lua             ← Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua              ← venv, #!, cells, dedent
 ├── lua/integrations/
-│   ├── qwen.lua              ← Qwen Code agent terminals
+│   ├── agent.lua             ← coding agent terminals: Qwen Code or OpenCode
 │   └── aidash.lua            ← AI Dashboard bridge
 ├── lua/plugins/
 │   ├── ai.lua                ← toggleterm (agents, REPLs)

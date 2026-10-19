@@ -5,7 +5,7 @@
 -- ║  Backend: Qwen 3.8 27B @ 192.168.2.173:8000 (llama.cpp)     ║
 -- ╚══════════════════════════════════════════════════════════════╝
 --
--- The agent lives in lua/integrations/qwen.lua (keys in lua/config/keymaps.lua:
+-- The agent lives in lua/integrations/agent.lua (keys in lua/config/keymaps.lua:
 -- <leader>t*, <leader>a*); it drives the local Qwen Code CLI in these persistent terminals.
 -- The REPLs of the dev suite (lua/devsuite/repl.lua) use toggleterm as well.
 

@@ -63,10 +63,9 @@ test("snacks loads", function()
   assert(pcall(require, "snacks"), "snacks failed to load")
 end)
 
-test("qwen binary available", function()
-  local env = vim.loop.os_environ()
-  local q = env.QWEN_BIN or "/home/nix0/.local/bin/qwen"
-  assert(vim.fn.executable(q) == 1, "qwen not found at " .. q)
+test("Coding agent available (Qwen Code or OpenCode)", function()
+  local agent = require("integrations.agent")
+  assert(vim.fn.executable(agent.bin()) == 1, agent.backend().name .. " not found: " .. agent.bin())
 end)
 
 test("flash loads", function()

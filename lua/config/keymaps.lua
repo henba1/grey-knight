@@ -11,7 +11,7 @@ vim.api.nvim_create_autocmd("User", {
     local ok, wk = pcall(require, "which-key")
     if ok then
       wk.add({
-        { "<leader>a",  group = "AI (Qwen Code)" },
+        { "<leader>a",  group = "AI (" .. require("integrations.agent").backend().name .. ")" },
         { "<leader>b",  group = "Buffer" },
         { "<leader>d",  group = "Debug/DAP" },
         { "<leader>f",  group = "Find (Picker)" },
@@ -118,31 +118,31 @@ map("n", "<leader>rw", function() runner().toggle_watch() end,     { desc = "Run
 map("n", "<leader>rk", function() runner().stop() end,             { desc = "Run: Kill" })
 map("n", "<leader>ro", function() runner().toggle() end,           { desc = "Run: Toggle output" })
 map("n", "<leader>rL", function() runner().list() end,             { desc = "Run: Task list" })
-map("n", "<leader>rf", function() runner().fix_with_qwen() end,    { desc = "Run: Fix the failed run with Qwen" })
+map("n", "<leader>rf", function() runner().fix_with_qwen() end,    { desc = "Run: Fix the failed run with the agent" })
 map("n", "<leader>rO", "<cmd>OverseerRun<cr>",                     { desc = "Run: Task templates (make, npm, tasks.json)" })
 map("n", "<leader>ri", function() repl().toggle() end,             { desc = "REPL: Toggle (IPython/bash)" })
 map("n", "<leader>re", function() repl().send_line() end,          { desc = "REPL: Send line" })
 map("v", "<leader>re", function() repl().send_selection() end,     { desc = "REPL: Send selection" })
 map("n", "<leader>rE", function() repl().send_cell() end,          { desc = "REPL: Send cell (# %%)" })
 
--- ── Qwen Code agent (lua/integrations/qwen.lua) ─────────────
-local function qwen() return require("integrations.qwen") end
+-- ── Coding agent: Qwen Code or OpenCode (lua/integrations/agent.lua) ─
+local function agent() return require("integrations.agent") end
 -- The start page's "AI" key calls these
-vim.g.qwen_launch = function(name, direction) qwen().launch(name, direction) end
-vim.g.qwen_toggle = function(name, direction) qwen().toggle(name, direction) end
+vim.g.qwen_launch = function(name, direction) agent().launch(name, direction) end
+vim.g.qwen_toggle = function(name, direction) agent().toggle(name, direction) end
 
-map("n", "<leader>tt", function() qwen().toggle("agent", "vertical") end,    { desc = "AI: Toggle" })
-map("n", "<leader>tf", function() qwen().launch("agent", "float") end,       { desc = "AI: Float" })
-map("n", "<leader>th", function() qwen().launch("agent", "horizontal") end,  { desc = "AI: Horizontal" })
-map("n", "<leader>tv", function() qwen().launch("agent", "vertical") end,    { desc = "AI: Vertical" })
-map("n", "<leader>t1", function() qwen().launch("agent1", "horizontal") end, { desc = "AI: Agent #1 (own session)" })
-map("n", "<leader>t2", function() qwen().launch("agent2", "horizontal") end, { desc = "AI: Agent #2 (own session)" })
-map("n", "<leader>t3", function() qwen().launch("agent3", "horizontal") end, { desc = "AI: Agent #3 (own session)" })
-map("n", "<leader>ac", function() qwen().new_session() end, { desc = "AI: New session (/clear)" })
-map("n", "<leader>am", function() qwen().model_info() end,  { desc = "AI: Model running on the rig" })
-map("n", "<leader>aa", function() qwen().ask() end,         { desc = "AI: Ask about file" })
-map("v", "<leader>aa", function() qwen().ask() end,         { desc = "AI: Ask about selection" })
-map("v", "<leader>ae", function() qwen().edit() end,        { desc = "AI: Edit selection" })
+map("n", "<leader>tt", function() agent().toggle("agent", "vertical") end,    { desc = "AI: Toggle" })
+map("n", "<leader>tf", function() agent().launch("agent", "float") end,       { desc = "AI: Float" })
+map("n", "<leader>th", function() agent().launch("agent", "horizontal") end,  { desc = "AI: Horizontal" })
+map("n", "<leader>tv", function() agent().launch("agent", "vertical") end,    { desc = "AI: Vertical" })
+map("n", "<leader>t1", function() agent().launch("agent1", "horizontal") end, { desc = "AI: Agent #1 (own session)" })
+map("n", "<leader>t2", function() agent().launch("agent2", "horizontal") end, { desc = "AI: Agent #2 (own session)" })
+map("n", "<leader>t3", function() agent().launch("agent3", "horizontal") end, { desc = "AI: Agent #3 (own session)" })
+map("n", "<leader>ac", function() agent().new_session() end, { desc = "AI: New session" })
+map("n", "<leader>am", function() agent().model_info() end,  { desc = "AI: Model running on the rig" })
+map("n", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about file" })
+map("v", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about selection" })
+map("v", "<leader>ae", function() agent().edit() end,        { desc = "AI: Edit selection" })
 
 -- ── Debug: Python (debugpy) + bash (bashdb) - lua/devsuite/debug.lua ─
 -- F5 debugs the current file (or continues; with .vscode/launch.json it offers those configs).

@@ -277,7 +277,7 @@ function M.toggle_watch()
   end
 end
 
---- The failed run (shown one, else the last that failed) as a prompt for the Qwen Code agent.
+--- The failed run (shown one, else the last that failed) as a prompt for the coding agent.
 function M.fix_prompt()
   local task = state.current
   if not (task and not task:is_disposed() and task.status == "FAILURE") then task = state.last_failed end
@@ -303,11 +303,11 @@ function M.fix_prompt()
   }, "\n")
 end
 
---- Send the failed run to the Qwen Code agent.
+--- Send the failed run to the coding agent (Qwen Code or OpenCode).
 function M.fix_with_qwen()
   local prompt = M.fix_prompt()
   if not prompt then return notify("Run: no failed run to fix", WARN) end
-  require("integrations.qwen").send(prompt)
+  require("integrations.agent").send(prompt)
 end
 
 return M
