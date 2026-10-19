@@ -191,7 +191,9 @@ function M.run(spec)
     cwd = spec.cwd,
     env = spec.env,
     metadata = { gk_key = spec.key, gk_file = spec.file },
-    components = { "on_exit_set_status", "display_duration" },
+    -- the duration comes from run.started / run.ended; overseer's display_duration is a deprecated stub
+    -- that only warned at every start
+    components = { "on_exit_set_status" },
   })
   local run = { task = task, lines = {}, items = {}, map = spec.map, starts = 0 }
   state.runs[task.id] = run

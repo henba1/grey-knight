@@ -89,6 +89,22 @@ test("Runner: python input() reads from the terminal (task in a pty)", function(
   assert(task.status == "SUCCESS" and task_out(task):find("hello knight", 1, true), task.status .. ": " .. task_out(task))
 end)
 
+-- 2026-10-19: tasks carried overseer's display_duration, a deprecated stub that only warned at every start
+-- (GreyNight measures the duration itself). Every component a task gets must be current in overseer.
+test("Tasks: no deprecated overseer components", function()
+  local tasks = require("devsuite.tasks")
+  local task = tasks.run({ key = "test:components", name = "components", cmd = "true", cwd = "/tmp", focus = false })
+  local deprecated = {}
+  for _, comp in ipairs(task.components) do
+    local ok, def = pcall(require, "overseer.component." .. comp.name:gsub("/", "."))
+    assert(ok and type(def) == "table", "unknown overseer component " .. comp.name)
+    if def.deprecated_message then deprecated[#deprecated + 1] = comp.name .. " (" .. def.deprecated_message .. ")" end
+  end
+  wait(5000, function() return task:is_complete() end)
+  assert(#task.components > 0, "a task without components")
+  assert(#deprecated == 0, "deprecated overseer components: " .. table.concat(deprecated, ", "))
+end)
+
 test("Runner: bash snippet (indented selection) with read", function()
   local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
   scratch("sh")
