@@ -2,7 +2,8 @@
 -- ║  REPL next to the code: IPython / Python, or the shell      ║
 -- ║  Python code arrives as one bracketed paste: blank lines in ║
 -- ║  blocks are fine, and input() waits for you instead of      ║
--- ║  swallowing the next line of the snippet                    ║
+-- ║  swallowing the next line of the snippet (Python before     ║
+-- ║  3.13: a temp file run through exec(), same effect)         ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local util = require("devsuite.util")
 local M = {}
@@ -23,22 +24,33 @@ local function running(term)
   return term ~= nil and term.job_id ~= nil and vim.fn.jobwait({ term.job_id }, 0)[1] == -1
 end
 
+--- "python" when this Python's REPL takes bracketed paste (3.13+), else "classic": an older REPL ends a
+--- block at its first blank line, so the code goes in through exec() of a temp file (Windows and
+--- Ubuntu 24.04 come with 3.12).
+function M.python_flavor(exe)
+  local out = vim.fn.system({ exe, "-c", "import sys; print(sys.version_info >= (3, 13))" })
+  return (vim.v.shell_error == 0 and vim.trim(out) == "True") and "python" or "classic"
+end
+
 --- REPL command and flavor: IPython (from the project's virtualenv if it has one), else that venv's /
---- the system python3 (3.13+ takes bracketed paste); the shell for shell scripts.
+--- the system Python (bracketed paste from 3.13, "classic" before); the shell for shell scripts.
 ---@return string cmd
----@return "ipython"|"python"|"shell" flavor
+---@return "ipython"|"python"|"classic"|"shell" flavor
 function M.command(k, path)
   if k == "shell" then return vim.o.shell, "shell" end
   local flags = " --no-autoindent --no-confirm-exit --no-banner"
   local venv = util.find_venv(path)
   if venv then
-    if vim.fn.executable(venv .. "/bin/ipython") == 1 then return vim.fn.shellescape(venv .. "/bin/ipython") .. flags, "ipython" end
-    return vim.fn.shellescape(venv .. "/bin/python"), "python"
+    local ipython = util.venv_bin(venv, "ipython")
+    if vim.fn.executable(ipython) == 1 then return vim.fn.shellescape(ipython) .. flags, "ipython" end
+    local python = util.venv_python(venv)
+    return vim.fn.shellescape(python), M.python_flavor(python)
   end
   for _, exe in ipairs({ "ipython3", "ipython" }) do
     if vim.fn.executable(exe) == 1 then return exe .. flags, "ipython" end
   end
-  return "python3", "python"
+  local python = util.system_python()
+  return python, M.python_flavor(python)
 end
 
 -- The REPL terminal of a kind; a new one (not open yet) when there is none or its process ended
@@ -100,6 +112,13 @@ end
 --- the Python 3.13 REPL wants an empty line after more than one line, both after an open block.
 function M.payload(flavor, lines)
   if flavor == "shell" then return table.concat(lines, "\n") .. "\n" end
+  if flavor == "classic" then
+    -- the code as a file, run by exec() in the REPL's namespace: blank lines in blocks and input() work
+    -- as in a script, and the names it defines stay for the next lines
+    local file = vim.fn.tempname() .. "-repl.py"
+    vim.fn.writefile(lines, file)
+    return ("exec(compile(open(r'%s', encoding='utf-8').read(), r'%s', 'exec'))\r"):format(file, file)
+  end
   local code = vim.tbl_filter(function(line) return line:find("%S") ~= nil end, lines)
   local second = block_open(lines) or (flavor == "python" and #code > 1)
   return "\27[200~" .. table.concat(lines, "\n") .. "\27[201~" .. (second and "\r\r" or "\r")
