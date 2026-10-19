@@ -8,7 +8,7 @@ test("Config loads without errors", function()
 end)
 
 -- T2: All plugins registered
-test("38 plugins registered", function()
+test("Plugins registered", function()
   local count = #require("lazy").plugins()
   assert(count >= 35, "only " .. count .. " plugins")
 end)
@@ -26,6 +26,8 @@ test("Language toggles defined", function()
   assert(lang.typescript == true, "typescript not enabled")
   assert(lang.lua == true, "lua not enabled")
   assert(lang.c == true, "c not enabled")
+  assert(lang.java == true, "java not enabled")
+  assert(lang.angular == true, "angular not enabled")
 end)
 
 -- T5: Treesitter parsers (language.add returns false for a missing parser, it does not raise: 2026-10-19)
@@ -335,6 +337,247 @@ test("Debug: every adapter for Mason is one mason-nvim-dap knows", function()
   for _, name in ipairs(wanted) do
     assert(known[name], name .. " is not an nvim-dap adapter name (mason-nvim-dap would skip it)")
   end
+end)
+
+-- T16: IntelliJ's settings (2026-10-19): GreyNight works on an IntelliJ project the way IntelliJ does - the JDK
+-- and Maven IntelliJ uses (no drift), its Actions on Save and its Reformat Code - and finds its Remote JVM Debug
+-- configurations. A complete IntelliJ world in a temp dir ($GREYKNIGHT_INTELLIJ_CONFIG points at its settings).
+local function intellij_world()
+  local base = vim.fs.normalize(vim.fn.tempname())
+  local w = { base = base, config = base .. "/config", a = base .. "/projects/a", b = base .. "/projects/b" }
+  local function write(path, lines)
+    vim.fn.mkdir(vim.fs.dirname(path), "p")
+    vim.fn.writefile(type(lines) == "table" and lines or { lines }, path)
+  end
+  write(base .. "/jdk17/release", 'JAVA_VERSION="17.0.19"')
+  write(base .. "/jdk21/release", 'JAVA_VERSION="21.0.12"')
+  write(w.config .. "/options/jdk.table.xml", {
+    '<application><component name="ProjectJdkTable">',
+    '<jdk version="2"><name value="17" /><type value="JavaSDK" /><version value="Temurin 17" /><homePath value="' .. base .. '/jdk17" /></jdk>',
+    '<jdk version="2"><name value="temurin-21" /><type value="JavaSDK" /><version value="Temurin 21" /><homePath value="' .. base .. '/jdk21" /></jdk>',
+    '<jdk version="2"><name value="Python 3" /><type value="Python SDK" /><homePath value="/usr/bin/python3" /></jdk>',
+    "</component></application>",
+  })
+  write(w.config .. "/options/recentProjects.xml", {
+    '<application><component name="RecentProjectsManager"><option name="additionalInfo"><map>',
+    '<entry key="' .. w.b .. '"><value /></entry>', "</map></option></component></application>",
+  })
+  write(w.a .. "/.idea/misc.xml", {
+    '<project version="4"><component name="ProjectRootManager" version="2" languageLevel="JDK_17" default="true" project-jdk-name="17" project-jdk-type="JavaSDK">',
+    '<output url="file://$PROJECT_DIR$/out" /></component></project>',
+  })
+  write(w.a .. "/.idea/workspace.xml", {
+    '<project version="4">',
+    '<component name="MavenImportPreferences"><option name="generalSettings"><MavenGeneralSettings>',
+    '<option name="customMavenHome" value="' .. base .. '/maven" />',
+    '<option name="localRepository" value="$PROJECT_DIR$/repo" />',
+    '<option name="mavenHomeTypeForPersistence" value="CUSTOM" />',
+    '<option name="userSettingsFile" value="$USER_HOME$/my-settings.xml" />',
+    "</MavenGeneralSettings></option></component>",
+    '<component name="RunManager">',
+    '<configuration default="true" type="Remote"><option name="HOST" value="localhost" /><option name="PORT" value="5005" /></configuration>',
+    '<configuration name="myVM" type="Remote" factoryName="Remote"><option name="SERVER_MODE" value="false" /><option name="HOST" value="dev.example" /><option name="PORT" value="8000" /></configuration>',
+    '<configuration name="listen" type="Remote"><option name="SERVER_MODE" value="true" /><option name="HOST" value="localhost" /><option name="PORT" value="9000" /></configuration>',
+    "</component></project>",
+  })
+  write(w.a .. "/.idea/prettier.xml", '<project version="4"><component name="PrettierConfiguration"><option name="myConfigurationMode" value="AUTOMATIC" /></component></project>')
+  write(w.a .. "/node_modules/prettier/package.json", "{}")
+  write(w.b .. "/.idea/workspace.xml", {
+    '<project version="4"><component name="RunManager">',
+    '<configuration name="nebula" type="Remote"><option name="HOST" value="qa.example" /><option name="PORT" value="8000" /></configuration>',
+    '<configuration name="myVM again" type="Remote"><option name="HOST" value="dev.example" /><option name="PORT" value="8000" /></configuration>',
+    "</component>",
+    '<component name="FormatOnSaveOptions"><option name="myRunOnSave" value="true" /><option name="myAllFileTypesSelected" value="false" />',
+    '<option name="mySelectedFileTypes"><set><option value="JAVA" /></set></option></component>',
+    '<component name="OptimizeOnSaveOptions"><option name="myRunOnSave" value="true" /></component>',
+    "</project>",
+  })
+  for _, f in ipairs({ w.a .. "/src/Main.java", w.a .. "/src/app.ts", w.a .. "/src/app.html", w.b .. "/src/Main.java",
+    w.b .. "/src/app.ts", base .. "/plain/x.lua", base .. "/plain/X.java" }) do
+    write(f, "")
+  end
+  return w
+end
+
+-- Runs fn(ij, w) in an IntelliJ world; buffers it opened are wiped afterwards
+local function in_intellij_world(fn)
+  local w = intellij_world()
+  local saved = vim.env.GREYKNIGHT_INTELLIJ_CONFIG
+  local before = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do before[b] = true end
+  vim.env.GREYKNIGHT_INTELLIJ_CONFIG = w.config
+  local ok, err = pcall(fn, require("integrations.intellij"), w)
+  vim.env.GREYKNIGHT_INTELLIJ_CONFIG = saved
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if not before[b] then pcall(vim.api.nvim_buf_delete, b, { force = true }) end
+  end
+  vim.fn.delete(w.base, "rf")
+  assert(ok, err)
+end
+
+test("IntelliJ: its JDKs, a project's JDK and Maven settings", function()
+  in_intellij_world(function(ij, w)
+    assert(ij.config_dir() == w.config, tostring(ij.config_dir()))
+    local jdks = ij.jdks()
+    assert(#jdks == 2 and jdks[1].name == "17" and jdks[1].major == 17 and jdks[2].major == 21, vim.inspect(jdks))
+    local p = ij.project(ij.project_root(w.a .. "/src/Main.java"))
+    assert(p and p.root == w.a and p.jdk and p.jdk.home == w.base .. "/jdk17" and p.language_level == 17, vim.inspect(p))
+    local home = vim.fs.normalize((vim.fn.has("win32") == 1 and vim.env.USERPROFILE) or vim.env.HOME)
+    assert(p.maven.home == w.base .. "/maven" and p.maven.local_repository == w.a .. "/repo"
+      and p.maven.user_settings == home .. "/my-settings.xml", vim.inspect(p.maven))
+    assert(not p.save.format and not p.save.optimize_imports and p.prettier.mode == "AUTOMATIC" and not p.prettier.on_save, vim.inspect(p))
+  end)
+end)
+
+test("IntelliJ: saving and <leader>fm do what IntelliJ's Actions on Save and Reformat Code do", function()
+  in_intellij_world(function(ij, w)
+    local function at(file) -- no FileType event: no jdtls start, no server install as a side effect
+      vim.cmd("noautocmd edit " .. vim.fn.fnameescape(file))
+      vim.cmd("noautocmd setlocal filetype=" .. (vim.filetype.match({ filename = file }) or ""))
+      return ij.save_actions(0), ij.reformat_options(0)
+    end
+    local save, reformat = at(w.a .. "/src/app.ts") -- Automatic Prettier: on reformat, not on save
+    assert(not save.format and reformat.formatters[1] == "prettier", vim.inspect({ save, reformat }))
+    save, reformat = at(w.a .. "/src/app.html") -- not in Prettier's "Run for files": IntelliJ's formatter
+    assert(not save.format and reformat.lsp_format == "prefer" and not reformat.formatters, vim.inspect({ save, reformat }))
+    save = at(w.b .. "/src/Main.java") -- Format on Save for Java only, Optimize Imports for all types
+    assert(save.format and save.organize_imports and not save.prettier and not save.changed_lines, vim.inspect(save))
+    save = at(w.b .. "/src/app.ts")
+    assert(not save.format and save.organize_imports, vim.inspect(save))
+    assert(at(w.base .. "/plain/x.lua") == nil, "outside IntelliJ projects GreyNight's own behavior")
+    save = at(w.base .. "/plain/X.java")
+    assert(save and not save.format, "Java gets IntelliJ's default everywhere: nothing on save")
+    -- conform's format_on_save follows it
+    local conform = require("lazy.core.config").plugins["conform.nvim"]
+    local format_on_save = require("lazy.core.plugin").values(conform, "opts", false).format_on_save
+    at(w.a .. "/src/app.ts")
+    assert(format_on_save(0) == nil, "formats on save in an IntelliJ project that does not")
+    at(w.base .. "/plain/x.lua")
+    assert(type(format_on_save(0)) == "table", "no longer formats on save outside IntelliJ projects")
+  end)
+end)
+
+test("IntelliJ: Remote JVM Debug configurations - this project's first, each host:port once", function()
+  in_intellij_world(function(ij, w)
+    local names = vim.tbl_map(function(r) return r.name .. "=" .. r.host .. ":" .. r.port end, ij.remote_debug(w.a))
+    assert(vim.deep_equal(names, { "myVM=dev.example:8000", "nebula=qa.example:8000" }), vim.inspect(names))
+  end)
+end)
+
+-- T17: Java (2026-10-19): jdtls the way IntelliJ has the project; the test and debug keys in Java files
+test("Java: jdtls runs on IntelliJ's JDK 21, gets the project's JDK and IntelliJ's Maven settings", function()
+  require("lazy").load({ plugins = { "nvim-jdtls" } })
+  in_intellij_world(function(ij, w)
+    for _, jdk in ipairs({ "jdk17", "jdk21" }) do -- the fake JDKs get a java executable
+      local java = ij.java_bin(w.base .. "/" .. jdk)
+      vim.fn.mkdir(vim.fs.dirname(java), "p")
+      vim.fn.writefile({ "" }, java)
+      vim.fn.setfperm(java, "rwx------")
+    end
+    local jdtls = require("integrations.jdtls")
+    assert(jdtls.server_java() == ij.java_bin(w.base .. "/jdk21"), tostring(jdtls.server_java()))
+    local project = ij.project(w.a)
+    local runtimes = vim.tbl_map(function(r) return r.name .. (r.default and "*" or "") .. "=" .. r.path end, jdtls.runtimes(project))
+    assert(vim.deep_equal(runtimes, { "JavaSE-17*=" .. w.base .. "/jdk17", "JavaSE-21=" .. w.base .. "/jdk21" }), vim.inspect(runtimes))
+    local settings = jdtls.settings(project)
+    local java = settings.java
+    assert(java.import.gradle.enabled == false and java.import.maven.enabled == true, "not Maven-only")
+    local home = vim.fs.normalize((vim.fn.has("win32") == 1 and vim.env.USERPROFILE) or vim.env.HOME)
+    assert(java.configuration.maven.globalSettings == home .. "/my-settings.xml", tostring(java.configuration.maven.globalSettings))
+    local user = table.concat(vim.fn.readfile(java.configuration.maven.userSettings), "\n")
+    assert(user:find("<localRepository>" .. w.a .. "/repo</localRepository>", 1, true), user)
+    assert(not java.saveActions.organizeImports, "organizes imports on save although IntelliJ does not")
+    -- 2026-10-19: without the settings in the initialization jdtls imported G3 with its defaults (Gradle)
+    assert(jdtls.init_options(settings).settings == settings, "the settings are not in the initialization")
+    assert(vim.fn.filereadable(jdtls.FORMAT_PROFILE) == 1, "no format profile: " .. jdtls.FORMAT_PROFILE)
+    -- Optimize Imports on save in IntelliJ (project b): jdtls organizes them on save too
+    assert(jdtls.settings(ij.project(w.b)).java.saveActions.organizeImports, "IntelliJ's Optimize Imports on save not taken")
+  end)
+end)
+
+test("Java: <leader>rt / rT / dt run tests through jdtls, <leader>da offers IntelliJ's remote configs", function()
+  in_intellij_world(function(_, w)
+    local calls, chosen = {}, nil
+    local saved = { package.loaded["jdtls.dap"], vim.lsp.get_clients, vim.ui.select, require("dap").run }
+    package.loaded["jdtls.dap"] = {
+      test_class = function(opts) calls[#calls + 1] = { "class", opts } end,
+      test_nearest_method = function(opts) calls[#calls + 1] = { "nearest", opts } end,
+    }
+    vim.lsp.get_clients = function(f) return f and f.name == "jdtls" and { {} } or saved[2](f) end
+    vim.ui.select = function(items, _, cb) chosen = items; cb(items[1]) end
+    local ran
+    require("dap").run = function(config) ran = config end
+    local ok, err = pcall(function()
+      vim.cmd("noautocmd edit " .. vim.fn.fnameescape(w.a .. "/src/Main.java")) -- no FileType: no real jdtls
+      vim.cmd("noautocmd setlocal filetype=java")
+      vim.api.nvim_feedkeys(" rt", "x", false)
+      vim.api.nvim_feedkeys(" rT", "x", false)
+      vim.api.nvim_feedkeys(" dt", "x", false)
+      assert(#calls == 3, vim.inspect(calls))
+      assert(calls[1][1] == "class" and calls[1][2].config_overrides.noDebug, "rt: " .. vim.inspect(calls[1]))
+      assert(calls[2][1] == "nearest" and calls[2][2].config_overrides.noDebug, "rT: " .. vim.inspect(calls[2]))
+      assert(calls[3][1] == "nearest" and not calls[3][2].config_overrides, "dt runs without the debugger: " .. vim.inspect(calls[3]))
+      vim.api.nvim_feedkeys(" da", "x", false)
+      assert(chosen and chosen[1].name:find("myVM", 1, true) and chosen[#chosen].name:find("Other", 1, true), vim.inspect(chosen))
+      assert(ran and ran.request == "attach" and ran.hostName == "dev.example" and ran.port == 8000, vim.inspect(ran))
+    end)
+    package.loaded["jdtls.dap"], vim.lsp.get_clients, vim.ui.select, require("dap").run = saved[1], saved[2], saved[3], saved[4]
+    assert(ok, err)
+  end)
+end)
+
+-- T18: Angular (2+) and AngularJS (2026-10-19)
+test("Angular: *.component.html of an Angular workspace is htmlangular, other HTML stays html", function()
+  local root = vim.fs.normalize(vim.fn.tempname())
+  vim.fn.mkdir(root .. "/ws/src/app", "p")
+  vim.fn.mkdir(root .. "/legacy/src", "p")
+  vim.fn.writefile({ "{}" }, root .. "/ws/angular.json")
+  local function ft(path)
+    vim.fn.writefile({ "<p>{{ x }}</p>" }, path)
+    return vim.filetype.match({ filename = path })
+  end
+  local ok, err = pcall(function()
+    assert(ft(root .. "/ws/src/app/app.component.html") == "htmlangular", "template: " .. tostring(ft(root .. "/ws/src/app/app.component.html")))
+    assert(ft(root .. "/ws/src/index.html") == "html", "index.html")
+    assert(ft(root .. "/legacy/src/list.component.html") == "html", "AngularJS template outside an Angular workspace")
+  end)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Angular: angularls in Angular workspaces, eslint where its config is, html and css servers by filetype", function()
+  local web = require("integrations.web")
+  local root = vim.fs.normalize(vim.fn.tempname())
+  for _, dir in ipairs({ "/ws/src/app", "/legacy/src", "/plain" }) do vim.fn.mkdir(root .. dir, "p") end
+  vim.fn.writefile({ "{}" }, root .. "/ws/nx.json")
+  vim.fn.writefile({ "module.exports = []" }, root .. "/ws/eslint.config.cjs")
+  vim.fn.writefile({ "module.exports = {}" }, root .. "/legacy/.eslintrc.js")
+  local bufs = {}
+  local function needed(path, filetype) -- no FileType event: nothing gets installed or started
+    vim.cmd("noautocmd edit " .. vim.fn.fnameescape(root .. path))
+    vim.cmd("noautocmd setlocal filetype=" .. filetype)
+    bufs[#bufs + 1] = vim.api.nvim_get_current_buf()
+    return table.concat(web.needed(0), " ")
+  end
+  local ok, err = pcall(function()
+    assert(needed("/ws/src/app/app.component.ts", "typescript") == "angularls eslint", needed("/ws/src/app/app.component.ts", "typescript"))
+    assert(needed("/ws/src/app/app.component.html", "htmlangular") == "angularls eslint", "template")
+    assert(needed("/ws/src/styles.scss", "scss") == "cssls", "scss")
+    assert(needed("/legacy/src/app.ts", "typescript") == "eslint", "AngularJS code: " .. needed("/legacy/src/app.ts", "typescript"))
+    assert(needed("/legacy/src/list.html", "html") == "html", "AngularJS template")
+    assert(needed("/plain/x.ts", "typescript") == "", "no workspace, no eslint config")
+    -- 2026-10-19: lspconfig's own angularls root was angular.json only - it never started in Nx workspaces
+    -- (ngx-his has nx.json and no angular.json)
+    local file = root .. "/ws/src/app/app.component.ts"
+    assert(web.angular_root(file) == root .. "/ws", "angularls' root: " .. tostring(web.angular_root(file)))
+    local angularls = require("lspconfig").angularls
+    if angularls.get_root_dir then -- set up where angularls is installed: lspconfig uses that root
+      assert(vim.fs.normalize(angularls.get_root_dir(file) or "") == root .. "/ws", "lspconfig: " .. tostring(angularls.get_root_dir(file)))
+    end
+  end)
+  for _, b in ipairs(bufs) do pcall(vim.api.nvim_buf_delete, b, { force = true }) end
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
 end)
 
 -- T12: The docs stay in step with the config

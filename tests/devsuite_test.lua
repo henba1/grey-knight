@@ -876,10 +876,78 @@ test("Qwen: <leader>am names the model the server runs, and says when none runs"
     vim.env.QWEN_BASE_URL = "http://127.0.0.1:9/v1" -- nothing listens there
     got = nil
     qwen.model_info(function(msg) got = msg end)
-    assert(H.wait(5000, function() return got end) and got:find("No model is running", 1, true), tostring(got))
+    -- Windows answers a closed port only after ~2 s of SYN retries (curl's limit is 3 s): 5 s were too tight
+    assert(H.wait(10000, function() return got end) and got:find("No model is running", 1, true), tostring(got))
   end)
   vim.fn.jobstop(server)
   vim.env.QWEN_BASE_URL, vim.env.GREYKNIGHT_AGENT = saved, saved_agent
+  assert(ok, err)
+end)
+
+-- 2026-10-19: Java through jdtls (lua/integrations/jdtls.lua) - started like for a G3 file, end to end
+test("Java: jdtls starts on a project, marks a type error and finds the definition in another class", function()
+  local jdtls = require("integrations.jdtls")
+  if not jdtls.server_java() then H.skip("no Java 21+ for jdtls") end
+  local launcher = vim.fn.glob(vim.fn.stdpath("data") .. "/mason/packages/jdtls/plugins/org.eclipse.equinox.launcher_*.jar")
+  if launcher == "" then H.skip("jdtls not installed (Mason) - opening a Java file installs it") end
+  local root = vim.fs.normalize(vim.fn.tempname())
+  vim.fn.mkdir(root .. "/.git", "p") -- jdtls' root
+  vim.fn.mkdir(root .. "/src/demo", "p")
+  vim.fn.writefile({ "package demo;", "", "public class Helper {", '    public static String greet() { return "hi"; }', "}" }, root .. "/src/demo/Helper.java")
+  vim.fn.writefile({
+    "package demo;", "", "public class Main {", "    public static void main(String[] args) {",
+    "        String s = Helper.greet();", '        int broken = "text";', "    }", "}",
+  }, root .. "/src/demo/Main.java")
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/src/demo/Main.java"))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    assert(wait(90000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "jdtls" }) > 0 end), "jdtls did not start")
+    assert(wait(120000, function()
+      for _, d in ipairs(vim.diagnostic.get(buf, { severity = vim.diagnostic.severity.ERROR })) do
+        if d.lnum == 5 then return true end
+      end
+    end), "no error on line 6: " .. vim.inspect(vim.diagnostic.get(buf)))
+    local params = { textDocument = vim.lsp.util.make_text_document_params(buf), position = { line = 4, character = 27 } }
+    assert(wait(60000, function()
+      for _, r in pairs(vim.lsp.buf_request_sync(buf, "textDocument/definition", params, 10000) or {}) do
+        local x = r.result
+        local uri = x and (x.uri or (x[1] and (x[1].uri or x[1].targetUri)))
+        if uri and uri:find("Helper.java", 1, true) then return true end
+      end
+    end), "the definition of Helper.greet() was not found")
+  end)
+  for _, client in ipairs(vim.lsp.get_clients({ name = "jdtls" })) do client:stop(true) end
+  wait(10000, function() return #vim.lsp.get_clients({ name = "jdtls" }) == 0 end)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.fn.delete(jdtls.workspace(root), "rf")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-19: Angular templates get angularls (lua/integrations/web.lua)
+test("Angular: angularls attaches to a template of an Angular workspace", function()
+  if vim.fn.executable("ngserver") == 0 then H.skip("angular-language-server not installed (Mason) - an Angular file installs it") end
+  local root = vim.fs.normalize(vim.fn.tempname())
+  vim.fn.mkdir(root .. "/src/app", "p")
+  vim.fn.writefile({ '{ "version": 1, "projects": {} }' }, root .. "/angular.json")
+  vim.fn.writefile({ '{ "compilerOptions": { "target": "es2022", "experimentalDecorators": true } }' }, root .. "/tsconfig.json")
+  vim.fn.writefile({
+    "import { Component } from '@angular/core';",
+    "@Component({ selector: 'app-root', templateUrl: './app.component.html' })",
+    "export class AppComponent { title = 'x'; }",
+  }, root .. "/src/app/app.component.ts")
+  vim.fn.writefile({ "<h1>{{ title }}</h1>" }, root .. "/src/app/app.component.html")
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/src/app/app.component.html"))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    assert(vim.bo[buf].filetype == "htmlangular", "filetype " .. vim.bo[buf].filetype)
+    assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "angularls" }) > 0 end), "angularls did not attach")
+    vim.wait(3000)
+    assert(#vim.lsp.get_clients({ bufnr = buf, name = "angularls" }) > 0, "angularls ended right away")
+  end)
+  for _, client in ipairs(vim.lsp.get_clients({ name = "angularls" })) do client:stop(true) end
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.fn.delete(root, "rf")
   assert(ok, err)
 end)
 
