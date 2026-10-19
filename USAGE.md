@@ -187,6 +187,10 @@ moved only the tree.) `Snacks.explorer({ cwd = "/path" })` still opens a one-off
 | `Ctrl+Space` | v | Expand selection to parent node |
 | `Backspace` | v | Shrink selection |
 
+These run Neovim's own node selection (`:h v_an`), with the LSP's selection ranges where a file type has no
+treesitter parser. Neovim's own keys for it, `an` / `in`, are mini.ai's "next" textobjects here (`vin(`
+selects inside the next parentheses).
+
 ---
 
 ## Code Intelligence (LSP)

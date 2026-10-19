@@ -232,8 +232,8 @@ DAP console pane; variable values show next to the code while stopped. Full work
 | `J`/`K` | v | Move selection down/up |
 | `<leader>p` | x | Paste without yank |
 | `J` | n | Join lines, the cursor stays |
-| `<C-Space>` | n / x | Select the node at the cursor / grow the selection (treesitter) |
-| `<BS>` | x | Shrink the selection |
+| `<C-Space>` | n / x | Select the node at the cursor / grow the selection (treesitter, else LSP) |
+| `<BS>` | x | Shrink the selection (back to the node you grew from) |
 | `<leader>d` | x | Delete the selection without yanking |
 | `<leader>bd` | n | Delete buffer |
 
