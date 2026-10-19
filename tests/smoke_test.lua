@@ -274,6 +274,24 @@ test("Markdown: gd / Enter follow links, Ctrl+o comes back", function()
   assert(ok, err)
 end)
 
+-- 2026-10-19: <leader>d was an operator and the start of 14 debug keys - debug always won
+test("Keys: no <leader> key is both an action and the start of others", function()
+  local bad = {}
+  for _, mode in ipairs({ "n", "x" }) do
+    local keys = {}
+    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+      local k = m.lhs:gsub("^ ", "<leader>")
+      if k:match("^<leader>") then keys[#keys + 1] = k end
+    end
+    for _, a in ipairs(keys) do
+      for _, b in ipairs(keys) do
+        if b ~= a and b:sub(1, #a) == a then bad[#bad + 1] = mode .. " " .. a .. " (also starts " .. b .. ")"; break end
+      end
+    end
+  end
+  assert(#bad == 0, "keys that wait or are shadowed: " .. table.concat(bad, ", "))
+end)
+
 -- T12: The docs stay in step with the config
 local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end

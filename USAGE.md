@@ -173,7 +173,7 @@ moved only the tree.) `Snacks.explorer({ cwd = "/path" })` still opens a one-off
 | `ci"` | n | Change inside quotes |
 | `J/K` | v | Move selected lines down/up |
 | `<leader>p` | v | Paste without overwriting clipboard |
-| `<leader>d` | n/v | Delete to void (don't copy) |
+| `<leader>d` | v | Delete the selection without copying it (in normal mode `<leader>d` starts the debug keys) |
 | `J` | n | Join lines (cursor stays put) |
 | `<leader>w` | n | Save file |
 | `<leader>q` | n | Quit window |

@@ -81,7 +81,8 @@ map("n", "<Esc>", "<cmd>noh<cr>", { desc = "Clear highlight" })
 
 -- ── Better paste / delete ───────────────────────────────────
 map("x", "<leader>p", [["_dP]], { desc = "Paste without yank" })
-map({ "n", "v" }, "<leader>d", [["_d]], { desc = "Delete to void" })
+-- visual only: in normal mode <leader>d starts the debug keys (an operator there shadowed dl, dh, dt, ...)
+map("x", "<leader>d", [["_d]], { desc = "Delete without yanking" })
 
 -- ── Send to terminal (pentesting workflow) ──────────────────
 -- Terminal #1 is the Qwen Code agent; shell snippets go to #2.
