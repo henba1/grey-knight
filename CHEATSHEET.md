@@ -56,7 +56,7 @@ goes there while it runs and back to the code when it ends. Errors are marked in
 | `<leader>rs` | v | Run selection as a script of its own (dedented) |
 | `<leader>rc` | n | Run the `# %%` cell at the cursor |
 | `<leader>rx` | n | Trace run of a shell script (`bash -x`) |
-| `<leader>rt` / `rT` | n | pytest the file / the test at the cursor |
+| `<leader>rt` / `rT` | n | pytest the file / the test at the cursor (Java: TestNG / JUnit through jdtls) |
 | `<leader>rl` | n | Run again (restart) |
 | `<leader>rw` | n | Watch: re-run on save (toggle) |
 | `<leader>rk` | n | Kill |
@@ -182,7 +182,7 @@ Python/bash REPL use `<leader>ri`).
 | `<leader>ca` | Code action |
 | `<leader>D` | Type definition |
 | `[d` / `]d` | Prev/next diagnostic |
-| `<leader>fm` | Format buffer |
+| `<leader>fm` | Format buffer / selection (IntelliJ projects: like its Reformat Code, see USAGE.md) |
 
 > Neovim's own LSP keys work too: `grn` rename, `grr` references, `gra` code action, `gO` symbols.
 > Because of them `gr` waits a moment before it runs; `grr` is the instant one.
@@ -195,18 +195,18 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Action |
 |-----|--------|
-| `<F5>` | Debug this file / Continue (with `.vscode/launch.json`: pick a config) |
+| `<F5>` | Debug this file / Continue (with `.vscode/launch.json`: pick a config; Java: main classes + IntelliJ's remote configs) |
 | `<S-F5>` / `<leader>dq` | Stop |
 | `<F9>` / `<leader>db` | Toggle breakpoint |
 | `<F10>` / `<F11>` / `<F12>` | Step over / into / out |
 | `<leader>dl` / `dL` | Launch this file / with args |
-| `<leader>dt` | Debug the pytest test at the cursor |
+| `<leader>dt` | Debug the test at the cursor (pytest / Java: TestNG, JUnit) |
 | `<leader>de` | Stop on every raised exception (toggle; default: uncaught only) |
 | `<leader>dc` | Run to cursor |
 | `<leader>dh` | Value under cursor |
 | `<leader>dB` / `dp` | Conditional breakpoint / log point |
 | `<leader>dR` | Restart |
-| `<leader>da` | Attach: debugpy listener (port prompt) |
+| `<leader>da` | Attach: debugpy listener (port prompt) / Java: IntelliJ's Remote JVM Debug configs |
 | `<leader>dr` / `du` | DAP REPL / toggle DAP UI |
 
 ## Hacker Specials
@@ -270,7 +270,11 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   └── util.lua              ← venv, #!, cells, dedent
 ├── lua/integrations/
 │   ├── agent.lua             ← coding agent terminals: Qwen Code or OpenCode
-│   └── aidash.lua            ← AI Dashboard bridge
+│   ├── aidash.lua            ← AI Dashboard bridge
+│   ├── intellij.lua          ← IntelliJ's settings: JDK, Maven, on save, reformat, remote debug
+│   ├── jdtls.lua             ← Java: jdtls the way IntelliJ has the project
+│   ├── mason.lua             ← Mason packages on first use (Java, Angular)
+│   └── web.lua               ← Angular / AngularJS servers
 ├── lua/plugins/
 │   ├── ai.lua                ← toggleterm (agents, REPLs)
 │   ├── colorscheme.lua       ← Cyberdream
@@ -278,6 +282,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── devsuite.lua          ← overseer.nvim (task engine)
 │   ├── editor.lua            ← flash, harpoon, oil, mini, trouble, etc
 │   ├── hacker.lua            ← hex, DAP
+│   ├── java.lua              ← nvim-jdtls
 │   ├── lsp.lua               ← LSP, Mason, Treesitter, conform
 │   ├── session.lua           ← persisted.nvim
 │   └── snacks.lua            ← picker, explorer, dashboard, notify

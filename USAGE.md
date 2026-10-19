@@ -32,6 +32,7 @@
 23. [Tips & Tricks](#tips-tricks)
 24. [When Something Goes Wrong](#when-something-goes-wrong)
 25. [Mode Reference](#mode-reference)
+26. [Java and Angular (IntelliJ Projects)](#java-and-angular-intellij-projects)
 
 ---
 
@@ -320,8 +321,8 @@ RUNNING / DONE / FAILED, the exit code, the run time and what to do next.
 | `<leader>rs` | v | Run the selection as a script of its own (dedented, so a block out of a function runs) |
 | `<leader>rc` | n | Run the `# %%` cell at the cursor (no cells: the whole file) |
 | `<leader>rx` | n | Trace run of a shell script: `bash -x` prints every command before it runs |
-| `<leader>rt` | n | pytest the current file |
-| `<leader>rT` | n | pytest the test at the cursor (`file::TestClass::test_name`) |
+| `<leader>rt` | n | pytest the current file (Java: the test class, TestNG / JUnit) |
+| `<leader>rT` | n | pytest the test at the cursor (`file::TestClass::test_name`; Java: the test method) |
 
 **Project scripts** are the `*.sh` files, executables and runnable `*.py` files (`#!` line or
 `if __name__ == "__main__"`) in the project root and in `scripts/`, `bin/` and `tools/`; the project
@@ -630,10 +631,10 @@ the new one opens in a split.
 
 | Key / Command | Action |
 |---------------|--------|
-| `F5` | Debug the current file (Python or bash), or continue a stopped session. With a `.vscode/launch.json` in the project, pick one of its configurations |
+| `F5` | Debug the current file (Python or bash), or continue a stopped session. With a `.vscode/launch.json` in the project, pick one of its configurations. Java: pick a main class or one of IntelliJ's Remote JVM Debug configurations |
 | `<leader>dl` / `<leader>dL` | Debug the current file / with arguments (prompt) |
-| `<leader>dt` | Debug the pytest test at the cursor |
-| `<leader>da` | Attach: connect to a script started with `python -m debugpy.listen` (port prompt) |
+| `<leader>dt` | Debug the test at the cursor (pytest; Java: TestNG / JUnit) |
+| `<leader>da` | Attach: connect to a script started with `python -m debugpy.listen` (port prompt); Java: to a JVM - one of IntelliJ's Remote JVM Debug configurations, or host:port |
 
 C/C++: the CodeLLDB binary itself is ensured via Mason, but its command
 surface (`:CodelldbLaunch` / `:CodelldbAttach`) ships with the
@@ -744,7 +745,9 @@ The config uses OSC 52 for clipboard — copy in nvim works in your local clipbo
 Press `<leader>` and **wait** — a popup shows all available keybindings grouped by category.
 
 ### Format on Save
-Files auto-format when you save. To format manually: `<leader>fm`.
+Files auto-format when you save. To format manually: `<leader>fm`. In projects you also open in IntelliJ
+(an `.idea` folder) saving does what IntelliJ's Actions on Save do - by default nothing; Java files get that
+default everywhere (see [Java and Angular](#java-and-angular-intellij-projects)).
 
 ### Todo Comments
 `TODO`, `FIXME`, `HACK`, `NOTE` in comments are highlighted automatically.
@@ -798,6 +801,41 @@ it after changing the config. On Windows: `tests\run.ps1` - each suite in a mini
 | **Visual** | `v` (char), `V` (line), `Ctrl+v` (block) | Selecting text |
 | **Command** | `:` | Running ex commands |
 | **Terminal** | `:ToggleTerm` | Shell inside nvim (`<leader>t*` = Qwen agent) |
+
+---
+
+## Java and Angular (IntelliJ Projects)
+
+GreyNight works on a project you also open in IntelliJ IDEA the way IntelliJ does: it reads IntelliJ's settings
+(`lua/integrations/intellij.lua`, never writing them), so nothing drifts apart.
+
+| | From IntelliJ |
+|---|---|
+| JDK | The project's SDK (`.idea/misc.xml` and IntelliJ's JDK table): errors, runs and tests use the JDK IntelliJ uses. jdtls itself runs on IntelliJ's newest JDK 21+ |
+| Maven | IntelliJ's Maven home, settings file and local repository (Settings → Build Tools → Maven). jdtls imports with Maven, never with Gradle |
+| Saving | IntelliJ's Actions on Save (reformat, also "only changed lines"; optimize imports) and Prettier's "Run on save" - by default nothing happens |
+| `<leader>fm` | IntelliJ's Reformat Code: the project's prettier where IntelliJ runs it (JS / TS in Automatic mode), else the language server |
+| Debugging | IntelliJ's Remote JVM Debug configurations of your recent projects: `F5` in a Java file offers them next to the main classes, `<leader>da` attaches |
+
+Approximate: IntelliJ's own formatter cannot run while IntelliJ is open, so jdtls formats Java with a profile
+close to IntelliJ's default style (`resources/intellij-java-format.xml`) - format a selection (`V` … then
+`<leader>fm`) to touch only those lines. Imports follow IntelliJ's default layout (others, `javax`, `java`,
+statics; `*` from 5 classes / 3 static names).
+
+**Java** (jdtls through nvim-jdtls): open a `.java` file. The first time, Mason installs jdtls, java-debug-adapter
+and java-test, and the first import of a G3 repository takes a few minutes; later starts reuse it (the index
+lives in Neovim's data directory). `gd`, `gr`, `K` and `<leader>ca` (organize imports, extract variable /
+method, ...) work as in every language; `<leader>rt` / `<leader>rT` run the test class / the test at the cursor
+(TestNG or JUnit), `<leader>dt` debugs it.
+
+**Angular** (ngx-his): a `*.component.html` in an Angular workspace (`angular.json` or `nx.json`) is
+`htmlangular` - angularls knows the component in its template, with the project's own Angular and TypeScript;
+ESLint runs with the project's config. **AngularJS** (the `*-html5/client` folders): TypeScript through ts_ls,
+ESLint with the client's config, templates as plain HTML - no language server knows AngularJS templates.
+Their servers install themselves with the first file that needs them.
+
+Outside IntelliJ projects (no `.idea`) GreyNight keeps its own behavior: formatting on save and `<leader>fm`
+with conform's formatters.
 
 ---
 

@@ -16,6 +16,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   `# %%` cells and pytest, side by side, in a real terminal (`input()`/`read`/`sudo` work); errors marked in
   the code; debugging for Python and bash (F5, breakpoints, inline values); IPython/bash REPL; a failed
   run goes to the AI agent with one key
+- **Java and Angular, the IntelliJ way** — jdtls with the project's JDK and IntelliJ's Maven settings, TestNG /
+  JUnit and debugging (also IntelliJ's remote debug configurations); angularls, ESLint, AngularJS through ts_ls;
+  saving and reformatting as IntelliJ's settings say (USAGE.md → Java and Angular)
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications
@@ -141,6 +144,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── devsuite.lua        overseer.nvim (task engine of the dev suite)
 │   ├── editor.lua          flash, harpoon, oil, surround, trouble, etc.
 │   ├── hacker.lua          hex editor, DAP (debugpy, bashdb, dap-ui, inline values)
+│   ├── java.lua            nvim-jdtls: jdtls starts with the first Java file (lua/integrations/jdtls.lua)
 │   ├── lsp.lua             LSP, Mason, Treesitter, conform
 │   ├── session.lua         persisted.nvim
 │   └── snacks.lua          picker, explorer, dashboard, notify
@@ -153,11 +157,18 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   └── util.lua            venv, #!, cells, dedent, pytest node ids
 ├── lua/integrations/
 │   ├── agent.lua           coding agent terminals: Qwen Code or OpenCode (ask/edit prompts, own sessions)
-│   └── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
-│                           loaded only inside its Dev Environment (USAGE.md → Terminal)
+│   ├── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
+│   │                       loaded only inside its Dev Environment (USAGE.md → Terminal)
+│   ├── intellij.lua        IntelliJ's settings, read only: JDKs, a project's JDK and Maven, Actions on Save,
+│   │                       Prettier, Remote JVM Debug configurations
+│   ├── jdtls.lua           Java: jdtls with the project's JDK and IntelliJ's Maven, tests, debugging, attach
+│   ├── mason.lua           Mason packages on demand: installed with the first file that needs them
+│   └── web.lua             Angular / AngularJS: angularls, eslint, html and css servers
 ├── after/ftplugin/
 │   ├── python.lua          4-space indent, col 88
 │   └── markdown.lua        wrap + spellcheck
+├── resources/
+│   └── intellij-java-format.xml   jdtls formatter profile close to IntelliJ's default Java code style
 ├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
 └── tests/
     ├── run.sh              runs all suites; exit status 1 on failure
@@ -178,8 +189,12 @@ vim.g.lang = {
   c          = true,   -- clangd + codelldb
   typescript = true,   -- ts_ls + prettier
   lua        = true,   -- lua_ls + stylua
+  java       = true,   -- jdtls + java-debug + java-test, set up the way IntelliJ has the project
+  angular    = true,   -- angularls + eslint + html / css servers (Angular 2+; AngularJS: ts_ls + eslint)
 }
 ```
+
+Java and the Angular servers install themselves (Mason) with the first file that needs them.
 
 Adding a new language:
 1. Add toggle in `vim.g.lang`
@@ -198,7 +213,7 @@ See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
 | `Space+e` | File explorer |
 | `Space+gg` | Lazygit |
 | `F6` / `Space+rr` | Run file as a task (`input()` works) |
-| `F5` | Debug this file (Python / bash) |
+| `F5` | Debug this file (Python / bash; Java: main classes, IntelliJ's remote configs) |
 | `Space+rp` | Run a project script |
 | `Space+ri` | REPL (IPython / bash) |
 | `Space+t1/t2/t3` | Extra Qwen agents (own sessions) |
