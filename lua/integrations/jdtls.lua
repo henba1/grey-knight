@@ -1,8 +1,9 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Java: jdtls on a project the way IntelliJ has it - the     ║
--- ║  project's JDK, IntelliJ's Maven settings (no drift), Maven ║
--- ║  import only; tests and debugging through java-test and     ║
--- ║  java-debug-adapter; IntelliJ's remote debug configs        ║
+-- ║  Java: jdtls with the project's JDK and Maven - IntelliJ's  ║
+-- ║  where IntelliJ has the project (no drift), else the JDKs   ║
+-- ║  and the Maven of this machine, as the mvn command line;    ║
+-- ║  Maven import only; tests and debugging through java-test   ║
+-- ║  and java-debug-adapter; IntelliJ's remote debug configs    ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local intellij = require("integrations.intellij")
 local M = {}
@@ -16,6 +17,7 @@ M.FORMAT_PROFILE_NAME = "IntelliJ IDEA default (GreyKnight)"
 
 
 local WARN = vim.log.levels.WARN
+local WIN = vim.fn.has("win32") == 1
 
 local function notify(msg, level) vim.notify(msg, level or vim.log.levels.INFO, { title = "Java" }) end
 
@@ -25,54 +27,165 @@ local function mason_path(...) return vim.fs.joinpath(vim.fn.stdpath("data"), "m
 -- cache directory is the temp directory on Windows
 local function data_path(...) return vim.fs.joinpath(vim.fn.stdpath("data"), ...) end
 
---- The Java that runs jdtls: IntelliJ's newest JDK 21+, else $JDTLS_JAVA_HOME, $JAVA_HOME or the java on the PATH
---- when it is 21+. Returns the executable and { home, major }, or nil.
+-- ── The JDKs and the Maven of this machine (no IntelliJ needed) ──
+-- 2026-10-19: without IntelliJ jdtls only knew $JAVA_HOME and the java on the PATH - on the work laptop both are
+-- 17, so jdtls (21+) did not start although a JDK 21 sat next to them, and every project compiled against that
+-- one JDK. GreyKnight finds the installed JDKs and reads Maven's settings the way the mvn command line does.
+local function env_path(name)
+  local value = vim.env[name]
+  return value and value ~= "" and vim.fs.normalize(value) or nil
+end
+
+-- The JDK in a directory ({ home, major }): its release file names the version and its java runs. macOS bundles
+-- keep it in Contents/Home.
+local function jdk_at(dir)
+  if not dir then return nil end
+  for _, home in ipairs({ dir, dir .. "/Contents/Home" }) do
+    local major = intellij.java_major(home)
+    if major and vim.fn.executable(intellij.java_bin(home)) == 1 then return { home = home, major = major } end
+  end
+end
+
+local function env_jdk(name) return jdk_at(env_path(name)) end
+
+-- The JDK of the java on the PATH (/usr/bin/java is a chain of links into /usr/lib/jvm)
+local function path_jdk()
+  local java = vim.fn.exepath("java")
+  if java == "" then return nil end
+  return jdk_at(vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(vim.uv.fs_realpath(java) or java))))
+end
+
+--- The places of this OS that hold installed JDKs.
+function M.jdk_places()
+  local home = vim.fs.normalize((WIN and vim.env.USERPROFILE) or vim.env.HOME or "~")
+  if WIN then
+    local programs = vim.fs.normalize(vim.env.ProgramFiles or "C:/Program Files")
+    local out = {}
+    for _, vendor in ipairs({ "Java", "Eclipse Adoptium", "Microsoft", "Zulu", "Amazon Corretto", "BellSoft", "Semeru" }) do
+      out[#out + 1] = programs .. "/" .. vendor
+    end
+    out[#out + 1] = home .. "/.jdks" -- the JDKs IntelliJ downloaded stay there without IntelliJ
+    return out
+  elseif vim.fn.has("mac") == 1 then
+    return { "/Library/Java/JavaVirtualMachines", home .. "/Library/Java/JavaVirtualMachines",
+      home .. "/.sdkman/candidates/java", home .. "/.jdks" }
+  end
+  return { "/usr/lib/jvm", "/usr/java", "/opt/java", home .. "/.sdkman/candidates/java", home .. "/.jdks",
+    home .. "/.local/share/mise/installs/java", home .. "/.asdf/installs/java" }
+end
+
+--- The JDKs installed on this machine, found without IntelliJ - { home, major } each, every JDK once, in this
+--- order: $JDTLS_JAVA_HOME, $JAVA_HOME and the java on the PATH; what $GREYKNIGHT_JDK_DIRS names (JDKs or folders
+--- of JDKs, separated like PATH); the folders next to the first ones (JDKs unpacked side by side, as
+--- C:/dev/tools/jdk/*); the places of the OS (M.jdk_places()).
+function M.installed_jdks()
+  local out, seen = {}, {}
+  local function add(jdk)
+    if not jdk then return end
+    local key = vim.fs.normalize(vim.uv.fs_realpath(jdk.home) or jdk.home)
+    if WIN then key = key:lower() end
+    if seen[key] then return end
+    seen[key] = true
+    out[#out + 1] = jdk
+  end
+  -- A JDK, or a folder of JDKs: directories before links, so /usr/lib/jvm/default-java (a link that moves with
+  -- the system's default) never stands for a version
+  local function scan(dir)
+    if not dir or vim.fn.isdirectory(dir) == 0 then return end
+    local jdk = jdk_at(dir)
+    if jdk then return add(jdk) end
+    local dirs, links = {}, {}
+    pcall(function()
+      for name, kind in vim.fs.dir(dir) do
+        if kind == "directory" then dirs[#dirs + 1] = name elseif kind == "link" then links[#links + 1] = name end
+      end
+    end)
+    table.sort(dirs)
+    table.sort(links)
+    for _, name in ipairs(vim.list_extend(dirs, links)) do add(jdk_at(dir .. "/" .. name)) end
+  end
+  local first = {} -- (a list literal of the three would end at the first nil)
+  for _, find in ipairs({ function() return env_jdk("JDTLS_JAVA_HOME") end, function() return env_jdk("JAVA_HOME") end, path_jdk }) do
+    first[#first + 1] = find()
+  end
+  for _, jdk in ipairs(first) do add(jdk) end
+  for _, dir in ipairs(vim.split(vim.env.GREYKNIGHT_JDK_DIRS or "", WIN and ";" or ":", { trimempty = true })) do
+    scan(vim.fs.normalize(dir))
+  end
+  for _, jdk in ipairs(first) do scan(vim.fs.dirname(jdk.home)) end
+  for _, dir in ipairs(M.jdk_places()) do scan(dir) end
+  return out
+end
+
+--- The JDK the mvn command line runs on: $JAVA_HOME, else the java on the PATH - { home, major } or nil. Projects
+--- IntelliJ does not describe get it as their JDK.
+function M.default_jdk() return env_jdk("JAVA_HOME") or path_jdk() end
+
+--- The Java that runs jdtls (21+): $JDTLS_JAVA_HOME when set, else IntelliJ's newest JDK 21+, else $JAVA_HOME or
+--- the java on the PATH when it is 21+, else the newest JDK 21+ installed. It does not decide how projects compile
+--- (that is M.runtimes()). Returns the executable and { home, major }, or nil.
 function M.server_java()
-  local jdk = intellij.newest_jdk(M.MIN_JAVA)
-  if jdk then return intellij.java_bin(jdk.home), jdk end
-  for _, home in ipairs({ vim.env.JDTLS_JAVA_HOME, vim.env.JAVA_HOME }) do
-    if home and home ~= "" then
-      home = vim.fs.normalize(home)
-      local major = intellij.java_major(home)
-      if major and major >= M.MIN_JAVA then return intellij.java_bin(home), { home = home, major = major } end
+  local function usable(jdk) return jdk and jdk.major >= M.MIN_JAVA and jdk or nil end
+  local jdk = usable(env_jdk("JDTLS_JAVA_HOME")) or intellij.newest_jdk(M.MIN_JAVA)
+    or usable(env_jdk("JAVA_HOME")) or usable(path_jdk())
+  if not jdk then
+    for _, j in ipairs(M.installed_jdks()) do
+      if j.major >= M.MIN_JAVA and (not jdk or j.major > jdk.major) then jdk = j end
     end
   end
-  local java = vim.fn.exepath("java")
-  if java ~= "" then
-    local real = vim.fs.normalize(vim.uv.fs_realpath(java) or java)
-    local home = vim.fs.dirname(vim.fs.dirname(real))
-    local major = intellij.java_major(home)
-    if major and major >= M.MIN_JAVA then return real, { home = home, major = major } end
-  end
+  if jdk then return intellij.java_bin(jdk.home), jdk end
 end
 
 -- jdtls' execution environment names: JavaSE-1.8, JavaSE-17
 local function environment(major) return major <= 8 and ("JavaSE-1." .. major) or ("JavaSE-" .. major) end
 
---- jdtls' runtimes: the project's JDK as the default, then the other JDKs IntelliJ knows (one per version);
---- without an IntelliJ project $JAVA_HOME is the default.
+--- jdtls' runtimes: the JDKs projects compile and run with, one per Java version. A project whose JDK IntelliJ
+--- knows: that JDK as the default, then IntelliJ's other JDKs - as IntelliJ compiles it. Any other project: the
+--- JDK the mvn command line runs on (M.default_jdk()) as the default, then IntelliJ's JDKs where it is installed and
+--- the JDKs of this machine (M.installed_jdks()) - a project on another Java version gets that version.
 function M.runtimes(project)
   local out, seen = {}, {}
-  local function add(home, major, default)
-    if not home or not major or seen[major] then return end
-    seen[major] = true
-    out[#out + 1] = { name = environment(major), path = home, default = default or nil }
+  local function add(jdk, default)
+    if not jdk or not jdk.home or not jdk.major or seen[jdk.major] then return end
+    seen[jdk.major] = true
+    out[#out + 1] = { name = environment(jdk.major), path = jdk.home, default = default or nil }
   end
   if project and project.jdk then
-    add(project.jdk.home, project.jdk.major, true)
-  elseif vim.env.JAVA_HOME and vim.env.JAVA_HOME ~= "" then
-    local home = vim.fs.normalize(vim.env.JAVA_HOME)
-    add(home, intellij.java_major(home), true)
+    add(project.jdk, true)
+    for _, jdk in ipairs(intellij.jdks()) do add(jdk) end
+    return out
   end
-  for _, jdk in ipairs(intellij.jdks()) do add(jdk.home, jdk.major, false) end
+  add(M.default_jdk(), true)
+  for _, jdk in ipairs(intellij.jdks()) do add(jdk) end
+  for _, jdk in ipairs(M.installed_jdks()) do add(jdk) end
   return out
 end
 
---- Maven settings for jdtls as IntelliJ uses them: { user, global } (nil = jdtls' defaults). A local repository
---- IntelliJ sets comes in through a generated settings file that holds only that; IntelliJ's settings file then
---- goes in as the global one (no copy of it - it may hold server credentials).
+--- Maven's home as the mvn command line has it: the mvn on the PATH (links resolved), else $MAVEN_HOME or $M2_HOME.
+function M.maven_home()
+  local mvn = vim.fn.exepath("mvn")
+  if mvn ~= "" then return vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(vim.uv.fs_realpath(mvn) or mvn))) end
+  for _, name in ipairs({ "MAVEN_HOME", "M2_HOME" }) do
+    local home = env_path(name)
+    if home and vim.fn.isdirectory(home) == 1 then return home end
+  end
+end
+
+--- Maven's settings as the mvn command line reads them: { global = <Maven's home>/conf/settings.xml - where a
+--- company mirror and the local repository usually are - , user = nil: jdtls' default ~/.m2/settings.xml, as mvn's }.
+function M.mvn_settings()
+  local home = M.maven_home()
+  local global = home and (home .. "/conf/settings.xml")
+  return { user = nil, global = global and vim.uv.fs_stat(global) and global or nil }
+end
+
+--- Maven's settings for jdtls: { user, global } (nil = jdtls' defaults). A project IntelliJ has opened on this
+--- machine (.idea/workspace.xml): IntelliJ's - a local repository IntelliJ sets comes in through a generated
+--- settings file that holds only that, IntelliJ's settings file then goes in as the global one (no copy of it - it
+--- may hold server credentials). Any other project: as the mvn command line (M.mvn_settings()).
 function M.maven_settings(project)
-  local m = project and project.maven or {}
+  if not (project and project.workspace) then return M.mvn_settings() end
+  local m = project.maven or {}
   local global = m.home and (m.home .. "/conf/settings.xml") or nil
   if not m.local_repository then return { user = m.user_settings, global = global } end
   local file = data_path("greyknight", "maven-local-repository-" .. vim.fn.sha256(m.local_repository):sub(1, 10) .. ".xml")
@@ -101,9 +214,10 @@ function M.root(file)
   return root or git or vim.fs.dirname(file)
 end
 
---- jdtls' settings for a project: IntelliJ's runtimes and Maven, Maven import only (no Gradle), IntelliJ's
---- import layout (others, javax, java, statics; * from 5 classes / 3 static names), organize imports on save
---- only when IntelliJ's Actions on Save do it, the IntelliJ-like format profile.
+--- jdtls' settings for a project (IntelliJ's, or nil): its runtimes and Maven (M.runtimes(), M.maven_settings()),
+--- Maven import only (no Gradle), IntelliJ's import layout (others, javax, java, statics; * from 5 classes / 3
+--- static names), organize imports on save only when IntelliJ's Actions on Save do it, the IntelliJ-like format
+--- profile.
 function M.settings(project)
   local maven = M.maven_settings(project)
   local optimize = false
@@ -201,11 +315,12 @@ end
 --- Overrides for every launch (tests, main classes). The classpath of a G3 module is far longer than Windows'
 --- 32 767 characters ("E903: name too long", 2026-10-19): java-debug passes it in a file, as IntelliJ does - an
 --- @argfile from Java 9 on, a manifest jar for Java 8. java-debug itself does not know "auto" (VS Code's
---- extension decides that before the launch), so it is decided here from the project's JDK.
+--- extension decides that before the launch), so it is decided here from the project's JDK - IntelliJ's, else the
+--- one the mvn command line runs on.
 function M.dap_overrides(path)
   local project = path and intellij.project(intellij.project_root(path))
-  local major = project and project.jdk and project.jdk.major
-  if not major and vim.env.JAVA_HOME and vim.env.JAVA_HOME ~= "" then major = intellij.java_major(vim.fs.normalize(vim.env.JAVA_HOME)) end
+  local jdk = (project and project.jdk) or M.default_jdk()
+  local major = jdk and jdk.major
   return { shortenCommandLine = (major and major < 9) and "jarmanifest" or "argfile" }
 end
 
@@ -279,7 +394,8 @@ end
 function M.config(file)
   local java = M.server_java()
   if not java then
-    return nil, "jdtls needs Java " .. M.MIN_JAVA .. "+: add one to IntelliJ (Project Structure | SDKs) or set JDTLS_JAVA_HOME"
+    return nil, ("jdtls needs Java %d+ and found none: install a JDK %d or newer (or add one in IntelliJ), or set"
+      .. " JDTLS_JAVA_HOME to one - JDKs in a folder of your own: GREYKNIGHT_JDK_DIRS"):format(M.MIN_JAVA, M.MIN_JAVA)
   end
   local root = M.root(file)
   local project = intellij.project(intellij.project_root(file))

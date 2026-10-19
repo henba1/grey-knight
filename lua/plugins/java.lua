@@ -1,6 +1,6 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Java: jdtls through nvim-jdtls, set up the way IntelliJ    ║
--- ║  has the project (lua/integrations/jdtls.lua)               ║
+-- ║  Java: jdtls through nvim-jdtls - the way IntelliJ has the  ║
+-- ║  project, or on its own (lua/integrations/jdtls.lua)        ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local lang = vim.g.lang or {}
 if not lang.java then return {} end

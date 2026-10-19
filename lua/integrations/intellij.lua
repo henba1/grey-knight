@@ -184,6 +184,7 @@ end
 
 --- What IntelliJ uses for a project (nil when the directory has no .idea):
 ---   jdk_name, jdk (its SDK entry; nil when IntelliJ does not know it), language_level (17),
+---   workspace (IntelliJ has opened the project on this machine: .idea/workspace.xml - never committed),
 ---   maven = { home, user_settings, local_repository } (nil = IntelliJ's default),
 ---   save = { format, format_types (nil = all), changed_lines, optimize_imports, optimize_types },
 ---   prettier = { mode ("AUTOMATIC" | "MANUAL" | "DISABLED"), on_save, on_reformat, pattern }
@@ -222,6 +223,7 @@ function M.project(root)
     jdk_name = prm["project-jdk-name"],
     jdk = jdk,
     language_level = level,
+    workspace = ws ~= nil,
     maven = { home = path(home), user_settings = path(mvn.userSettingsFile), local_repository = path(mvn.localRepository) },
     save = {
       format = format,
