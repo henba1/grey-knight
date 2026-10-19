@@ -176,25 +176,36 @@ return {
     end,
   },
 
-  -- Treesitter (nvim 0.13+ — loads eagerly so parsers are available for all plugins)
+  -- Treesitter (nvim 0.12+, the main branch — loads eagerly so parsers are available for all plugins)
   {
     "nvim-treesitter/nvim-treesitter",
     build = ":TSUpdate",
     lazy = false,
     config = function()
-      require("nvim-treesitter").setup({
-        ensure_installed = ts_langs,
-        auto_install     = true,
-      })
-      vim.keymap.set("n", "<C-space>", function()
-        require("nvim-treesitter.incremental_selection").init_selection()
-      end, { desc = "TS: Init selection" })
-      vim.keymap.set("x", "<C-space>", function()
-        require("nvim-treesitter.incremental_selection").node_incremental()
-      end, { desc = "TS: Expand selection" })
-      vim.keymap.set("x", "<bs>", function()
-        require("nvim-treesitter.incremental_selection").node_decremental()
-      end, { desc = "TS: Shrink selection" })
+      -- Windows: the tree-sitter CLI compiles parsers with $CC and otherwise looks for MSVC; MinGW's gcc
+      -- builds them (zig cc does not: the CLI hands it a Rust target name)
+      if vim.fn.has("win32") == 1 and (vim.env.CC or "") == "" and vim.fn.executable("gcc") == 1 then
+        vim.env.CC = "gcc"
+      end
+      require("nvim-treesitter").setup({})
+      -- The main branch has no ensure_installed / auto_install (both were ignored: a fresh machine got no
+      -- parsers). install() adds the missing ones in the background and leaves the others alone.
+      require("nvim-treesitter").install(ts_langs)
+
+      -- Node selection with Neovim's own code, what its an / in run (mini.ai has those keys for its "next"
+      -- textobjects); the incremental_selection module these keys called is gone from the main branch
+      local function select_node(outer)
+        local count = vim.v.count1
+        if vim.treesitter.get_parser(nil, nil, { error = false }) then
+          local select = require("vim.treesitter._select")
+          if outer then select.select_parent(count) else select.select_child(count) end
+        else
+          vim.lsp.buf.selection_range(outer and count or -count)
+        end
+      end
+      vim.keymap.set("n", "<C-space>", "v<C-space>", { remap = true, desc = "TS: Init selection" })
+      vim.keymap.set("x", "<C-space>", function() select_node(true) end, { desc = "TS: Expand selection" })
+      vim.keymap.set("x", "<bs>", function() select_node(false) end, { desc = "TS: Shrink selection" })
     end,
   },
 
