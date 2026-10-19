@@ -807,7 +807,8 @@ it after changing the config. On Windows: `tests\run.ps1` - each suite in a mini
 ## Java and Angular (IntelliJ Projects)
 
 GreyNight works on a project you also open in IntelliJ IDEA the way IntelliJ does: it reads IntelliJ's settings
-(`lua/integrations/intellij.lua`, never writing them), so nothing drifts apart.
+(`lua/integrations/intellij.lua`, never writing them), so nothing drifts apart. The workflow for the G3
+repositories, step by step: [G3-DEVELOPMENT.md](G3-DEVELOPMENT.md).
 
 | | From IntelliJ |
 |---|---|

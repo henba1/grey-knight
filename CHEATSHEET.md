@@ -298,7 +298,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Action |
 |-----|--------|
-| `<leader>gd` | Read GreyNight docs (README, CHEATSHEET, USAGE): read-only, `q` closes |
+| `<leader>gd` | Read GreyNight docs (README, CHEATSHEET, USAGE, G3-DEVELOPMENT): read-only, `q` closes |
 | `gd` / `Enter` | On a link in a markdown file: follow it (heading, other file, URL) |
 | `Ctrl+o` | Back to where you came from |
 | `gO` | All headings of the file (outline); `Enter` jumps |

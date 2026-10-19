@@ -18,7 +18,7 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   run goes to the AI agent with one key
 - **Java and Angular, the IntelliJ way** — jdtls with the project's JDK and IntelliJ's Maven settings, TestNG /
   JUnit and debugging (also IntelliJ's remote debug configurations); angularls, ESLint, AngularJS through ts_ls;
-  saving and reformatting as IntelliJ's settings say (USAGE.md → Java and Angular)
+  saving and reformatting as IntelliJ's settings say ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications
@@ -170,6 +170,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 ├── resources/
 │   └── intellij-java-format.xml   jdtls formatter profile close to IntelliJ's default Java code style
 ├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
+├── G3-DEVELOPMENT.md       G3 work next to IntelliJ: Java, ngx-his, html5 clients
 └── tests/
     ├── run.sh              runs all suites; exit status 1 on failure
     ├── run.ps1             the same on Windows, each suite in a real (minimized) Neovim window

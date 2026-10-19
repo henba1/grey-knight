@@ -187,7 +187,7 @@ map("n", "<leader>du", function() require("dapui").toggle() end,   { desc = "Deb
 map("n", "<leader>gd", function()
   local config_dir = vim.fn.stdpath("config")
   local docs = {}
-  for _, name in ipairs({ "README.md", "CHEATSHEET.md", "USAGE.md" }) do
+  for _, name in ipairs({ "README.md", "CHEATSHEET.md", "USAGE.md", "G3-DEVELOPMENT.md" }) do
     local path = config_dir .. "/" .. name
     if vim.fn.filereadable(path) == 1 then
       table.insert(docs, { name = name, path = path })
