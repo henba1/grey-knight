@@ -28,30 +28,30 @@ test("Language toggles defined", function()
   assert(lang.c == true, "c not enabled")
 end)
 
--- T5: Treesitter parsers
+-- T5: Treesitter parsers (language.add returns false for a missing parser, it does not raise: 2026-10-19)
 test("Markdown parser available", function()
-  local ok = pcall(vim.treesitter.language.add, "markdown")
-  assert(ok, "markdown parser missing")
+  local ok, added = pcall(vim.treesitter.language.add, "markdown")
+  assert(ok and added, "markdown parser missing")
 end)
 
 test("Python parser available", function()
-  local ok = pcall(vim.treesitter.language.add, "python")
-  assert(ok, "python parser missing")
+  local ok, added = pcall(vim.treesitter.language.add, "python")
+  assert(ok and added, "python parser missing")
 end)
 
 test("Lua parser available", function()
-  local ok = pcall(vim.treesitter.language.add, "lua")
-  assert(ok, "lua parser missing")
+  local ok, added = pcall(vim.treesitter.language.add, "lua")
+  assert(ok and added, "lua parser missing")
 end)
 
 test("Bash parser available", function()
-  local ok = pcall(vim.treesitter.language.add, "bash")
-  assert(ok, "bash parser missing")
+  local ok, added = pcall(vim.treesitter.language.add, "bash")
+  assert(ok and added, "bash parser missing")
 end)
 
 test("TypeScript parser available", function()
-  local ok = pcall(vim.treesitter.language.add, "typescript")
-  assert(ok, "typescript parser missing")
+  local ok, added = pcall(vim.treesitter.language.add, "typescript")
+  assert(ok and added, "typescript parser missing")
 end)
 
 -- T6: Core plugins loadable
@@ -182,8 +182,11 @@ end)
 
 test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", function()
   local before = vim.fn.getcwd()
-  local root = vim.fn.resolve(vim.fn.tempname())
-  vim.fn.mkdir(root .. "/a/b", "p")
+  -- the real path with / (on Windows tempname() is an 8.3 short name with \, getcwd() has \ too)
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/a/b", "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local function cwd() return vim.fs.normalize(vim.fn.getcwd()) end
   vim.fn.chdir(root .. "/a")
   Snacks.explorer()
   local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
@@ -198,7 +201,7 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
       assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
     end
     p:action("gk_cd_up")
-    assert(H.wait(3000, function() return not p:is_active() and vim.fn.getcwd() == root and p:cwd() == root end), "cd ..: " .. vim.fn.getcwd())
+    assert(H.wait(3000, function() return not p:is_active() and cwd() == root and p:cwd() == root end), "cd ..: " .. cwd() .. " / " .. tostring(p:cwd()))
     -- the tree is listed again after a cd: wait for the new listing, where a is an entry (not the old root)
     local function folder_a()
       if p:is_active() then return nil end
@@ -221,9 +224,10 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
       p.list:view(folder_a())
     end), "the cursor does not stay on folder a")
     p:action("gk_cd_here")
-    assert(H.wait(2000, function() return vim.fn.getcwd() == root .. "/a" and p:cwd() == root .. "/a" end), "cd here: " .. vim.fn.getcwd())
+    assert(H.wait(2000, function() return cwd() == root .. "/a" and p:cwd() == root .. "/a" end), "cd here: " .. cwd() .. " / " .. tostring(p:cwd()))
   end)
   if picker() then picker():close() end
+  H.wait(2000, function() return picker() == nil end) -- gone, so no later test starts in its window
   vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
   assert(ok, err)
@@ -289,6 +293,48 @@ test("Keys: no <leader> key is both an action and the start of others", function
     end
   end
   assert(#bad == 0, "keys that wait or are shadowed: " .. table.concat(bad, ", "))
+end)
+
+-- T15: Fresh installs (2026-10-19)
+-- <C-Space> / <BS> called nvim-treesitter's incremental_selection module, which its main branch no longer has:
+-- every press was an error. They run Neovim's own node selection now; its keys an / in are mini.ai's "next"
+-- textobjects here, so the test loads mini.ai as an interactive start does.
+test("Keys: <C-Space> selects the node at the cursor and grows it, <BS> shrinks it back", function()
+  require("lazy").load({ plugins = { "mini.ai" } })
+  vim.cmd("tabnew") -- a plain window of its own: a picker window can keep its buffer against set_current_buf
+  local buf = vim.api.nvim_get_current_buf()
+  vim.bo[buf].buftype = "nofile"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "local total = add(first, second)" })
+  vim.cmd("noautocmd setlocal filetype=lua")
+  local function selected() return { vim.fn.getpos("'<")[3], vim.fn.getpos("'>")[3] } end
+  local ok, err = pcall(function()
+    vim.api.nvim_win_set_cursor(0, { 1, 20 }) -- on "first" (columns 19-23)
+    vim.api.nvim_feedkeys(vim.keycode("<C-Space><Esc>"), "x", false)
+    local node = selected()
+    assert(node[1] == 19 and node[2] == 23, "<C-Space> selected " .. vim.inspect(node) .. ", not first (19-23)")
+    vim.api.nvim_feedkeys(vim.keycode("gv<C-Space><Esc>"), "x", false)
+    local grown = selected()
+    assert(grown[1] <= node[1] and grown[2] >= node[2] and grown[2] - grown[1] > node[2] - node[1],
+      "<C-Space> did not grow " .. vim.inspect(node) .. ": " .. vim.inspect(grown))
+    vim.api.nvim_feedkeys(vim.keycode("gv<BS><Esc>"), "x", false)
+    assert(vim.deep_equal(selected(), node), "<BS> left " .. vim.inspect(selected()) .. ", not " .. vim.inspect(node))
+  end)
+  vim.cmd("tabclose")
+  vim.api.nvim_buf_delete(buf, { force = true })
+  assert(ok, err)
+end)
+
+-- mason-nvim-dap wants nvim-dap's adapter names ("python") and drops anything else without a word: "debugpy"
+-- was in the list, so a fresh machine never got the Python debugger.
+test("Debug: every adapter for Mason is one mason-nvim-dap knows", function()
+  local plugin = require("lazy.core.config").plugins["mason-nvim-dap.nvim"]
+  assert(plugin, "mason-nvim-dap is not set up")
+  local wanted = require("lazy.core.plugin").values(plugin, "opts", false).ensure_installed or {}
+  assert(#wanted > 0, "no debug adapters to install")
+  local known = require("mason-nvim-dap.mappings.source").nvim_dap_to_package
+  for _, name in ipairs(wanted) do
+    assert(known[name], name .. " is not an nvim-dap adapter name (mason-nvim-dap would skip it)")
+  end
 end)
 
 -- T12: The docs stay in step with the config

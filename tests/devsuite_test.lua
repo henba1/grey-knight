@@ -444,6 +444,23 @@ test("Agent (OpenCode): the first prompt is pasted once the TUI is up, /new star
   assert(ok, err)
 end)
 
+-- 2026-10-19: the agent was started by its quoted name. cmd.exe gives a .cmd it found on the PATH the current
+-- directory as its own folder (%~dp0): on Windows opencode.cmd did not find its launcher script.
+test("Agent: starts by the full path of its binary, not by a name looked up on the PATH", function()
+  local agent = require("integrations.agent")
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  local fake = dir .. "/gk-fake-opencode"
+  vim.fn.writefile({ "#!/bin/sh" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT, vim.env.PATH }
+  vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT = "gk-fake-opencode", "opencode"
+  vim.env.PATH = dir .. ":" .. vim.env.PATH
+  local ok, got = pcall(agent.command)
+  vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT, vim.env.PATH = saved[1], saved[2], saved[3]
+  vim.fn.delete(dir, "rf")
+  assert(ok and got == vim.fn.shellescape(fake), tostring(got))
+end)
 
 -- ── Stabilization: the behaviour of 2026-10-15, pinned down ──
 
