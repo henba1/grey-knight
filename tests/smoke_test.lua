@@ -166,6 +166,22 @@ test("CHEATSHEET.md exists", function()
   assert(vim.fn.filereadable(vim.fn.stdpath("config") .. "/CHEATSHEET.md") == 1, "missing")
 end)
 
+-- 2026-10-19: the guide for the G3 work - in the docs picker (<leader>gd) and under Config on the start screen
+test("Docs: the G3 guide is in the docs picker and under Config on the start screen", function()
+  local config = vim.fn.stdpath("config")
+  assert(vim.fn.filereadable(config .. "/G3-DEVELOPMENT.md") == 1, "G3-DEVELOPMENT.md missing")
+  local select, offered = vim.ui.select, nil
+  vim.ui.select = function(items, _, cb) offered = items; cb(nil) end
+  local ok, err = pcall(vim.api.nvim_feedkeys, " gd", "x", false)
+  vim.ui.select = select
+  assert(ok, err)
+  assert(offered and vim.tbl_contains(offered, "G3-DEVELOPMENT.md"), "docs picker: " .. vim.inspect(offered))
+  local snacks = require("lazy.core.config").plugins["snacks.nvim"]
+  local keys = require("lazy.core.plugin").values(snacks, "opts", false).dashboard.preset.keys
+  local entry = vim.tbl_filter(function(k) return k.key == "c" end, keys)[1]
+  assert(entry and entry.desc == "Config" and tostring(entry.action):find("stdpath('config')", 1, true), vim.inspect(entry))
+end)
+
 -- T11: AI Dashboard bridge — loads anywhere, active only inside the dashboard's Dev Environment
 test("Dashboard bridge only inside the dashboard", function()
   local aidash = require("integrations.aidash")
@@ -619,7 +635,8 @@ end)
 -- T12: The docs stay in step with the config
 local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end
-local DOCS = read("CHEATSHEET.md") .. "\n" .. read("USAGE.md") .. "\n" .. read("README.md")
+-- G3-DEVELOPMENT.md too: a key it names must exist (2026-10-19)
+local DOCS = read("CHEATSHEET.md") .. "\n" .. read("USAGE.md") .. "\n" .. read("README.md") .. "\n" .. read("G3-DEVELOPMENT.md")
 
 test("Docs: every key with a description is documented", function()
   local missing, seen = {}, {}
