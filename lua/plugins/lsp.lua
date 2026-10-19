@@ -42,6 +42,12 @@ if lang.typescript then
   formatters["html"]            = { "prettierd", "prettier", stop_after_first = true }
   formatters["css"]             = { "prettierd", "prettier", stop_after_first = true }
 end
+if lang.java then
+  vim.list_extend(ts_langs, { "java" }) -- jdtls itself: lua/plugins/java.lua
+end
+if lang.angular then
+  vim.list_extend(ts_langs, { "angular", "scss" }) -- its servers: lua/integrations/web.lua
+end
 if lang.lua then
   lsp_servers["lua_ls"] = {
     Lua = {
@@ -162,6 +168,9 @@ return {
         end
         lspconfig[server].setup(opts)
       end
+
+      -- Angular / AngularJS: angularls, eslint, html, css - installed with the first file that needs them
+      if lang.angular then require("integrations.web").setup(capabilities) end
 
       -- LSP keymaps
       vim.api.nvim_create_autocmd("LspAttach", {

@@ -109,9 +109,11 @@ function M.start_or_continue()
   M.launch()
 end
 
---- Debug the pytest test at the cursor (the file when the cursor is not in a test).
+--- Debug the pytest test at the cursor (the file when the cursor is not in a test); in Java files the TestNG /
+--- JUnit test at the cursor.
 function M.debug_test()
-  if vim.bo.filetype ~= "python" then return notify("Debug: tests are for Python files", WARN) end
+  if vim.bo.filetype == "java" then return require("devsuite.runner").java_test(true, true) end
+  if vim.bo.filetype ~= "python" then return notify("Debug: tests are for Python and Java files", WARN) end
   local file = vim.fn.expand("%:p")
   vim.cmd("silent! update")
   local target = vim.fn.fnamemodify(file, ":.")

@@ -11,7 +11,21 @@ vim.g.lang = {
   c          = true,
   typescript = true,
   lua        = true,
+  java       = true, -- jdtls: installed and started with the first Java file (lua/integrations/jdtls.lua)
+  angular    = true, -- angularls, eslint, html, css: installed with the first file that needs them
 }
+
+-- Angular templates: htmlangular inside an Angular workspace (the angular parser, angularls); Neovim itself
+-- detects them as html. AngularJS templates stay html.
+if vim.g.lang.angular then
+  vim.filetype.add({
+    pattern = {
+      [".*%.component%.html"] = function(path)
+        if vim.fs.root(path, { "angular.json", "nx.json" }) then return "htmlangular" end
+      end,
+    },
+  })
+end
 
 local o = vim.opt
 

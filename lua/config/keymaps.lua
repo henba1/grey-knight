@@ -112,8 +112,8 @@ map("n", "<leader>rl", function() runner().rerun() end,            { desc = "Run
 map("n", "<leader>rc", function() runner().run_cell() end,         { desc = "Run: Cell (# %%)" })
 map("v", "<leader>rs", function() runner().run_selection() end,    { desc = "Run: Selection as script" })
 map("n", "<leader>rx", function() runner().run_trace() end,        { desc = "Run: Trace (bash -x)" })
-map("n", "<leader>rt", function() runner().test_file() end,        { desc = "Run: pytest file" })
-map("n", "<leader>rT", function() runner().test_nearest() end,     { desc = "Run: pytest test at cursor" })
+map("n", "<leader>rt", function() runner().test_file() end,        { desc = "Run: Tests of the file (pytest / Java: TestNG, JUnit)" })
+map("n", "<leader>rT", function() runner().test_nearest() end,     { desc = "Run: Test at cursor (pytest / Java: TestNG, JUnit)" })
 map("n", "<leader>rw", function() runner().toggle_watch() end,     { desc = "Run: Watch (re-run on save)" })
 map("n", "<leader>rk", function() runner().stop() end,             { desc = "Run: Kill" })
 map("n", "<leader>ro", function() runner().toggle() end,           { desc = "Run: Toggle output" })
@@ -156,13 +156,15 @@ map("n", "<F11>",      function() require("dap").step_into() end,         { desc
 map("n", "<F12>",      function() require("dap").step_out() end,          { desc = "Debug: Step out" })
 map("n", "<leader>dl", function() dbg().launch() end,                     { desc = "Debug: Launch this file" })
 map("n", "<leader>dL", function() dbg().launch(true) end,                 { desc = "Debug: Launch with args" })
-map("n", "<leader>dt", function() dbg().debug_test() end,                 { desc = "Debug: pytest test at cursor" })
+map("n", "<leader>dt", function() dbg().debug_test() end,                 { desc = "Debug: Test at cursor (pytest / Java: TestNG, JUnit)" })
 map("n", "<leader>de", function() dbg().toggle_exceptions() end,          { desc = "Debug: Stop on raised exceptions (toggle)" })
 map("n", "<leader>dc", function() require("dap").run_to_cursor() end,     { desc = "Debug: Run to cursor" })
 map("n", "<leader>dh", function() require("dap.ui.widgets").hover() end,  { desc = "Debug: Value under cursor" })
 map("n", "<leader>dq", function() require("dap").terminate() end,         { desc = "Debug: Stop" })
 map("n", "<leader>dR", function() require("dap").restart() end,           { desc = "Debug: Restart" })
 map("n", "<leader>da", function()
+  -- Java: IntelliJ's Remote JVM Debug configurations (or host:port)
+  if vim.bo.filetype == "java" then return require("integrations.jdtls").attach() end
   local port = tonumber(vim.fn.input("debugpy port: "))
   require("dap").run({
     type = "python",
@@ -170,7 +172,7 @@ map("n", "<leader>da", function()
     request = "attach",
     connect = { host = "127.0.0.1", port = port },
   })
-end, { desc = "Debug: Attach to debugpy listener" })
+end, { desc = "Debug: Attach (debugpy port / Java: IntelliJ's remote configs)" })
 map("n", "<leader>db", function() require("dap").toggle_breakpoint() end, { desc = "Debug: Breakpoint" })
 map("n", "<leader>dB", function()
   require("dap").set_breakpoint(vim.fn.input("Condition: "))

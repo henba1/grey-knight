@@ -232,9 +232,29 @@ local function pytest(nearest)
   })
 end
 
---- pytest the current file / the test at the cursor (with the project's virtualenv).
-function M.test_file() pytest(false) end
-function M.test_nearest() pytest(true) end
+--- Java: the test class / the test at the cursor through jdtls - java-test runs TestNG and JUnit, as IntelliJ's
+--- run gutter does; debug = under the debugger.
+function M.java_test(nearest, debug)
+  vim.cmd("silent! update")
+  local ok, jdap = pcall(require, "jdtls.dap")
+  if not ok or #vim.lsp.get_clients({ bufnr = 0, name = "jdtls" }) == 0 then
+    return notify("Run: Java tests need jdtls - it starts with the first Java file", WARN)
+  end
+  local opts = debug and {} or { config_overrides = { noDebug = true } }
+  if nearest then jdap.test_nearest_method(opts) else jdap.test_class(opts) end
+end
+
+--- The tests of the current file / the test at the cursor: pytest (with the project's virtualenv), in Java
+--- files TestNG / JUnit.
+function M.test_file()
+  if vim.bo.filetype == "java" then return M.java_test(false) end
+  pytest(false)
+end
+
+function M.test_nearest()
+  if vim.bo.filetype == "java" then return M.java_test(true) end
+  pytest(true)
+end
 
 -- ── Task controls (devsuite.tasks) ──────────────────────────
 M.rerun = tasks.rerun
