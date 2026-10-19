@@ -14,13 +14,13 @@ local function notify(msg, level) vim.notify(msg, level or vim.log.levels.INFO, 
 
 local function python_for(file)
   local venv = util.find_venv(file)
-  local python = venv and (venv .. "/bin/python") or vim.fn.exepath("python3")
+  local python = venv and util.venv_python(venv) or vim.fn.exepath(util.system_python())
   return python ~= "" and python or nil
 end
 
 --- Launch configuration for a Python file. "integratedTerminal" gives the program a real terminal
 --- (the DAP console pane), so input() works - debugpy's default internalConsole has no stdin.
---- The interpreter is the one the runner uses: the project's virtualenv, else python3.
+--- The interpreter is the one the runner uses: the project's virtualenv, else the system Python.
 function M.python_config(file, args)
   return {
     type = "python",
@@ -87,6 +87,7 @@ function M.launch(with_args)
   if ft == "python" then
     config = M.python_config
   elseif SHELLS[ft] then
+    if util.WIN then return notify("Debug: bash scripts are debugged on Linux (bashdb)", WARN) end
     if not M.setup_bash() then return notify("Debug: bash debugger missing - run :MasonInstall bash-debug-adapter", WARN) end
     config = M.bash_config
   else

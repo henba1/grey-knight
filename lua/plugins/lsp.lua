@@ -152,10 +152,11 @@ return {
           -- Resolve imports against the project's virtualenv ($VIRTUAL_ENV, else the nearest .venv/ or venv/);
           -- pyright alone only sees the python on the PATH
           opts.on_new_config = function(config, root_dir)
-            local venv = require("devsuite.util").find_venv(root_dir)
+            local util = require("devsuite.util")
+            local venv = util.find_venv(root_dir)
             if venv then
               config.settings = config.settings or {}
-              config.settings.python = vim.tbl_extend("force", config.settings.python or {}, { pythonPath = venv .. "/bin/python" })
+              config.settings.python = vim.tbl_extend("force", config.settings.python or {}, { pythonPath = util.venv_python(venv) })
             end
           end
         end

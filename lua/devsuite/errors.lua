@@ -19,11 +19,17 @@ local function is_user_file(path)
     and not path:match("^/usr/lib/python") and not path:match("^/usr/local/lib/python")
 end
 
+-- Absolute: /x, and on Windows C:\x, C:/x or \\server\share (taking those for relative put the working
+-- directory in front of every path a Windows program printed)
+local function is_absolute(path)
+  return path:match("^/") ~= nil or path:match("^%a:[/\\]") ~= nil or path:match("^\\\\") ~= nil
+end
+
 -- Absolute path for a path printed by a program; temp snippet files map back to their source
 local function resolve(path, lnum, opts)
   local mapped = opts.map and opts.map[path]
   if mapped then return mapped.file, lnum + mapped.offset end
-  if not path:match("^/") then path = (opts.cwd or vim.fn.getcwd()) .. "/" .. path end
+  if not is_absolute(path) then path = (opts.cwd or vim.fn.getcwd()) .. "/" .. path end
   return vim.fs.normalize(path), lnum
 end
 
@@ -99,6 +105,7 @@ function M.location(line, opts)
   line = M.clean(line)
   local file, lnum = line:match('File "(.-)", line (%d+)')
   if not file then file, lnum = line:match("^(.-): line (%d+):") end
+  if not file then file, lnum = line:match("^(%a:[/\\][^:]+):(%d+)") end -- Windows: C:\dir\x.py:12
   if not file then file, lnum = line:match("^([^%s:]+):(%d+)") end
   if not file then file, lnum = line:match("^([^%s:]+): (%d+): ") end
   if not file then return nil end

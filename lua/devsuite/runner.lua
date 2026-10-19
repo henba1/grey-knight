@@ -61,7 +61,10 @@ function M.run_file_args()
 end
 
 --- Run the current file as root (sudo asks for the password in the output window).
-function M.run_sudo() M.run_file({ sudo = true }) end
+function M.run_sudo()
+  if util.WIN then return notify("Run: sudo runs are for Linux", WARN) end
+  M.run_file({ sudo = true })
+end
 
 --- Run lines as a script of their own (dedented, from a temp file) with the buffer's interpreter.
 --- `first` = line number of the first line in the buffer, so errors point at the right lines.
@@ -81,7 +84,8 @@ function M.run_lines(lines, label, first, bufnr)
     -- The snippet runs from a temp dir: keep "import my_module" (next to the file) working
     local dir = file ~= "" and vim.fs.dirname(file) or vim.fn.getcwd()
     local path = vim.env.PYTHONPATH
-    env = { PYTHONPATH = (path and path ~= "") and (dir .. ":" .. path) or dir }
+    local sep = util.WIN and ";" or ":"
+    env = { PYTHONPATH = (path and path ~= "") and (dir .. sep .. path) or dir }
   end
   tasks.run({
     key = "snippet:" .. (file ~= "" and file or tostring(bufnr)),

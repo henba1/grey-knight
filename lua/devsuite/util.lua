@@ -4,6 +4,16 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 local M = {}
 
+M.WIN = vim.fn.has("win32") == 1
+
+--- A program in a virtualenv: bin/<name> (Linux), Scripts\<name>.exe (Windows).
+function M.venv_bin(venv, name)
+  return M.WIN and (venv .. "/Scripts/" .. name .. ".exe") or (venv .. "/bin/" .. name)
+end
+
+--- The python of a virtualenv.
+function M.venv_python(venv) return M.venv_bin(venv, "python") end
+
 --- Virtualenv for a file or directory: $VIRTUAL_ENV, else the nearest .venv/ or venv/ walking upwards,
 --- below $HOME only: a venv in the home directory (~/.venv, ~/venv) is a toolbox, not the project's
 --- environment - activate it before starting Neovim to use it everywhere.
@@ -11,7 +21,7 @@ local M = {}
 ---@return string? venv the virtualenv directory
 function M.find_venv(path)
   local active = vim.env.VIRTUAL_ENV
-  if active and active ~= "" and vim.fn.executable(active .. "/bin/python") == 1 then return active end
+  if active and active ~= "" and vim.fn.executable(M.venv_python(active)) == 1 then return active end
   if not path or path == "" then path = vim.fn.getcwd() end
   path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
   local dirs = vim.fn.isdirectory(path) == 1 and { path } or {}
@@ -20,17 +30,28 @@ function M.find_venv(path)
   for _, dir in ipairs(dirs) do
     if dir == home then break end
     for _, name in ipairs({ ".venv", "venv" }) do
-      local venv = (dir == "/" and "" or dir) .. "/" .. name
-      if vim.fn.executable(venv .. "/bin/python") == 1 then return venv end
+      local venv = vim.fs.joinpath(dir, name)
+      if vim.fn.executable(M.venv_python(venv)) == 1 then return venv end
     end
   end
 end
 
---- Python for a file: its virtualenv's python, else python3.
+--- The Python on the PATH: python3, else python. Windows: python, else the py launcher - python3 there is
+--- usually the Microsoft Store's placeholder (WindowsApps), which only points at the Store.
+function M.system_python()
+  if not M.WIN then return vim.fn.executable("python3") == 1 and "python3" or "python" end
+  for _, exe in ipairs({ "python", "py" }) do
+    local path = vim.fn.exepath(exe)
+    if path ~= "" and not path:lower():find("\\windowsapps\\", 1, true) then return exe end
+  end
+  return "python"
+end
+
+--- Python for a file: its virtualenv's python, else the system one.
 function M.python(path)
   local venv = M.find_venv(path)
-  if venv then return venv .. "/bin/python" end
-  return vim.fn.executable("python3") == 1 and "python3" or "python"
+  if venv then return M.venv_python(venv) end
+  return M.system_python()
 end
 
 --- The #! line of a buffer as argv ({ "/usr/bin/env", "bash" }), or nil.
@@ -47,7 +68,8 @@ local BY_FILETYPE = { javascript = { "node" }, perl = { "perl" }, ruby = { "ruby
 M.EXT = { python = ".py", sh = ".sh", bash = ".sh", zsh = ".zsh", lua = ".lua", javascript = ".js", perl = ".pl", ruby = ".rb" }
 
 --- Interpreter argv for a buffer, and its kind. Python: the project's virtualenv beats the #! line
---- (as in VS Code), then python3. Shell scripts: the #! line, else bash. Others: the #! line.
+--- (as in VS Code), then python3; Windows has no /usr/bin/env, so there the #! line of a Python file is
+--- ignored. Shell scripts: the #! line, else bash. Others: the #! line.
 ---@return string[]? argv
 ---@return "python"|"shell"|"other"|nil kind
 function M.interpreter(bufnr, path)
@@ -56,8 +78,8 @@ function M.interpreter(bufnr, path)
   local shebang = M.shebang(bufnr)
   if ft == "python" then
     local venv = M.find_venv(path)
-    if venv then return { venv .. "/bin/python" }, "python" end
-    return shebang or { M.python(path) }, "python"
+    if venv then return { M.venv_python(venv) }, "python" end
+    return (not M.WIN and shebang) or { M.python(path) }, "python"
   end
   if SHELLS[ft] then return shebang or { ft == "zsh" and "zsh" or "bash" }, "shell" end
   if shebang then return shebang, "other" end
@@ -73,7 +95,8 @@ function M.file_interpreter(path)
   local ft = vim.filetype.match({ filename = path, contents = head }) or ""
   if ft == "python" then
     local venv = M.find_venv(path)
-    if venv then return { venv .. "/bin/python" } end
+    if venv then return { M.venv_python(venv) } end
+    if M.WIN then return { M.python(path) } end -- no /usr/bin/env for a #! line
   end
   if shebang then return vim.split(vim.trim(shebang), "%s+") end
   if ft == "python" then return { M.python(path) } end
