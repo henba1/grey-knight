@@ -223,16 +223,34 @@ return {
     opts = { max_lines = 3 },
   },
 
-  -- Formatting
+  -- Formatting. In IntelliJ projects as IntelliJ does it (lua/integrations/intellij.lua): saving runs its Actions
+  -- on Save (by default nothing), <leader>fm is its Reformat Code (the project's prettier where IntelliJ runs
+  -- it, else the language server). Elsewhere: conform's formatters on save, the language server as fallback.
   {
     "stevearc/conform.nvim",
     event = "BufWritePre",
     opts = {
       formatters_by_ft = formatters,
-      format_on_save = { timeout_ms = 2000, lsp_fallback = true },
+      format_on_save = function(buf)
+        local intellij = require("integrations.intellij")
+        local actions = intellij.save_actions(buf)
+        if actions == nil then return { timeout_ms = 2000, lsp_fallback = true } end
+        if not actions.format then return nil end
+        local opts = actions.prettier and { timeout_ms = 3000, formatters = { "prettier" }, lsp_format = "never" }
+          or { timeout_ms = 3000, lsp_format = "prefer" }
+        if not actions.changed_lines then return opts end
+        -- "Only changes uncommitted to VCS": the changed lines, not the whole file
+        for _, range in ipairs(intellij.changed_ranges(buf)) do
+          require("conform").format(vim.tbl_extend("force", opts, { bufnr = buf, range = range }))
+        end
+        return nil
+      end,
     },
     keys = {
-      { "<leader>fm", function() require("conform").format({ async = true, lsp_fallback = true }) end, mode = { "n", "v" }, desc = "Format" },
+      { "<leader>fm", function()
+        local opts = require("integrations.intellij").reformat_options(0) or { lsp_fallback = true }
+        require("conform").format(vim.tbl_extend("force", opts, { async = true })) -- visual mode: the selection
+      end, mode = { "n", "v" }, desc = "Format" },
     },
   },
 }
