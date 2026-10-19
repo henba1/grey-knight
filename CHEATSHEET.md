@@ -280,8 +280,9 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── lsp.lua               ← LSP, Mason, Treesitter, conform
 │   ├── session.lua           ← persisted.nvim
 │   └── snacks.lua            ← picker, explorer, dashboard, notify
-└── tests/                    ← tests/run.sh runs them all
+└── tests/                    ← tests/run.sh runs them all (Windows: tests\run.ps1)
     ├── run.sh
+    ├── run.ps1
     ├── harness.lua
     ├── smoke_test.lua
     └── devsuite_test.lua

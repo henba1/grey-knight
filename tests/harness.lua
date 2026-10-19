@@ -9,6 +9,9 @@ pcall(function() require("config.errorlog").path = vim.fn.tempname() .. "-greykn
 pcall(function() require("harpoon").sync = function() end end)
 
 function H.test(name, fn)
+  -- Let earlier tests finish what they scheduled first: a terminal's scheduled stopinsert ended the next
+  -- test's insert mode (2026-10-19, Windows, where the agent tests that used to flush it are skipped)
+  vim.wait(20)
   local ok, err = pcall(fn)
   if ok then
     H.passed = H.passed + 1
@@ -64,8 +67,13 @@ function H.report(title)
   local skipped = H.skipped > 0 and (", %d skipped"):format(H.skipped) or ""
   out[#out + 1] = ("  %d passed, %d failed%s, %d total"):format(H.passed, H.failed, skipped, H.passed + H.failed + H.skipped)
   out[#out + 1] = "═══════════════════════════════════════════"
-  io.stdout:write(table.concat(out, "\n") .. "\n")
-  io.stdout:flush()
+  local report = vim.env.GK_TEST_REPORT
+  if report and report ~= "" then
+    vim.fn.writefile(out, report) -- tests/run.ps1 (Windows): the suite ran in a real Neovim window
+  else
+    io.stdout:write(table.concat(out, "\n") .. "\n")
+    io.stdout:flush()
+  end
   -- exit here, also on success: tests/run.sh ends with "cquit 2", reached only when a suite crashed before
   -- its report - a crash must not count as passed
   vim.cmd(H.failed > 0 and "cquit 1" or "qall!")

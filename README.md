@@ -146,6 +146,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 ├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
 └── tests/
     ├── run.sh              runs all suites; exit status 1 on failure
+    ├── run.ps1             the same on Windows, each suite in a real (minimized) Neovim window
     ├── harness.lua         test(), helpers, report()
     ├── smoke_test.lua      config, plugins, parsers, tools, docs in step with the keys
     └── devsuite_test.lua   run / tasks / errors / debug / REPL / Qwen / completion, end to end
