@@ -511,6 +511,45 @@ test("Agent: starts by the full path of its binary, not by a name looked up on t
   assert(same(unquoted, fake), got)
 end)
 
+-- 2026-10-20: going to the agent's window means typing there - insert (terminal) mode, also when <C-h> left it in
+-- normal mode, which toggleterm brings back on the way in (persist_mode); not once the agent has exited (a key
+-- would close its transcript). startinsert / stopinsert are recorded here instead of done: their order is the point.
+test("Agent: its window takes keys when you go there (insert mode), not once the agent has exited", function()
+  local agent, T = require("integrations.agent"), require("toggleterm.terminal")
+  local code = vim.api.nvim_get_current_win()
+  local term = T.Terminal:new({ cmd = py_cmd("import time; time.sleep(60)"), direction = "vertical", close_on_exit = false })
+  local real, calls = vim.cmd, {}
+  local function enter_from_code() -- out of the agent's window the way <C-h> leaves it, then back in (<C-l>)
+    vim.api.nvim_set_current_win(code)
+    term.__state.mode = T.mode.NORMAL -- what toggleterm remembers after <C-h> (<C-\><C-n> first)
+    calls = {}
+    vim.cmd = setmetatable({}, {
+      __call = function(_, c)
+        if c == "startinsert" or c == "stopinsert" then calls[#calls + 1] = c else return real(c) end
+      end,
+      __index = function(_, k) return real[k] end,
+    })
+    vim.api.nvim_set_current_win(term.window)
+    wait(300, function() return false end) -- the scheduled callbacks run
+    vim.cmd = real
+    return calls
+  end
+  local ok, err = pcall(function()
+    term:open(40, "vertical")
+    agent.mark(term.bufnr) -- as show() marks every agent window
+    local seq = enter_from_code()
+    assert(seq[1] == "stopinsert" and seq[#seq] == "startinsert", "not insert mode on the way in: " .. vim.inspect(seq))
+    vim.fn.jobstop(term.job_id)
+    assert(wait(5000, function() return vim.fn.jobwait({ term.job_id }, 0)[1] ~= -1 end), "the stand-in agent did not stop")
+    seq = enter_from_code()
+    assert(seq[#seq] ~= "startinsert", "insert mode in an exited agent's window: " .. vim.inspect(seq))
+  end)
+  vim.cmd = real
+  pcall(function() term:shutdown() end)
+  if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
+  assert(ok, err)
+end)
+
 -- ── Stabilization: the behaviour of 2026-10-15, pinned down ──
 
 -- Completion: types like a user; each step waits until the menu is open (or 5 s), then feeds its keys
