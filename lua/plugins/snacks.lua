@@ -62,13 +62,20 @@ return {
       picker    = {
         enabled = true,
         sources = {
-          -- explorer: "." = cd to the folder under the cursor, "<BS>" / "-" = cd .. (config/explorer.lua)
+          -- explorer: "." = cd to the folder under the cursor, "<BS>" / "-" = cd ..; m / c move and copy the
+          -- marked items into the folder under the cursor (nothing marked: mark this one); r / C / a take typed
+          -- paths, absolute ones as typed (config/explorer.lua). Same names as snacks' actions: they replace them.
           explorer = {
             actions = {
-              gk_cd_here = { action = function(p) require("config.explorer").cd_here(p) end, desc = "cd here (working directory)" },
-              gk_cd_up   = { action = function(p) require("config.explorer").cd_up(p) end,   desc = "cd .. (one folder up)" },
+              gk_cd_here      = { action = function(p) require("config.explorer").cd_here(p) end,        desc = "cd here (working directory)" },
+              gk_cd_up        = { action = function(p) require("config.explorer").cd_up(p) end,          desc = "cd .. (one folder up)" },
+              explorer_move   = { action = function(p, item) require("config.explorer").move(p, item) end,   desc = "Move the marked here (nothing marked: mark this)" },
+              explorer_copy   = { action = function(p, item) require("config.explorer").copy(p, item) end,   desc = "Copy the marked here (nothing marked: mark this)" },
+              explorer_rename = { action = function(p, item) require("config.explorer").rename(p, item) end, desc = "Rename / move to a path" },
+              gk_copy_to      = { action = function(p, item) require("config.explorer").copy_to(p, item) end, desc = "Copy to a path" },
+              explorer_add    = { action = function(p) require("config.explorer").add(p) end,              desc = "New file or folder" },
             },
-            win = { list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up" } } },
+            win = { list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to" } } },
           },
         },
       },
