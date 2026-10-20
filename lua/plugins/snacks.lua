@@ -84,6 +84,27 @@ return {
       scope     = { enabled = true },
       scroll    = { enabled = true },
       words     = { enabled = true },
+      -- Input dialogs (rename, copy to, new file, the agent's questions - every vim.ui.input) edit like a shell
+      -- prompt (readline): <C-a> / <C-e> start / end, <C-b> / <C-f> a character, <M-b> / <M-f> a word back /
+      -- forward, <C-d> deletes the character under the cursor, <C-k> everything after it; <C-u> (all before it)
+      -- and <C-w> (a word) are built in. 2026-10-20
+      styles = {
+        input = {
+          keys = {
+            i_line_start = { "<c-a>", "<home>", mode = "i", expr = true, desc = "start of the line" },
+            i_line_end   = { "<c-e>", function() return vim.fn.pumvisible() == 1 and "<c-e>" or "<end>" end, mode = "i", expr = true, desc = "end of the line" },
+            i_char_back  = { "<c-b>", "<left>", mode = "i", expr = true, desc = "a character back" },
+            i_char_fwd   = { "<c-f>", "<right>", mode = "i", expr = true, desc = "a character forward" },
+            i_word_back  = { "<m-b>", "<s-left>", mode = "i", expr = true, desc = "a word back" },
+            i_word_fwd   = { "<m-f>", "<s-right>", mode = "i", expr = true, desc = "a word forward" },
+            i_del_char   = { "<c-d>", "<del>", mode = "i", expr = true, desc = "delete the character under the cursor" },
+            i_kill_end   = { "<c-k>", function()
+              local col = vim.api.nvim_win_get_cursor(0)[2] -- bytes before the cursor
+              vim.api.nvim_set_current_line(vim.api.nvim_get_current_line():sub(1, col))
+            end, mode = "i", desc = "delete to the end of the line" },
+          },
+        },
+      },
     },
     keys = {
       -- Picker (replaces telescope)
