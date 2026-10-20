@@ -495,7 +495,8 @@ test("Input dialogs: <C-a> <C-e> <C-b> <C-f> <C-d> <C-k> edit like a shell promp
     assert(typed("<C-a><C-d>") == "sr", "<C-d>: " .. line())
     assert(typed("<C-b><C-b>Z") == "Zsr", "<C-b>: " .. line())
     vim.api.nvim_feedkeys(vim.keycode("A<CR>"), "x", false)
-    assert(H.wait(2000, function() return got ~= nil end) and got == "Zsr", "<CR> did not confirm: " .. tostring(got))
+    H.wait(5000, function() return got ~= nil end) -- snacks hands the answer over in a scheduled callback
+    assert(got == "Zsr", "<CR> did not confirm: " .. tostring(got))
   end)
   if win:valid() then win:close() end
   assert(ok, err)
@@ -748,6 +749,8 @@ test("Java: jdtls runs on IntelliJ's JDK 21, gets the project's JDK and IntelliJ
     local settings = jdtls.settings(project)
     local java = settings.java
     assert(java.import.gradle.enabled == false and java.import.maven.enabled == true, "not Maven-only")
+    -- 2026-10-20: jdtls wrote .project / .classpath / .settings into a G3 checkout: its metadata stays in its workspace
+    assert(java.import.generatesMetadataFilesAtProjectRoot == false, "jdtls writes Eclipse files into the repository")
     local home = vim.fs.normalize((vim.fn.has("win32") == 1 and vim.env.USERPROFILE) or vim.env.HOME)
     assert(java.configuration.maven.globalSettings == home .. "/my-settings.xml", tostring(java.configuration.maven.globalSettings))
     local user = table.concat(vim.fn.readfile(java.configuration.maven.userSettings), "\n")
@@ -916,6 +919,8 @@ local function without_intellij(fn)
   write(base .. "/committed/.idea/misc.xml", { -- an .idea from git: IntelliJ never opened it on this machine
     '<project version="4"><component name="ProjectRootManager" version="2" languageLevel="JDK_17" project-jdk-name="17" project-jdk-type="JavaSDK" /></project>',
   })
+  -- opened in IntelliJ, never imported as a Maven project: a workspace.xml without Maven settings
+  write(base .. "/unimported/.idea/workspace.xml", { '<project version="4"><component name="RunManager" /></project>' })
   local function native(p) return WIN and (p:gsub("/", "\\")) or p end
   local sep = WIN and ";" or ":"
   local names = { "GREYKNIGHT_INTELLIJ_CONFIG", "JAVA_HOME", "JDTLS_JAVA_HOME", "GREYKNIGHT_JDK_DIRS", "MAVEN_HOME", "M2_HOME", "PATH" }
@@ -972,6 +977,10 @@ test("Java without IntelliJ: Maven's settings as the mvn command line reads them
     assert(s.user == nil and real(s.global) == global, vim.inspect(s))
     assert(real(jdtls.settings(nil).java.configuration.maven.globalSettings) == global, "not in jdtls' settings")
     assert(real(jdtls.maven_settings(ij.project(m.base .. "/committed")).global) == global, "an .idea from git")
+    -- 2026-10-20: two G3 repositories IntelliJ had opened but not imported as Maven got jdtls' defaults (no mirror)
+    local unimported = ij.project(m.base .. "/unimported")
+    assert(unimported and unimported.workspace, "the fixture is no IntelliJ project with a workspace")
+    assert(real(jdtls.maven_settings(unimported).global) == global, "IntelliJ project without Maven settings: " .. vim.inspect(jdtls.maven_settings(unimported)))
     vim.env.PATH = m.empty -- no mvn on the PATH: $MAVEN_HOME
     vim.env.MAVEN_HOME = m.maven
     assert(real(jdtls.maven_settings(nil).global) == global, vim.inspect(jdtls.maven_settings(nil)))
