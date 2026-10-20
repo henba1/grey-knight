@@ -179,13 +179,15 @@ function M.mvn_settings()
   return { user = nil, global = global and vim.uv.fs_stat(global) and global or nil }
 end
 
---- Maven's settings for jdtls: { user, global } (nil = jdtls' defaults). A project IntelliJ has opened on this
---- machine (.idea/workspace.xml): IntelliJ's - a local repository IntelliJ sets comes in through a generated
---- settings file that holds only that, IntelliJ's settings file then goes in as the global one (no copy of it - it
---- may hold server credentials). Any other project: as the mvn command line (M.mvn_settings()).
+--- Maven's settings for jdtls: { user, global } (nil = jdtls' defaults). A project IntelliJ has imported as Maven
+--- on this machine (Maven settings in .idea/workspace.xml): IntelliJ's - a local repository IntelliJ sets comes in
+--- through a generated settings file that holds only that, IntelliJ's settings file then goes in as the global one
+--- (no copy of it - it may hold server credentials). Any other project: as the mvn command line (M.mvn_settings()) -
+--- also one IntelliJ opened but never imported as Maven (2026-10-20: two G3 repositories got jdtls' defaults then,
+--- without the company's mirror).
 function M.maven_settings(project)
-  if not (project and project.workspace) then return M.mvn_settings() end
-  local m = project.maven or {}
+  local m = project and project.workspace and project.maven
+  if not (m and (m.home or m.user_settings or m.local_repository)) then return M.mvn_settings() end
   local global = m.home and (m.home .. "/conf/settings.xml") or nil
   if not m.local_repository then return { user = m.user_settings, global = global } end
   local file = data_path("greyknight", "maven-local-repository-" .. vim.fn.sha256(m.local_repository):sub(1, 10) .. ".xml")
@@ -232,7 +234,9 @@ function M.settings(project)
         maven = { userSettings = maven.user, globalSettings = maven.global },
         updateBuildConfiguration = "interactive",
       },
-      import = { gradle = { enabled = false }, maven = { enabled = true } },
+      -- Eclipse's .project / .classpath / .settings / .factorypath in jdtls' workspace, not in the repository
+      -- (2026-10-20: jdtls wrote 44 of them into a G3 checkout, untracked and not ignored - one git add -A away)
+      import = { gradle = { enabled = false }, maven = { enabled = true }, generatesMetadataFilesAtProjectRoot = false },
       maven = { downloadSources = false }, -- as IntelliJ: sources when you open a class
       format = {
         enabled = true,
