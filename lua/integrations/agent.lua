@@ -109,6 +109,36 @@ local function agent(name, direction, first_prompt)
   return term, true
 end
 
+-- ── Its window takes keys (2026-10-20) ─────────────────────────────────────
+-- Going to the agent's window (<C-l>, a click, <leader>tt) means typing there: insert (terminal) mode. Before,
+-- <C-h> left the window in normal mode (<C-\><C-n> first) and toggleterm brought that mode back on the way in
+-- (persist_mode), so every return started with i. Not when the agent has exited: a key would close its
+-- transcript. <Esc><Esc> still gives normal mode inside the window (scroll, copy).
+
+--- Marks a buffer as an agent's terminal (show() does it for every agent window).
+function M.mark(buf) vim.b[buf].greyknight_agent = true end
+
+local function job_running(buf)
+  local job = vim.b[buf].terminal_job_id
+  return job ~= nil and vim.fn.jobwait({ job }, 0)[1] == -1
+end
+
+vim.api.nvim_create_autocmd("BufEnter", {
+  group = vim.api.nvim_create_augroup("greyknight.agent_insert", { clear = true }),
+  pattern = "term://*",
+  callback = function(ev)
+    if not vim.b[ev.buf].greyknight_agent then return end
+    -- scheduled twice: after toggleterm's restore of the old mode, which it schedules once from its own BufEnter
+    vim.schedule(function()
+      vim.schedule(function()
+        if vim.api.nvim_get_current_buf() == ev.buf and job_running(ev.buf) and vim.api.nvim_get_mode().mode:sub(1, 1) == "n" then
+          vim.cmd("startinsert")
+        end
+      end)
+    end)
+  end,
+})
+
 local function show(term, direction)
   direction = direction or term.direction
   if term:is_open() and term.direction ~= direction then term:close() end
@@ -117,6 +147,7 @@ local function show(term, direction)
   else
     term:open(size(direction), direction)
   end
+  if term.bufnr and vim.api.nvim_buf_is_valid(term.bufnr) then M.mark(term.bufnr) end
   vim.cmd("startinsert!")
 end
 
