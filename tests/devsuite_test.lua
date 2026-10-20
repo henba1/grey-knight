@@ -511,11 +511,12 @@ test("Agent: starts by the full path of its binary, not by a name looked up on t
   assert(same(unquoted, fake), got)
 end)
 
--- 2026-10-20: going to the agent's window means typing there - insert (terminal) mode, also when <C-h> left it in
--- normal mode, which toggleterm brings back on the way in (persist_mode); not once the agent has exited (a key
--- would close its transcript). startinsert / stopinsert are recorded here instead of done: their order is the point.
-test("Agent: its window takes keys when you go there (insert mode), not once the agent has exited", function()
-  local agent, T = require("integrations.agent"), require("toggleterm.terminal")
+-- 2026-10-20: going to a toggleterm window (an agent, the REPL, a shell) means typing there - insert (terminal) mode,
+-- also when <C-h> left it in normal mode, which toggleterm brings back on the way in (persist_mode); not once its
+-- program has exited (a key would close the window). startinsert / stopinsert are recorded here instead of done:
+-- their order is the point. The stand-in is a plain toggleterm terminal, as a shell or the REPL is.
+test("Terminals: going to a shell, REPL or agent window means insert mode, not once its program has exited", function()
+  local T = require("toggleterm.terminal")
   local code = vim.api.nvim_get_current_win()
   local term = T.Terminal:new({ cmd = py_cmd("import time; time.sleep(60)"), direction = "vertical", close_on_exit = false })
   local real, calls = vim.cmd, {}
@@ -536,13 +537,12 @@ test("Agent: its window takes keys when you go there (insert mode), not once the
   end
   local ok, err = pcall(function()
     term:open(40, "vertical")
-    agent.mark(term.bufnr) -- as show() marks every agent window
     local seq = enter_from_code()
     assert(seq[1] == "stopinsert" and seq[#seq] == "startinsert", "not insert mode on the way in: " .. vim.inspect(seq))
     vim.fn.jobstop(term.job_id)
     assert(wait(5000, function() return vim.fn.jobwait({ term.job_id }, 0)[1] ~= -1 end), "the stand-in agent did not stop")
     seq = enter_from_code()
-    assert(seq[#seq] ~= "startinsert", "insert mode in an exited agent's window: " .. vim.inspect(seq))
+    assert(seq[#seq] ~= "startinsert", "insert mode in an exited program's window: " .. vim.inspect(seq))
   end)
   vim.cmd = real
   pcall(function() term:shutdown() end)
