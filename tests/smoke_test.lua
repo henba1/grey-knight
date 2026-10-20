@@ -214,9 +214,15 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
     -- like a user: act once the first listing is there (a cd while snacks still lists shows entries twice,
     -- with its own keys too)
     assert(H.wait(5000, function() return not p:is_active() and p.list:count() > 0 end), "explorer did not list")
-    for key, action in pairs({ ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up" }) do
+    for key, action in pairs({ ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to" }) do
       local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(key, "n", false, true) end)
       assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
+    end
+    -- 2026-10-20: m / c / r / a keep snacks' action names, the actions are GreyKnight's (config/explorer.lua)
+    for _, name in ipairs({ "explorer_move", "explorer_copy", "explorer_rename", "explorer_add" }) do
+      local a = Snacks.picker.config.action(p, name)
+      local where = type(a) == "table" and type(a.action) == "function" and debug.getinfo(a.action, "S").source or ""
+      assert(where:find("plugins[/\\]snacks%.lua"), name .. " is not GreyKnight's: " .. where)
     end
     p:action("gk_cd_up")
     assert(H.wait(3000, function() return not p:is_active() and cwd() == root and p:cwd() == root end), "cd ..: " .. cwd() .. " / " .. tostring(p:cwd()))
@@ -249,6 +255,164 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
   vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
   assert(ok, err)
+end)
+
+-- T20: Moving and copying in the explorer (2026-10-20). snacks' m fell back to a rename prompt when nothing was
+-- marked, and its prompts put every answer below a folder, absolute paths too: C:\dev\files became
+-- <cwd>\C\dev\files on Windows, /home/nix0/x.py <cwd>/home/nix0/x.py on Linux (config/explorer.lua).
+test("Explorer: typed paths - absolute ones as typed (also ~, C:\\ and \\\\server), relative ones below the folder", function()
+  local ex = require("config.explorer")
+  -- the real path: Windows' temp directory comes as an 8.3 short name, which ".." resolves to the long one
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local base = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  vim.fn.delete(tmp, "d")
+  local function r(v)
+    local p, folder = ex.resolve(base, v)
+    return p .. (folder and " (folder)" or "")
+  end
+  assert(r("sub/x.py") == base .. "/sub/x.py", r("sub/x.py"))
+  assert(r("../y.py") == vim.fs.dirname(base) .. "/y.py", r("../y.py"))
+  assert(r("~/x.py") == vim.fs.normalize("~") .. "/x.py", r("~/x.py"))
+  assert(r("dir/") == base .. "/dir (folder)", r("dir/"))
+  if vim.fn.has("win32") == 1 then
+    assert(r([[C:\dev\files\]]) == "C:/dev/files (folder)", r([[C:\dev\files\]]))
+    assert(r("D:/x.py") == "D:/x.py", r("D:/x.py"))
+    assert(r([[\\server\share\x]]) == "//server/share/x", r([[\\server\share\x]]))
+    assert(r("/x.py") == vim.fn.getcwd():sub(1, 2) .. "/x.py", "/x.py is on the current drive: " .. r("/x.py"))
+    assert(r([[dir\]]) == base .. "/dir (folder)", r([[dir\]]))
+  else
+    assert(r("/home/nix0/some dir/x.py") == "/home/nix0/some dir/x.py", r("/home/nix0/some dir/x.py"))
+    assert(r("/tmp/x/") == "/tmp/x (folder)", r("/tmp/x/"))
+  end
+end)
+
+-- The explorer's picker as config/explorer.lua uses it, on two temp folders: root (the tree, the working
+-- directory: a.txt, b.txt, sub/b.txt, other/) and far (somewhere else). Prompts answer w.answer, the
+-- confirmation says yes, notifications land in w.notes, the tree's cursor targets in w.targets.
+local function explorer_world(fn)
+  local function tmpdir()
+    local t = vim.fn.tempname()
+    vim.fn.mkdir(t, "p")
+    return vim.fs.normalize(assert(vim.uv.fs_realpath(t)))
+  end
+  local root, far = tmpdir(), tmpdir()
+  local function file(path, text)
+    vim.fn.mkdir(vim.fs.dirname(path), "p")
+    vim.fn.writefile({ text or vim.fs.basename(path) }, path)
+  end
+  file(root .. "/a.txt")
+  file(root .. "/b.txt")
+  file(root .. "/sub/b.txt", "sub's b")
+  vim.fn.mkdir(root .. "/other", "p")
+  local w = { root = root, far = far, notes = {}, targets = {}, file = file }
+  local p = { selection = {} }
+  p.list = {
+    select = function(_, item) -- toggles, like snacks'
+      for i, s in ipairs(p.selection) do
+        if s.file == item.file then return table.remove(p.selection, i) end
+      end
+      table.insert(p.selection, item)
+    end,
+    set_selected = function(_, items) p.selection = items or {} end,
+  }
+  function p:selected() return self.selection end
+  function p:current() return self.cur end
+  function p:cwd() return root end
+  function p:dir() return vim.fn.isdirectory(self.cur.file) == 1 and self.cur.file or vim.fs.dirname(self.cur.file) end
+  w.picker = p
+  function w.at(path) -- the cursor on path
+    p.cur = { file = path }
+    return p.cur
+  end
+  local actions, util = require("snacks.explorer.actions"), Snacks.picker.util
+  local saved = { update = actions.update, confirm = util.confirm, input = Snacks.input, notify = vim.notify, cwd = vim.fn.getcwd() }
+  actions.update = function(_, opts) w.targets[#w.targets + 1] = opts.target end
+  util.confirm = function(_, yes) yes() end
+  Snacks.input = function(_, answer) answer(w.answer) end
+  vim.notify = function(msg) w.notes[#w.notes + 1] = msg end
+  vim.fn.chdir(root)
+  local ok, err = pcall(fn, require("config.explorer"), w)
+  actions.update, util.confirm, Snacks.input, vim.notify = saved.update, saved.confirm, saved.input, saved.notify
+  vim.fn.chdir(saved.cwd)
+  vim.fn.delete(root, "rf")
+  vim.fn.delete(far, "rf")
+  assert(ok, err)
+end
+
+local function exists(path) return vim.uv.fs_stat(path) ~= nil end
+
+test("Explorer: m / c move and copy the marked into the folder under the cursor, nothing marked marks this", function()
+  explorer_world(function(ex, w)
+    local p, R = w.picker, w.root
+    local function last() return tostring(w.notes[#w.notes]) end
+    ex.move(p, w.at(R .. "/a.txt")) -- nothing marked: m marks a.txt
+    assert(#p.selection == 1 and p.selection[1].file == R .. "/a.txt", vim.inspect(p.selection))
+    assert(last():find("a.txt marked", 1, true), last())
+    ex.move(p, w.at(R .. "/other")) -- on the target folder: there it goes
+    assert(exists(R .. "/other/a.txt") and not exists(R .. "/a.txt"), "a.txt not moved into other/")
+    assert(#p.selection == 0 and w.targets[#w.targets] == R .. "/other/a.txt", vim.inspect({ p.selection, w.targets }))
+    ex.copy(p, w.at(R .. "/b.txt")) -- c marks as well; on a file the target is its folder
+    ex.copy(p, w.at(R .. "/other/a.txt"))
+    assert(exists(R .. "/other/b.txt") and exists(R .. "/b.txt") and #p.selection == 0, "b.txt not copied into other/")
+    -- nothing is overwritten: sub/ has a b.txt of its own
+    ex.move(p, w.at(R .. "/b.txt"))
+    ex.move(p, w.at(R .. "/sub"))
+    assert(vim.fn.readfile(R .. "/sub/b.txt")[1] == "sub's b" and exists(R .. "/b.txt"), "sub/b.txt overwritten")
+    assert(last():find("exists", 1, true) and #p.selection == 0, last())
+    -- m in the item's own folder unmarks it; a folder does not go into itself
+    ex.move(p, w.at(R .. "/b.txt"))
+    ex.move(p, w.at(R .. "/b.txt"))
+    assert(#p.selection == 0 and exists(R .. "/b.txt") and last():find("Nothing moved", 1, true), last())
+    ex.move(p, w.at(R .. "/sub"))
+    ex.move(p, w.at(R .. "/sub"))
+    assert(exists(R .. "/sub/b.txt") and last():find("not into itself", 1, true), last())
+  end)
+end)
+
+test("Explorer: r / C / a take typed paths - absolute ones as typed, an existing folder takes the item", function()
+  explorer_world(function(ex, w)
+    local p, R, F = w.picker, w.root, w.far
+    local WIN = vim.fn.has("win32") == 1
+    local function typed(path) return WIN and (path:gsub("/", "\\")) or path end -- as the OS writes paths
+    local function last() return tostring(w.notes[#w.notes]) end
+    -- r with an absolute path: there - not below the working directory
+    w.answer = typed(F .. "/deep/renamed.txt")
+    ex.rename(p, w.at(R .. "/a.txt"))
+    assert(exists(F .. "/deep/renamed.txt") and not exists(R .. "/a.txt"), "not moved to the absolute path: " .. last())
+    local top = (vim.split(F, "/", { trimempty = true })[1]):gsub(":", "") -- "C" (Windows) / "tmp" (Linux)
+    assert(not exists(R .. "/" .. top), "the absolute path was put below the working directory: " .. R .. "/" .. top)
+    -- relative: from the working directory, as the prompt shows it
+    w.answer = "renamed-here.txt"
+    ex.rename(p, w.at(R .. "/b.txt"))
+    assert(exists(R .. "/renamed-here.txt"), "relative path not from the working directory")
+    -- an existing folder, or a path typed with a trailing separator, takes the item under its own name (mv)
+    w.answer = typed(F .. "/deep")
+    ex.rename(p, w.at(R .. "/renamed-here.txt"))
+    assert(exists(F .. "/deep/renamed-here.txt"), "not moved into the existing folder")
+    w.answer = typed(F .. "/new-folder/")
+    ex.rename(p, w.at(R .. "/sub/b.txt"))
+    assert(exists(F .. "/new-folder/b.txt"), "not moved into the new folder")
+    -- nothing is overwritten
+    w.file(R .. "/c.txt")
+    w.answer = typed(F .. "/deep/renamed.txt")
+    ex.rename(p, w.at(R .. "/c.txt"))
+    assert(exists(R .. "/c.txt") and last():find("exists", 1, true), "overwritten: " .. last())
+    -- C copies to a typed path
+    w.answer = typed(F .. "/copies/")
+    ex.copy_to(p, w.at(R .. "/c.txt"))
+    assert(exists(F .. "/copies/c.txt") and exists(R .. "/c.txt"), "C did not copy into the folder: " .. last())
+    -- a creates at an absolute path (a trailing separator: a folder), relative ones in the folder under the cursor
+    w.answer = typed(F .. "/made/new.txt")
+    ex.add(p)
+    assert(vim.fn.filereadable(F .. "/made/new.txt") == 1, "a: no file at the absolute path")
+    w.answer = typed(F .. "/made/dir/")
+    ex.add(p)
+    assert(vim.fn.isdirectory(F .. "/made/dir") == 1, "a: no folder at the absolute path")
+    w.answer = "rel/x.txt"
+    ex.add(p)
+    assert(vim.fn.filereadable(R .. "/rel/x.txt") == 1, "a: relative path not in the folder under the cursor")
+  end)
 end)
 
 -- T14: Markdown links (2026-10-19)
