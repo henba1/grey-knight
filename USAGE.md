@@ -867,9 +867,9 @@ Their servers install themselves with the first file that needs them.
 
 ### Without IntelliJ
 
-On Linux, on a machine without IntelliJ, or in a repository IntelliJ has not opened there (no
-`.idea/workspace.xml`), GreyKnight takes what the machine has, as the `mvn` command line does
-(`lua/integrations/jdtls.lua`):
+On Linux, on a machine without IntelliJ, or in a repository IntelliJ has not imported as a Maven project
+there (no Maven settings in `.idea/workspace.xml`), GreyKnight takes what the machine has, as the `mvn`
+command line does (`lua/integrations/jdtls.lua`):
 
 - **Project JDK:** `JAVA_HOME`, else the `java` on the `PATH`; a project on another Java version gets an installed
   JDK of that version.

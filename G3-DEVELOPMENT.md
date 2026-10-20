@@ -46,8 +46,9 @@ time - restart Neovim (`:JdtRestart` keeps the settings it started with).
 ## Without IntelliJ
 
 GreyKnight needs no IntelliJ: on Linux, or on a machine without it, it takes what the machine has - the way the
-`mvn` command line does. A repository IntelliJ has not opened on this machine (no `.idea/workspace.xml`) gets the
-same; one it has opened keeps the Maven settings of its `.idea`, also when IntelliJ is gone.
+`mvn` command line does. A repository IntelliJ has not imported as a Maven project on this machine (no Maven
+settings in `.idea/workspace.xml`) gets the same; one it has imported keeps the Maven settings of its `.idea`, also
+when IntelliJ is gone.
 
 | Setting | Without IntelliJ |
 |---|---|
@@ -154,7 +155,7 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 ## Working Next to IntelliJ
 
 - Both can have the same repository open. GreyKnight never writes `.idea`; its jdtls index lives in Neovim's data
-  directory.
+  directory, Eclipse's `.project` / `.classpath` / `.settings` there too - none of them in the repository.
 - Java files keep their line endings (CRLF in a Windows checkout).
 - The coding agent (`<leader>tt`, `<leader>aa` - OpenCode on the work laptop) works in the same repository.
 - IntelliJ stays the place for exact reformatting (`Ctrl+Alt+L`), refactorings across many modules and its
@@ -168,6 +169,7 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 | Which JDKs and Maven settings jdtls got | `:lua =require("integrations.jdtls").config(vim.fs.normalize(vim.fn.expand("%:p"))).settings.java.configuration` in a Java file |
 | Imports stay unresolved | Wait for the import (notifications); after `pom.xml` changes `:JdtUpdateConfig`; still wrong: `:JdtRestart` |
 | The index is broken | `:lua require("jdtls.setup").wipe_data_and_restart()` - a fresh import (minutes) |
+| `.project`, `.classpath`, `.settings`, `.factorypath` untracked in a repository | Left by GreyKnight before 2026-10-20: delete them (`git clean -n` shows them first), then wipe the index as above |
 | What jdtls did | `:lua require("jdtls.setup").show_logs()`; servers and their state: `:checkhealth vim.lsp` |
 | A server is missing | `:Mason` shows what is installed; the next matching file installs it again |
 | Template without Angular help | Is it a `*.component.html` inside ngx-his, and did `npm ci` run? |
