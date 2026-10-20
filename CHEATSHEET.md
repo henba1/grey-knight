@@ -38,8 +38,8 @@
 > project's cwd and any `QWEN.md`/`AGENTS.md` context automatically. `aa`/`ae` send the file
 > as `@path` plus the selected lines and your question/instruction as one prompt (a new agent
 > starts with it via `qwen -i`). `tt` is a true toggle — the agent process stays alive when
-> hidden, so re-opening re-attaches the same session. Going to the agent's window (`Ctrl+l`, a click)
-> puts you in terminal mode: type away. `Esc Esc` gives normal mode there (scroll, copy).
+> hidden, so re-opening re-attaches the same session. Going to the agent's window (`Ctrl+l`, a click) puts
+> you in terminal mode, as every terminal window does: type away. `Esc Esc` gives normal mode there (scroll, copy).
 
 ## Run / Tasks / REPL — `<F6>` / `<leader>r` (bash + python)
 
@@ -91,7 +91,7 @@ explorer pane once focused.
 | `r` | Rename / move to a typed path (absolute too: `/…`, `~/…`, `C:\…`) |
 | `C` | Copy to a typed path |
 | `a` | New file or dir (trailing `/` = dir; absolute paths too) |
-| `d` | Delete the marked, else this one (system trash; permanent fallback) |
+| `d` | Delete the marked, else this one (system trash; permanent fallback) — the cursor stays put |
 | `y`/`p` | Yank paths / paste them as copies into the folder |
 | `Z` | Collapse all folders |
 | `u` | Refresh tree |
@@ -100,6 +100,10 @@ explorer pane once focused.
 > The tree shows Neovim's working directory: `.`, `<BS>` and `-` change both (a message shows the new one).
 > Move by the tree: `m` on the file, then `m` on the target folder (`c` there: copy). On a file the target is its
 > folder; `m` in the file's own folder unmarks it. Nothing is overwritten.
+>
+> The prompts (`r`, `C`, `a` — every input dialog) edit like a shell: `<C-a>`/`<C-e>` start/end, `<C-b>`/`<C-f>` a
+> character, `<M-b>`/`<M-f>` a word, `<C-d>` delete the character, `<C-k>` delete to the end, `<C-u>` to the start,
+> `<C-w>` a word.
 
 ## Find (Snacks Picker) — `<leader>f`
 
@@ -249,7 +253,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 | `<C-h/j/k/l>` | Navigate windows (from a terminal only `<C-h/j/k>`: there `<C-l>` clears the shell) |
 | `<C-Up/Down/Left/Right>` | Resize windows |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
-| `<Esc><Esc>` | Leave terminal mode (back to normal mode) |
+| `<Esc><Esc>` | Leave terminal mode (back to normal mode); going to a terminal window (shell, REPL, agent) enters it again |
 
 ## Config Structure
 

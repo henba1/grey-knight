@@ -22,8 +22,11 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   Maven of the machine, as the `mvn` command line ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
-- **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications
-- **Hacker tools** — Hex editor, multiple terminals, send-to-terminal workflow
+- **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications. Its file explorer moves
+  and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts and
+  keeps the cursor in place on delete; input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
+- **Hacker tools** — Hex editor, multiple terminals (a shell, the REPL or an agent takes your keys as soon as you
+  go to it), send-to-terminal workflow
 - **Session persistence** — Auto-saves per project + git branch
 - **2026 plugin stack** — Flash, Harpoon v2, Oil, mini.surround/ai, grug-far, Trouble v3
 

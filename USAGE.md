@@ -123,7 +123,7 @@ has focus.
 | `r` | Rename, or move to a typed path: relative from the working directory (as shown), absolute as typed (`/home/…`, `~/…`, `C:\…`, `\\server\share\…`) |
 | `C` | Copy to a typed path: relative from the item's folder, absolute as typed |
 | `a` | New file or dir (trailing `/` makes a directory) - in the folder under the cursor, or at an absolute path |
-| `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash) |
+| `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash). The cursor stays on its item; when that one went, on the next one |
 | `y` | Yank the paths of the marked items (else the one under the cursor) to the clipboard |
 | `p` | Paste yanked files into the folder under the cursor (copies) |
 
@@ -131,6 +131,18 @@ has focus.
 again - it moves there after a yes, open buffers and language servers follow. `c` instead copies it. Mark more
 with `<Tab>` first to move them together; `m` in the file's own folder unmarks it. A typed path that names an
 existing folder (or ends in `/` or `\`) takes the item under its own name, like `mv`; nothing is overwritten.
+
+**Typing in the prompts** - `r`, `C`, `a` and every other input dialog (the agent's questions too) - works like
+a shell prompt:
+
+| Key | Action |
+|-----|--------|
+| `<C-a>` / `<C-e>` | Start / end of the line |
+| `<C-b>` / `<C-f>` | A character back / forward |
+| `<M-b>` / `<M-f>` | A word back / forward |
+| `<C-d>` | Delete the character under the cursor |
+| `<C-k>` / `<C-u>` | Delete everything after / before the cursor (`<C-a><C-k>`: the whole line) |
+| `<C-w>` | Delete the word before the cursor |
 
 **Tree structure**
 
@@ -300,9 +312,12 @@ points to `/models` (OpenCode picks its model itself).
   the file as `@path` (Qwen Code reads it itself) plus the selected lines and their line
   numbers. A running agent gets it as one bracketed paste (multi-line safe); a new agent
   starts with it (`qwen -i`).
-- Going to the agent window (`Ctrl+l`, a click, `<leader>tt`) puts you straight into terminal mode: type
-  away. Inside it, `Esc Esc` gives normal mode (scroll, copy); the next time you come back it is terminal
-  mode again - unless the agent has exited (a key would close its window).
+- Going to the agent window (`Ctrl+l`, a click, `<leader>tt`) puts you straight into terminal mode, as
+  every terminal window does ([Terminal](#terminal)): type away. Inside it, `Esc Esc` gives normal mode
+  (scroll, copy); the next time you come back it is terminal mode again - unless the agent has exited (a
+  key would close its window). Qwen Code's input box can have a vim mode of its own (`general.vimMode` in
+  `~/.qwen/settings.json`, `/vim` toggles it): a single `Esc` there puts that box into its NORMAL mode,
+  which Neovim neither sees nor changes - `i` gets back to typing.
 
 > Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 
@@ -419,6 +434,9 @@ The `<leader>t*` keys above launch the coding agent (**Qwen Code** or OpenCode, 
 
 In a terminal, `Ctrl+L` belongs to the program: it clears a shell. `Ctrl+h` / `Ctrl+j` / `Ctrl+k` jump to
 the next window; for the right one, leave terminal mode with `Esc Esc`, then `Ctrl+l`.
+
+Going to a terminal window - a shell, the REPL, an agent - puts you in terminal mode right away, also when
+you left it in normal mode; not when its program has exited (a key would close the window then).
 
 **Example workflow:**
 1. `:2ToggleTerm` → open shell terminal #2 (e.g. ssh into a target)
