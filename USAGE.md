@@ -117,13 +117,20 @@ has focus.
 
 | Key | Action |
 |-----|--------|
-| `a` | New file or dir (trailing `/` makes a directory) |
-| `r` | Rename file / dir |
-| `d` | Delete (to system trash; permanent fallback if no trash) |
-| `c` | Copy selected → current dir (or prompt a target path) |
-| `m` | Move selected → current dir (falls back to rename when nothing selected) |
-| `y` | Yank selected paths to clipboard |
-| `p` | Paste yanked files into current dir |
+| `<Tab>` / `<S-Tab>` | Mark / unmark the item, then go to the next / previous one; `V` … `<Tab>` marks a range, `<C-a>` all |
+| `m` | Move the marked items into the folder under the cursor (asks first). Nothing marked: marks the item under the cursor |
+| `c` | Copy the marked items into the folder under the cursor. Nothing marked: marks the item under the cursor |
+| `r` | Rename, or move to a typed path: relative from the working directory (as shown), absolute as typed (`/home/…`, `~/…`, `C:\…`, `\\server\share\…`) |
+| `C` | Copy to a typed path: relative from the item's folder, absolute as typed |
+| `a` | New file or dir (trailing `/` makes a directory) - in the folder under the cursor, or at an absolute path |
+| `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash) |
+| `y` | Yank the paths of the marked items (else the one under the cursor) to the clipboard |
+| `p` | Paste yanked files into the folder under the cursor (copies) |
+
+**Moving with the tree**: `m` on a file marks it; go to the target folder (or any file in it) and press `m`
+again - it moves there after a yes, open buffers and language servers follow. `c` instead copies it. Mark more
+with `<Tab>` first to move them together; `m` in the file's own folder unmarks it. A typed path that names an
+existing folder (or ends in `/` or `\`) takes the item under its own name, like `mv`; nothing is overwritten.
 
 **Tree structure**
 
@@ -293,7 +300,9 @@ points to `/models` (OpenCode picks its model itself).
   the file as `@path` (Qwen Code reads it itself) plus the selected lines and their line
   numbers. A running agent gets it as one bracketed paste (multi-line safe); a new agent
   starts with it (`qwen -i`).
-- Inside the agent window, `Esc Esc` exits terminal mode back to the editor.
+- Going to the agent window (`Ctrl+l`, a click, `<leader>tt`) puts you straight into terminal mode: type
+  away. Inside it, `Esc Esc` gives normal mode (scroll, copy); the next time you come back it is terminal
+  mode again - unless the agent has exited (a key would close its window).
 
 > Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 

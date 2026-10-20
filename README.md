@@ -135,7 +135,8 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── lazy.lua            lazy.nvim bootstrap
 │   ├── keymaps.lua         all global keymaps + which-key groups
 │   ├── autocmds.lua        yank highlight, cursor restore
-│   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -)
+│   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -), move / copy through the
+│   │                       tree (m, c), typed paths as typed (r, C, a)
 │   ├── mdlinks.lua         markdown links: gd / Enter follow them (#heading, file, URL)
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
