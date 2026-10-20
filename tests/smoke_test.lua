@@ -218,8 +218,8 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
       local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(key, "n", false, true) end)
       assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
     end
-    -- 2026-10-20: m / c / r / a keep snacks' action names, the actions are GreyKnight's (config/explorer.lua)
-    for _, name in ipairs({ "explorer_move", "explorer_copy", "explorer_rename", "explorer_add" }) do
+    -- 2026-10-20: m / c / r / a / d keep snacks' action names, the actions are GreyKnight's (config/explorer.lua)
+    for _, name in ipairs({ "explorer_move", "explorer_copy", "explorer_rename", "explorer_add", "explorer_del" }) do
       local a = Snacks.picker.config.action(p, name)
       local where = type(a) == "table" and type(a.action) == "function" and debug.getinfo(a.action, "S").source or ""
       assert(where:find("plugins[/\\]snacks%.lua"), name .. " is not GreyKnight's: " .. where)
@@ -413,6 +413,92 @@ test("Explorer: r / C / a take typed paths - absolute ones as typed, an existing
     ex.add(p)
     assert(vim.fn.filereadable(R .. "/rel/x.txt") == 1, "a: relative path not in the folder under the cursor")
   end)
+end)
+
+-- 2026-10-20: d keeps the cursor on its item (snacks kept only the row: marked items above it moved another item
+-- under the cursor); when the item itself went, the next one below takes it, else the one above. The real explorer,
+-- with the file in the editor deleted too; the answer to "Delete ...?" is yes, deleted for good (no trash: gio
+-- refuses to trash files in /tmp).
+test("Explorer: d keeps the cursor on its item, else on the next one (also for the file in the editor)", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/sub", "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  for i = 1, 9 do vim.fn.writefile({ "f" }, ("%s/f%d.txt"):format(root, i)) end
+  local before, editor = vim.fn.getcwd(), vim.api.nvim_get_current_win()
+  local util, config = Snacks.picker.util, Snacks.explorer.config
+  local saved = { confirm = util.confirm, trash = config.trash }
+  util.confirm = function(_, yes) yes() end
+  config.trash = false
+  vim.fn.chdir(root)
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/f4.txt"))
+  Snacks.explorer()
+  local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
+  local ok, err = pcall(function()
+    assert(H.wait(5000, picker), "explorer did not open")
+    local p = picker()
+    assert(H.wait(5000, function() return not p:is_active() and p.list:count() >= 10 end), "explorer did not list")
+    local function index(file)
+      for i = 1, p.list:count() do
+        if p.list:get(i).file == file then return i end
+      end
+    end
+    local function on(file) -- the cursor there (the explorer sets its own target after a listing: until it stays)
+      assert(H.wait(3000, function()
+        local cur = p:current()
+        if cur and cur.file == file then return true end
+        if index(file) then p.list:view(index(file)) end
+      end), "cursor not on " .. file)
+    end
+    local function current() return p:current() and p:current().file:sub(#root + 2) or "nil" end
+    local function delete(want)
+      p:focus("list")
+      p:action("explorer_del")
+      assert(H.wait(3000, function() return not p:is_active() and current() == want end),
+        "after d the cursor is on " .. current() .. ", not " .. want)
+    end
+    on(root .. "/f2.txt")
+    p.list:select(p:current())
+    on(root .. "/f3.txt")
+    p.list:select(p:current())
+    on(root .. "/f6.txt")
+    delete("f6.txt") -- f2 and f3 marked above: the cursor stays on f6
+    assert(not vim.uv.fs_stat(root .. "/f2.txt") and not vim.uv.fs_stat(root .. "/f3.txt"), "the marked were not deleted")
+    delete("f7.txt") -- f6 itself: the next one
+    on(root .. "/f4.txt")
+    delete("f5.txt") -- the file in the editor: the next one, and the editor shows something else
+    assert(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(editor)) ~= root .. "/f4.txt", "f4.txt still in the editor")
+    on(root .. "/f9.txt")
+    delete("f8.txt") -- the last one: the one above
+  end)
+  util.confirm, config.trash = saved.confirm, saved.trash
+  if picker() then picker():close() end
+  H.wait(2000, function() return picker() == nil end)
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-20: input dialogs (rename, copy to, the agent's questions: every vim.ui.input) edit like a shell prompt
+test("Input dialogs: <C-a> <C-e> <C-b> <C-f> <C-d> <C-k> edit like a shell prompt, <CR> still confirms", function()
+  local got
+  local win = Snacks.input({ prompt = "Rename", default = "src/foo/bar.py" }, function(value) got = value end)
+  local function line() return vim.api.nvim_buf_get_lines(win.buf, 0, -1, false)[1] end
+  -- A types at the end; <C-\><C-n> leaves insert mode without <Esc>, which closes the dialog in normal mode
+  local function typed(keys)
+    vim.api.nvim_feedkeys(vim.keycode("A" .. keys .. "<C-\\><C-n>"), "x", false)
+    return line()
+  end
+  local ok, err = pcall(function()
+    vim.cmd("stopinsert") -- the dialog's own startinsert waits for the end of this script: the keys below type
+    assert(typed("<C-a>X<C-e>Y") == "Xsrc/foo/bar.pyY", "<C-a> / <C-e>: " .. line())
+    assert(typed("<C-a><C-f><C-f><C-f><C-k>") == "Xsr", "<C-f> / <C-k>: " .. line())
+    assert(typed("<C-a><C-d>") == "sr", "<C-d>: " .. line())
+    assert(typed("<C-b><C-b>Z") == "Zsr", "<C-b>: " .. line())
+    vim.api.nvim_feedkeys(vim.keycode("A<CR>"), "x", false)
+    assert(H.wait(2000, function() return got ~= nil end) and got == "Zsr", "<CR> did not confirm: " .. tostring(got))
+  end)
+  if win:valid() then win:close() end
+  assert(ok, err)
 end)
 
 -- T14: Markdown links (2026-10-19)
