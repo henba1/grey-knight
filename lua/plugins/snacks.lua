@@ -74,6 +74,7 @@ return {
               explorer_rename = { action = function(p, item) require("config.explorer").rename(p, item) end, desc = "Rename / move to a path" },
               gk_copy_to      = { action = function(p, item) require("config.explorer").copy_to(p, item) end, desc = "Copy to a path" },
               explorer_add    = { action = function(p) require("config.explorer").add(p) end,              desc = "New file or folder" },
+              explorer_del    = { action = function(p, item) require("config.explorer").delete(p, item) end, desc = "Delete (the cursor stays)" },
             },
             win = { list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to" } } },
           },

@@ -9,6 +9,7 @@
 --   <BS>  -     one folder up (cd ..)
 --   m  c        move / copy the marked items into the folder under the cursor; nothing marked: mark this one
 --   r  C  a     rename or move / copy / create at a typed path (absolute paths as typed)
+--   d           delete the marked, else this one - the cursor stays where it was
 local M = {}
 
 local WIN = vim.fn.has("win32") == 1
@@ -210,6 +211,45 @@ function M.add(picker)
     end
     require("snacks.explorer.tree"):open(dir)
     refresh(picker, { dir }, path)
+  end)
+end
+
+--- d: delete the marked items, else the one under the cursor, after asking - into the system trash where there is
+--- one, as snacks does. The cursor stays on its item; when that one went, it takes the next one below that is still
+--- there (a deleted folder took its contents along), else the nearest above. snacks kept only the row: marked items
+--- above the cursor moved another item under it, and a buffer change after deleting an open file could move it too.
+function M.delete(picker, item)
+  local paths = vim.tbl_map(Snacks.picker.util.path, picker:selected({ fallback = true }))
+  if #paths == 0 then return end
+  local order, at = {}, picker.list.cursor -- the tree as it is now, to find the cursor's item afterwards
+  for i = 1, picker.list:count() do order[i] = picker.list:get(i).file end
+  local what = #paths == 1 and show(paths[1]) or (#paths .. " items")
+  Snacks.picker.util.confirm("Delete " .. what .. "?", function()
+    local actions, Tree = require("snacks.explorer.actions"), require("snacks.explorer.tree")
+    for _, path in ipairs(paths) do
+      local ok, err = actions.trash(path)
+      if ok then
+        Snacks.bufdelete({ file = path, force = true })
+      else
+        Snacks.notify.error("Failed to delete `" .. path .. "`:\n" .. err)
+      end
+      Tree:refresh(vim.fs.dirname(path))
+    end
+    picker.list:set_selected()
+    local stay
+    for i = at, #order do
+      if vim.uv.fs_stat(order[i]) then stay = order[i]; break end
+    end
+    for i = at - 1, 1, -1 do
+      if stay then break end
+      if vim.uv.fs_stat(order[i]) then stay = order[i] end
+    end
+    -- scheduled twice: after the explorer followed a buffer change (an open file was deleted), which it schedules
+    vim.schedule(function()
+      vim.schedule(function()
+        if not picker.closed then actions.update(picker, { target = stay }) end
+      end)
+    end)
   end)
 end
 
