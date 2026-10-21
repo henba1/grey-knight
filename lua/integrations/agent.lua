@@ -75,14 +75,19 @@ end
 
 -- The agent's terminal, and whether its process is new. A process starts when there is none
 -- (or it exited); `first_prompt` goes to that new process as an argument when the CLI takes one.
+-- The flag for a first prompt on the command line, or nil: then it is pasted once the TUI is up. Never on Windows:
+-- the command goes through cmd.exe (toggleterm), which expands %VAR% even in quotes - "100% of %PATH%" arrived with
+-- the machine's PATH in it (2026-10-21)
+local function prompt_flag(backend) return not util.WIN and backend.first_prompt or nil end
+
 --- The command line that starts the agent. The binary by its full path: cmd.exe gives a quoted .cmd it found on
 --- the PATH the current directory as its own folder (%~dp0), so on Windows opencode.cmd did not find its launcher.
 function M.command(first_prompt)
   local backend = M.backend()
   local bin = backend.bin()
   local cmd = vim.fn.shellescape(vim.fn.exepath(bin) ~= "" and vim.fn.exepath(bin) or bin)
-  if first_prompt and backend.first_prompt then
-    cmd = cmd .. " " .. backend.first_prompt .. " " .. vim.fn.shellescape(first_prompt)
+  if first_prompt and prompt_flag(backend) then
+    cmd = cmd .. " " .. prompt_flag(backend) .. " " .. vim.fn.shellescape(first_prompt)
   end
   return cmd
 end
@@ -186,7 +191,7 @@ function M.send(text, name, direction)
   if not term then return end
   show(term, direction)
   if not new then return submit(term, text) end
-  if not M.backend().first_prompt then when_ready(term, function() submit(term, text) end) end
+  if not prompt_flag(M.backend()) then when_ready(term, function() submit(term, text) end) end
 end
 
 --- Ask about the file or the selection (read-only); asks for the question first.
