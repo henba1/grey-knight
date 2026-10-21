@@ -249,13 +249,16 @@ return {
     event = "BufWritePre",
     opts = {
       formatters_by_ft = formatters,
+      -- Saving never pops up an error (quiet): a formatter that fails - mostly on a file that does not parse yet, an
+      -- unfinished script ("Formatter failed" 4 times in the Kali error log, 2026-10-21) - leaves the text as it is,
+      -- and it is saved as it is. :ConformInfo has the details; <leader>fm still says when it fails.
       format_on_save = function(buf)
         local intellij = require("integrations.intellij")
         local actions = intellij.save_actions(buf)
-        if actions == nil then return { timeout_ms = 2000, lsp_fallback = true } end
+        if actions == nil then return { timeout_ms = 2000, lsp_fallback = true, quiet = true } end
         if not actions.format then return nil end
-        local opts = actions.prettier and { timeout_ms = 3000, formatters = { "prettier" }, lsp_format = "never" }
-          or { timeout_ms = 3000, lsp_format = "prefer" }
+        local opts = actions.prettier and { timeout_ms = 3000, formatters = { "prettier" }, lsp_format = "never", quiet = true }
+          or { timeout_ms = 3000, lsp_format = "prefer", quiet = true }
         if not actions.changed_lines then return opts end
         -- "Only changes uncommitted to VCS": the changed lines, not the whole file
         for _, range in ipairs(intellij.changed_ranges(buf)) do
