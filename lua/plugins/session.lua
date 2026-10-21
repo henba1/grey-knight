@@ -24,8 +24,10 @@ return {
       -- No sessions for the home folder itself, the root, temp folders
       ignored_dirs   = { { "~", exact = true }, { "/", exact = true }, "/tmp" },
       -- Quitting with no file open (the start screen, a picker) keeps the session there was; :Persisted save
-      -- (<leader>ps) saves anyway
+      -- (<leader>ps) saves anyway. Nor in a folder of ignored_dirs Neovim moved to: persisted checks those when it
+      -- starts only - a :cd /tmp/x before quitting saved a session for it (2026-10-21)
       should_save    = function()
+        if not require("persisted").allowed_dir() then return false end
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
           local name = vim.api.nvim_buf_get_name(buf)
           if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and name ~= "" and vim.uv.fs_stat(name) then
