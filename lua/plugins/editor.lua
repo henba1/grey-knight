@@ -57,6 +57,9 @@ return {
     "stevearc/oil.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     opts = {
+      -- A folder opened as a file (nvim <folder>, :e <folder>) is the explorer's (snacks, replace_netrw). Once loaded
+      -- (- or <leader>o once) oil took every folder buffer, so the same :e opened the explorer or oil (2026-10-21)
+      default_file_explorer = false,
       view_options = { show_hidden = true },
       float = { padding = 4, max_width = 100, max_height = 30 },
       keymaps = {
