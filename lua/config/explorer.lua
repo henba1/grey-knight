@@ -285,6 +285,17 @@ end
 
 local function searching(picker) return not picker.input.filter:is_empty() end
 
+-- Back to the tree with the cursor on `target` (<CR> on a match, <Esc> to where the search started). snacks
+-- (explorer/actions.lua, update) puts it there when its find is done - but a find started meanwhile replaced that one,
+-- the watcher's refresh after a change on disk (batched, 100 ms later) for one, and the cursor stayed on the row
+-- number it had in the search list: <CR> on alpha/beta/gamma left it on alpha/beta (2026-10-21, in the tests 1 in 5
+-- runs on Kali). Now the first find to finish in the tree puts it there (setup, on_show).
+local reveals = setmetatable({}, { __mode = "k" }) -- per explorer: the path the cursor goes to
+local function to_tree(picker, target)
+  reveals[picker] = target
+  require("snacks.explorer.actions").update(picker, { target = target })
+end
+
 -- The search box's title names the search while there is one (or the box has the cursor), else it is the
 -- explorer's own. A search that ended - no text left, the cursor out of the box - leaves file search next.
 local function sync(picker)
@@ -302,8 +313,9 @@ end
 
 --- The explorer's config: snacks' own, then the searches' - the search box's title follows the search when
 --- snacks switches between the tree and a search, and when the cursor goes in or out of the search box; the
---- item under the cursor when a search starts is where <Esc> goes back to. And closing it right after a find
---- leaves no error behind (below).
+--- item under the cursor when a search starts is where <Esc> goes back to, and <CR> on a match and <Esc> get the
+--- cursor there also when a refresh comes in between. Marks go by path. And closing it right after a find leaves
+--- no error behind (below).
 function M.setup(opts)
   opts = require("snacks.picker.source.explorer").setup(opts)
   local transform = opts.filter.transform
@@ -313,15 +325,41 @@ function M.setup(opts)
     if flipped and filter.meta.searching and not was then
       local item = picker:current() -- still the tree's
       search_of(picker).before = item and item.file
+      reveals[picker] = nil -- a new search: the cursor stays where it is
     end
     sync(picker)
     return flipped
+  end
+  -- <CR> on a match: snacks' own (to the tree, the cursor on it), sure to get there (to_tree)
+  local confirm = opts.actions.confirm
+  opts.actions.confirm = function(picker, item, action)
+    if item and picker.input.filter.meta.searching then return to_tree(picker, item.file) end
+    return confirm(picker, item, action)
+  end
+  -- Marks (<Tab>) by path. snacks keyed them by the item's text, which is the full path in the tree, the path below
+  -- the root in file search and the name in folder and view search: a file marked in a search was not marked in the
+  -- tree, and <Tab> on it there marked it a second time - m moved it twice (2026-10-21)
+  local item_transform = Snacks.picker.config.transform(opts)
+  opts.transform = function(item, ctx)
+    item._select_key = item.file
+    if item_transform then return item_transform(item, ctx) end
   end
   local on_show = opts.on_show
   opts.on_show = function(picker)
     local ref = picker:ref()
     local function later() vim.schedule(function() if ref() then sync(ref()) end end) end
     picker.input.win:on({ "BufEnter", "BufLeave" }, function() later() end, { buf = true })
+    -- every find that finishes (not one that a later find replaced) - in the tree, the cursor to where to_tree sends it
+    local done = picker.matcher.opts.on_done
+    picker.matcher.opts.on_done = function(matcher)
+      if done then done(matcher) end
+      local p = ref()
+      local target = p and reveals[p]
+      if target and not p.closed and not p:is_active() and p.input.filter:is_empty() then
+        reveals[p] = nil
+        require("snacks.explorer.actions").reveal(p, target)
+      end
+    end
     if on_show then on_show(picker) end
   end
   -- Closing right after a find (a refresh, a cd, typing): snacks' cleanup (picker.lua, close) put a new task in
@@ -469,7 +507,7 @@ function M.search_back(picker) picker:focus("list", { show = true }) end
 --- else snacks' own: the explorer closes
 function M.search_leave(picker)
   if not searching(picker) then return require("snacks.picker.actions").cancel(picker) end
-  require("snacks.explorer.actions").update(picker, { target = search_of(picker).before })
+  to_tree(picker, search_of(picker).before)
 end
 
 return M
