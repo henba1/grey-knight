@@ -58,7 +58,8 @@ local function angular_cmd(root)
   local cmd = { "ngserver", "--stdio", "--tsProbeLocations", probe, "--ngProbeLocations", probe }
   local version = angular_version(root)
   if version then vim.list_extend(cmd, { "--angularCoreVersion", version }) end
-  return cmd
+  -- Windows: as what Mason's ngserver.cmd runs (node and the server's script) - cmd.exe split the probe paths at an &
+  return require("devsuite.util").unshim(cmd)
 end
 
 local ready = {}
