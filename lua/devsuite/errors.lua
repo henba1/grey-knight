@@ -100,17 +100,26 @@ function M.parse(lines, opts)
   return items
 end
 
+-- Where a line names a file and a line number - the first of these that names a file that exists
+local LOCATIONS = {
+  'File "(.-)", line (%d+)', -- python tracebacks
+  "^(.-): line (%d+):", -- bash
+  "^(%a:[/\\][^:]+):(%d+)", -- Windows: C:\dir\x.py:12
+  "^(.-%.%w+):(%d+)", -- x.py:12, also with spaces in the path (2026-10-21: "my dir/x.py:12" was not found)
+  "^([^%s:]+):(%d+)",
+  "^([^%s:]+): (%d+): ", -- dash / sh
+}
+
 --- The code location of one output line (for <CR> in the output window), or nil.
 function M.location(line, opts)
   line = M.clean(line)
-  local file, lnum = line:match('File "(.-)", line (%d+)')
-  if not file then file, lnum = line:match("^(.-): line (%d+):") end
-  if not file then file, lnum = line:match("^(%a:[/\\][^:]+):(%d+)") end -- Windows: C:\dir\x.py:12
-  if not file then file, lnum = line:match("^([^%s:]+):(%d+)") end
-  if not file then file, lnum = line:match("^([^%s:]+): (%d+): ") end
-  if not file then return nil end
-  local path, n = resolve(file, tonumber(lnum), opts or {})
-  if vim.fn.filereadable(path) == 1 then return path, n end
+  for _, pattern in ipairs(LOCATIONS) do
+    local file, lnum = line:match(pattern)
+    if file then
+      local path, n = resolve(file, tonumber(lnum), opts or {})
+      if vim.fn.filereadable(path) == 1 then return path, n end
+    end
+  end
 end
 
 local SEVERITY = { E = vim.diagnostic.severity.ERROR, W = vim.diagnostic.severity.WARN, I = vim.diagnostic.severity.HINT }
