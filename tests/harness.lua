@@ -7,6 +7,16 @@ local SKIP = {} -- metatable of the error H.skip() raises
 pcall(function() require("config.errorlog").path = vim.fn.tempname() .. "-greyknight-test.log" end)
 -- Test processes never write harpoon lists (harpoon saves every loaded list when Neovim exits)
 pcall(function() require("harpoon").sync = function() end end)
+-- Tests delete their files; a buffer of one can outlive that (a cleanup that deletes buffers shows another one in
+-- the window). Entering it reported E211 "File ... no longer available" - in the Windows test window a prompt that
+-- kept Neovim from quitting (2026-10-21). A deleted file goes without a message; anything else as without this
+-- autocmd ("ask"; 'autoread' reloads before it is asked at all).
+vim.api.nvim_create_autocmd("FileChangedShell", {
+  group = vim.api.nvim_create_augroup("greyknight_tests", { clear = true }),
+  callback = function()
+    if vim.v.fcs_reason ~= "deleted" then vim.v.fcs_choice = "ask" end
+  end,
+})
 
 function H.test(name, fn)
   -- Let earlier tests finish what they scheduled first: a terminal's scheduled stopinsert ended the next
