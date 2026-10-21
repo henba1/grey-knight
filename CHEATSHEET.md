@@ -274,10 +274,12 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Action |
 |-----|--------|
-| `<C-h/j/k/l>` | Navigate windows (from a terminal only `<C-h/j/k>`: there `<C-l>` clears the shell) |
-| `<C-Up/Down/Left/Right>` | Resize windows |
+| `<C-h/j/k/l>` | Navigate windows - from a terminal too (clear the shell with `clear` / `cls`) |
+| `<C-Up/Down/Left/Right>` | Resize windows - a terminal too |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
-| `<Esc><Esc>` | Leave terminal mode (back to normal mode); going to a terminal window (shell, REPL, agent) enters it again |
+| `<Esc><Esc>` | Leave terminal mode (back to normal mode); going to a terminal window (shell, REPL, agent, a run's output) enters it again |
+
+In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `Ctrl+W/U/R` work as typed.
 
 ## Config Structure
 

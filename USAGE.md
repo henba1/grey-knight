@@ -458,11 +458,14 @@ The `<leader>t*` keys above launch the coding agent (**Qwen Code** or OpenCode, 
 | `<leader>ts` | v | Send selected lines to shell terminal #2 |
 | `<leader>tl` | n | Send current line to shell terminal #2 |
 
-In a terminal, `Ctrl+L` belongs to the program: it clears a shell. `Ctrl+h` / `Ctrl+j` / `Ctrl+k` jump to
-the next window; for the right one, leave terminal mode with `Esc Esc`, then `Ctrl+l`.
+In a terminal, `Ctrl+h` / `Ctrl+j` / `Ctrl+k` / `Ctrl+l` jump to the next window and `Ctrl+Up/Down/Left/Right`
+resize it, as everywhere else. Every other key is the program's: the shell's own `Ctrl+A` / `Ctrl+E`, `Alt+B` /
+`Alt+F`, `Ctrl+W`, `Ctrl+U`, `Ctrl+R` work as typed. To clear the shell type `clear` (`cls` in cmd.exe) - `Ctrl+L`
+is the window on the right.
 
-Going to a terminal window - a shell, the REPL, an agent - puts you in terminal mode right away, also when
-you left it in normal mode; not when its program has exited (a key would close the window then).
+Going to a terminal window - a shell, the REPL, an agent, a run's output, the debug console, `:terminal` - puts
+you in terminal mode right away, also when you left it in normal mode; not when its program has exited (a key
+would close the window then).
 
 **Example workflow:**
 1. `:2ToggleTerm` → open shell terminal #2 (e.g. ssh into a target)
@@ -827,7 +830,9 @@ Press `<leader>` and **wait** — a popup shows all available keybindings groupe
 ### Format on Save
 Files auto-format when you save. A file the formatter cannot read yet (an unfinished script) is saved as it
 is, without a message - `<leader>fm` says why it fails, `:ConformInfo` has the details. To format manually:
-`<leader>fm`. In projects you also open in IntelliJ
+`<leader>fm`. JavaScript and TypeScript use the project's own prettier (`node_modules`), else the language
+server. On Windows formatters run without cmd.exe in between, so folders named with spaces, `&` or `^` work
+(cmd.exe split such paths, and Volta's `node` passes them through it). In projects you also open in IntelliJ
 (an `.idea` folder) saving does what IntelliJ's Actions on Save do - by default nothing; Java files get that
 default everywhere (see [Java and Angular](#java-and-angular)).
 
