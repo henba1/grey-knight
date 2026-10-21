@@ -103,7 +103,8 @@ explorer pane once focused.
 > The tree shows Neovim's working directory: `.`, `<BS>` and `-` change both (a message shows the new one).
 > Move by the tree: `m` on the file, then `m` on the target folder (`c` there: copy). On a file the target is its
 > folder; `m` in the file's own folder unmarks it. Nothing is overwritten. Marks stay through searches: `/` and
-> `<Tab>` the files, `D` the target folder, `m` there.
+> `<Tab>` the files, `D` the target folder, `m` there. Open files go along (a folder's too); a file with unsaved
+> changes stays for `m` / `r` (`:w` or `:e!` first); `d` closes the open files it deleted.
 >
 > The prompts (`r`, `C`, `a` — every input dialog) edit like a shell: `<C-a>`/`<C-e>` start/end, `<C-b>`/`<C-f>` a
 > character, `<M-b>`/`<M-f>` a word, `<C-d>` delete the character, `<C-k>` delete to the end, `<C-u>` to the start,

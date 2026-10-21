@@ -139,16 +139,17 @@ again opens a file; the next `/` is a file search again. Lowercase text ignores 
 | `r` | Rename, or move to a typed path: relative from the working directory (as shown), absolute as typed (`/home/…`, `~/…`, `C:\…`, `\\server\share\…`) |
 | `C` | Copy to a typed path: relative from the item's folder, absolute as typed |
 | `a` | New file or dir (trailing `/` makes a directory) - in the folder under the cursor, or at an absolute path |
-| `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash). The cursor stays on its item; when that one went, on the next one |
+| `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash). The cursor stays on its item; when that one went, on the next one. Open files of what was deleted are closed - in a folder too |
 | `y` | Yank the paths of the marked items (else the one under the cursor) to the clipboard |
 | `p` | Paste yanked files into the folder under the cursor (copies) |
 
 **Moving with the tree**: `m` on a file marks it; go to the target folder (or any file in it) and press `m`
-again - it moves there after a yes, open buffers and language servers follow. `c` instead copies it. Mark more
-with `<Tab>` first to move them together; `m` in the file's own folder unmarks it. A typed path that names an
-existing folder (or ends in `/` or `\`) takes the item under its own name, like `mv`; nothing is overwritten.
-Marks stay through searches and in the tree: `/` for the files, `<Tab>` on each, `D` for the target folder, `m`
-there.
+again - it moves there after a yes, open buffers and language servers follow (for a folder: those of the files
+in it). `c` instead copies it. Mark more with `<Tab>` first to move them together; `m` in the file's own folder
+unmarks it. A typed path that names an existing folder (or ends in `/` or `\`) takes the item under its own name,
+like `mv`; nothing is overwritten. Marks stay through searches and in the tree: `/` for the files, `<Tab>` on each,
+`D` for the target folder, `m` there. A file with unsaved changes (or a folder with such a file) stays where it is
+for `m` and `r` - save them (`:w`) or drop them (`:e!`) first.
 
 **Typing in the prompts** - `r`, `C`, `a` and every other input dialog (the agent's questions too) - works like
 a shell prompt:
@@ -783,8 +784,8 @@ Spell check is enabled automatically for `.md` files.
 ### Reading These Docs in Neovim
 `<leader>gd` picks README, CHEATSHEET or this guide and opens it read-only in a split; `q` closes it.
 In any markdown file, `gd` or `Enter` on a link follows it: a `#heading` in the same file (like the
-table of contents above), another file, or a URL. `Ctrl+o` jumps back. `gO` lists all headings of
-the file; `Enter` on one jumps there.
+table of contents above), another file - a name with spaces written `<my notes.md>` or `my%20notes.md` - or a
+URL. `Ctrl+o` jumps back. `gO` lists all headings of the file; `Enter` on one jumps there.
 
 ### Centered Scrolling
 `Ctrl+d` / `Ctrl+u` keeps the cursor centered on screen. Same for search with `n`/`N`.
