@@ -72,11 +72,18 @@ return {
     },
   },
 
-  -- mini.surround — sa/sd/sr
+  -- mini.surround — gsa / gsd / gsr. Its own sa / sd / sr began with flash's s: s then d, typed within timeoutlen to
+  -- jump to a word with d, deleted a surrounding instead - flash lost every target starting with a, d, r, f, h or n
+  -- (2026-10-21). The gs prefix is LazyVim's for the same reason.
   {
     "echasnovski/mini.surround",
     event = "VeryLazy",
-    opts = {},
+    opts = {
+      mappings = {
+        add = "gsa", delete = "gsd", find = "gsf", find_left = "gsF", highlight = "gsh", replace = "gsr",
+        update_n_lines = "gsn",
+      },
+    },
   },
 
   -- mini.ai — better text objects (daf, ciq, etc)
