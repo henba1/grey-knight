@@ -391,12 +391,33 @@ local function sync(picker)
   end
 end
 
+-- Folders that cannot be read (EPERM / EACCES: Windows' legacy junctions in the home folder like "Anwendungsdaten",
+-- another user's folder): opened in the tree they stay empty, and watching them was an error each time ("Failed to
+-- watch ...: EPERM", 2026-10-21, the Windows error log). They are not watched now, and the first time a word says
+-- why they are empty. One that is gone is left out without a word.
+local unreadable = {}
+local function guard_watch()
+  local watch = require("snacks.explorer.watch")
+  if watch.gk_guarded then return end
+  watch.gk_guarded = true
+  local start = watch.start
+  watch.start = function(path, cb)
+    local fs, err = vim.uv.fs_scandir(path)
+    if fs then return start(path, cb) end
+    if not unreadable[path] and not tostring(err):find("ENOENT", 1, true) then
+      unreadable[path] = true
+      notify(("%s cannot be read (%s) - it stays empty"):format(show(path), tostring(err)))
+    end
+  end
+end
+
 --- The explorer's config: snacks' own, then the searches' - the search box's title follows the search when
 --- snacks switches between the tree and a search, and when the cursor goes in or out of the search box; the
 --- item under the cursor when a search starts is where <Esc> goes back to, and <CR> on a match and <Esc> get the
 --- cursor there also when a refresh comes in between. Marks go by path. And closing it right after a find leaves
 --- no error behind (below).
 function M.setup(opts)
+  guard_watch()
   opts = require("snacks.picker.source.explorer").setup(opts)
   local transform = opts.filter.transform
   opts.filter.transform = function(picker, filter)
