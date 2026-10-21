@@ -36,6 +36,65 @@ function M.find_venv(path)
   end
 end
 
+-- The node a shim's script runs on: the one next to the shim, else the node on the PATH - and behind Volta's node.exe
+-- the real one (volta which node): Volta's launcher hands the arguments to cmd.exe, which split one with an & and no
+-- space at the & (angularls in R&D got the probe path "...\R", 2026-10-21). Asked once per session.
+local path_node
+local function node_for(dir)
+  local beside = vim.uv.fs_realpath(dir .. "/node.exe")
+  if beside then return beside end
+  if path_node == nil then
+    path_node = vim.fn.exepath("node")
+    if path_node:lower():find("volta", 1, true) and vim.fn.executable("volta") == 1 then
+      local ok, res = pcall(function() return vim.system({ "volta", "which", "node" }, { text = true }):wait(5000) end)
+      local real = ok and res.code == 0 and vim.trim(res.stdout or "") or ""
+      if real ~= "" and vim.uv.fs_stat(real) then path_node = real end
+    end
+  end
+  return path_node ~= "" and path_node or nil
+end
+
+--- argv with a .cmd shim - npm's and Mason's (cmd-shim), node_modules/.bin and mason/bin - replaced by what the
+--- shim runs: the program, or node and the script. Windows runs a .cmd through cmd.exe, which splits and changes the
+--- arguments: at an & (a file in R&D), a ^ dropped, and a quoted shim with another quoted argument lost its quotes -
+--- ruff did not format a file in R&D, a project's prettier in "C:\my projects" never ran (2026-10-21). A shim that
+--- adds arguments of its own, one of another kind, and every argv elsewhere stay as they are.
+---@param argv string[]
+---@return string[]
+function M.unshim(argv, depth)
+  depth = depth or 0
+  if not M.WIN or type(argv) ~= "table" or type(argv[1]) ~= "string" or depth > 4 then return argv end
+  local shim = argv[1]
+  if not shim:lower():match("%.cmd$") and not shim:lower():match("%.bat$") then
+    shim = vim.fn.exepath(shim)
+    if not (shim:lower():match("%.cmd$") or shim:lower():match("%.bat$")) then return argv end
+  end
+  local ok, lines = pcall(vim.fn.readfile, shim)
+  if not ok then return argv end
+  local dir = vim.fs.dirname(vim.fs.normalize(shim))
+  for i = #lines, 1, -1 do
+    -- the line that runs it: ... ["%_prog%" | "<node.exe>"] "%dp0%\<target>" %*  - nothing between the target and %*
+    local before, quoted = lines[i]:match('^(.-)"([^"]*)"%s*%%%*%s*$')
+    if quoted then
+      local rest = quoted:match("^%%dp0%%(.*)$") or quoted:match("^%%~dp0(.*)$")
+      local target = rest and vim.uv.fs_realpath(dir .. "/" .. (rest:gsub("\\", "/")))
+      if not target then return argv end
+      local args = vim.list_slice(argv, 2)
+      local lower = target:lower()
+      if before:match('"%%_prog%%"%s*$') or before:match('node%.exe"%s*$') or before:match("node%s*$")
+        or lower:match("%.[cm]?js$") then
+        local node = node_for(dir)
+        if not node then return argv end
+        return vim.list_extend({ node, target }, args)
+      end
+      if lower:match("%.cmd$") or lower:match("%.bat$") then return M.unshim(vim.list_extend({ target }, args), depth + 1) end
+      if lower:match("%.exe$") or lower:match("%.com$") then return vim.list_extend({ target }, args) end
+      return argv
+    end
+  end
+  return argv
+end
+
 --- The Python on the PATH: python3, else python. Windows: python, else the py launcher - python3 there is
 --- usually the Microsoft Store's placeholder (WindowsApps), which only points at the Store.
 function M.system_python()

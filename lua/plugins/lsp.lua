@@ -267,6 +267,20 @@ return {
         return nil
       end,
     },
+    config = function(_, opts)
+      require("conform").setup(opts)
+      -- On Windows a formatter is mostly a .cmd (Mason's, a project's node_modules/.bin), and cmd.exe split or changed
+      -- its arguments: ruff did not format a file in R&D, a project's prettier in "C:\my projects" never ran
+      -- (2026-10-21). It runs as what the .cmd runs (devsuite/util.lua, unshim).
+      if vim.fn.has("win32") == 1 then
+        local runner = require("conform.runner")
+        local build = runner.build_cmd
+        runner.build_cmd = function(...)
+          local cmd = build(...)
+          return type(cmd) == "table" and require("devsuite.util").unshim(cmd) or cmd
+        end
+      end
+    end,
     keys = {
       { "<leader>fm", function()
         local opts = require("integrations.intellij").reformat_options(0) or { lsp_fallback = true }
