@@ -111,11 +111,24 @@ function M.launch(with_args)
   end)
 end
 
+--- .vscode/launch.json read as VS Code does: comments and trailing commas (JSONC). nvim-dap read it strictly, and
+--- overseer puts in its own decoder only once it is loaded (the first run): until then F5 offered none of the file's
+--- configurations, without a word (2026-10-21).
+function M.read_launch_json_like_vscode()
+  local vscode = require("dap.ext.vscode")
+  if vscode.json_decode ~= vim.json.decode then return end
+  local ok, json = pcall(require, "overseer.json")
+  if ok then vscode.json_decode = json.decode end
+end
+
 --- F5: continue a stopped session; else the project's .vscode/launch.json; else debug this file.
 function M.start_or_continue()
   local dap = require("dap")
   if dap.session() then return dap.continue() end
-  if vim.fn.filereadable(vim.fn.getcwd() .. "/.vscode/launch.json") == 1 then return dap.continue() end
+  if vim.fn.filereadable(vim.fn.getcwd() .. "/.vscode/launch.json") == 1 then
+    M.read_launch_json_like_vscode()
+    return dap.continue()
+  end
   M.launch()
 end
 

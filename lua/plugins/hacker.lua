@@ -16,8 +16,9 @@ local plugins = {
 
   -- Toggleterm now lives in ai.lua (shared with the Qwen Code agent terminal)
 
-  -- DAP (Debugging)
-  { "mfussenegger/nvim-dap" },
+  -- DAP (Debugging). launch.json with comments and trailing commas, as VS Code writes it, from the start
+  -- (devsuite/debug.lua) - also for :DapContinue and the other ways in, not only F5
+  { "mfussenegger/nvim-dap", config = function() require("devsuite.debug").read_launch_json_like_vscode() end },
   {
     "rcarriga/nvim-dap-ui",
     dependencies = { "mfussenegger/nvim-dap", "nvim-neotest/nvim-nio" },
