@@ -14,28 +14,7 @@ return {
   {
     "akinsho/toggleterm.nvim",
     version = "*",
-    -- 2026-10-20: going to a toggleterm window - an agent, the REPL, a shell (<C-l>, a click) - means typing there:
-    -- insert (terminal) mode. Before, <C-h> left a terminal in normal mode (<C-\><C-n> first) and toggleterm
-    -- brought that mode back on the way in (persist_mode), so every return began with i. Not once the program in
-    -- it has exited: a key would close the window. <Esc><Esc> still gives normal mode inside (scroll, copy).
-    init = function()
-      vim.api.nvim_create_autocmd("BufEnter", {
-        group = vim.api.nvim_create_augroup("greyknight.terminal_insert", { clear = true }),
-        pattern = { "term://*#toggleterm#*", "term://*::toggleterm::*" }, -- toggleterm's buffer names
-        callback = function(ev)
-          -- scheduled twice: after toggleterm's restore of the old mode, which it schedules from its own BufEnter
-          vim.schedule(function()
-            vim.schedule(function()
-              if vim.api.nvim_get_current_buf() ~= ev.buf then return end
-              local job = vim.b[ev.buf].terminal_job_id
-              if job and vim.fn.jobwait({ job }, 0)[1] == -1 and vim.api.nvim_get_mode().mode:sub(1, 1) == "n" then
-                vim.cmd("startinsert")
-              end
-            end)
-          end)
-        end,
-      })
-    end,
+    -- Going to one of its windows means typing there, as in every terminal: lua/config/autocmds.lua
     opts = {
       size = function(term)
         if term.direction == "horizontal" then return 15

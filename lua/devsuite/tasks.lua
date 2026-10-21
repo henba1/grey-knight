@@ -93,6 +93,13 @@ local function task_of_buf(buf)
   end
 end
 
+--- Whether the run shown in this buffer still runs. Its output is a terminal of its own (overseer: nvim_open_term),
+--- without the program's job - b:terminal_job_id does not say.
+function M.running(buf)
+  local task = task_of_buf(buf)
+  return task ~= nil and task.status == "RUNNING"
+end
+
 --- Winbar of the output window: state, exit code, run time and what to do next.
 function M.winbar()
   local win = vim.g.statusline_winid
