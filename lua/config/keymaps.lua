@@ -29,11 +29,14 @@ vim.api.nvim_create_autocmd("User", {
 })
 
 -- ── Terminal mode ─────────────────────────────────────────────
+-- A terminal gets every key but these: Ctrl+H/J/K/L go to the next window, Ctrl+arrows resize (below), <Esc><Esc> is
+-- normal mode. The shell keeps its own keys - Ctrl+A/E, Alt+B/F, Ctrl+W/U, Ctrl+R ...; for its Ctrl+L (clear) type
+-- clear (cls). Ctrl+L went to the shell, so from a terminal the window on the right was Esc Esc, Ctrl+L (2026-10-21).
 map("t", "<Esc><Esc>", "<C-\\><C-n>",       { desc = "Exit terminal mode" })
 map("t", "<C-h>",      "<C-\\><C-n><C-w>h", { desc = "Window left (from term)" })
 map("t", "<C-j>",      "<C-\\><C-n><C-w>j", { desc = "Window down (from term)" })
 map("t", "<C-k>",      "<C-\\><C-n><C-w>k", { desc = "Window up (from term)" })
--- no <C-l> here: in a terminal, Ctrl+L belongs to the program (clears a shell). Window right: Esc Esc, <C-l>
+map("t", "<C-l>",      "<C-\\><C-n><C-w>l", { desc = "Window right (from term)" })
 
 -- ── Dashboard ────────────────────────────────────────────────
 map("n", "<leader>;", "<cmd>lua Snacks.dashboard()<cr>", { desc = "Dashboard" })
@@ -53,11 +56,11 @@ map("n", "<C-j>", "<C-w>j", { desc = "Window down" })
 map("n", "<C-k>", "<C-w>k", { desc = "Window up" })
 map("n", "<C-l>", "<C-w>l", { desc = "Window right" })
 
--- ── Window resize ────────────────────────────────────────────
-map("n", "<C-Up>",    "<cmd>resize +2<cr>",          { desc = "Resize up" })
-map("n", "<C-Down>",  "<cmd>resize -2<cr>",          { desc = "Resize down" })
-map("n", "<C-Left>",  "<cmd>vertical resize -2<cr>", { desc = "Resize left" })
-map("n", "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Resize right" })
+-- ── Window resize - in terminals too, where the keys went to the program (2026-10-21) ──
+map({ "n", "t" }, "<C-Up>",    "<cmd>resize +2<cr>",          { desc = "Resize up" })
+map({ "n", "t" }, "<C-Down>",  "<cmd>resize -2<cr>",          { desc = "Resize down" })
+map({ "n", "t" }, "<C-Left>",  "<cmd>vertical resize -2<cr>", { desc = "Resize left" })
+map({ "n", "t" }, "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Resize right" })
 
 -- ── Buffer navigation ────────────────────────────────────────
 map("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
