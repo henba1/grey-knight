@@ -84,7 +84,7 @@ explorer pane once focused.
 | `h` | Close the folder (cursor to its parent) |
 | `l`/`Enter` | Open file / toggle folder |
 | `.` | cd here — the folder under the cursor becomes the working directory |
-| `/` | Search files (the text matches the path below the root); during a search: back to the search box |
+| `/` | Search files (the text matches the path below the root) |
 | `D` | Search folders — by name, no files shown |
 | `S` | Search the current view — only the rows the tree shows (closed folders not looked into) |
 | `H`/`I` | Toggle hidden / ignored |
@@ -108,8 +108,10 @@ explorer pane once focused.
 > character, `<M-b>`/`<M-f>` a word, `<C-d>` delete the character, `<C-k>` delete to the end, `<C-u>` to the start,
 > `<C-w>` a word.
 >
-> Search: the search box's title says which search runs; `<M-s>` (Alt+s) there goes on to the next (files →
-> folders → current view) with the same text. `Enter` on a match: back to the tree, the cursor on it (`Enter` again
+> Search: the search box's title says which search runs. `/` `D` `S` work in the box too once you stop typing
+> (`<Esc>`); during a search they switch to that search with the same text (`/` … `<Esc>` `D`: only the folders).
+> `<M-s>` (Alt+s) switches while typing (files → folders → current view). `<Esc>` steps back: box → list (results
+> stay) → the tree, the cursor where it was → closed. `Enter` on a match: the tree, the cursor on it (`Enter` again
 > opens it). `^x` / `x$`: names (paths for files) starting / ending with x.
 
 ## Find (Snacks Picker) — `<leader>f`
