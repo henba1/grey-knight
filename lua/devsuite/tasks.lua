@@ -123,7 +123,9 @@ local function add_jump(buf, task)
     if not path then return end
     local win = code_window(run)
     if win then vim.api.nvim_set_current_win(win) else vim.cmd("aboveleft split") end
-    vim.cmd.edit(vim.fn.fnameescape(path))
+    -- the name as it is: on Windows fnameescape() leaves [ ] alone, and :edit took app/[id]/page.tsx as a pattern -
+    -- it opened app/i/page.tsx when there was one (2026-10-21)
+    vim.cmd.edit({ args = { path }, magic = { file = false } })
     pcall(vim.api.nvim_win_set_cursor, 0, { lnum, 0 })
   end, { buffer = buf, desc = "Run: jump to the code of this output line" })
 end

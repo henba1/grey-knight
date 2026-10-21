@@ -110,7 +110,9 @@ function M.follow(fallback)
     local path = vim.fs.normalize(vim.fs.joinpath(vim.fs.dirname(vim.api.nvim_buf_get_name(from)), file))
     if vim.fn.filereadable(path) ~= 1 then return warn("No file " .. file) end
     local read_only = vim.bo[from].readonly and not vim.bo[from].modifiable
-    vim.cmd.edit(vim.fn.fnameescape(path))
+    -- the name as it is: on Windows fnameescape() leaves [ ] alone, and :edit took "notes [draft].md" as a pattern -
+    -- it opened "notes d.md" when there was one (2026-10-21)
+    vim.cmd.edit({ args = { path }, magic = { file = false } })
     if read_only then M.read_only(0) end
   end
   if anchor == "" then return end

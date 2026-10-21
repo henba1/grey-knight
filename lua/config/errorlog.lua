@@ -92,7 +92,7 @@ function M.open()
   if vim.fn.filereadable(M.path) == 0 then
     return vim.notify("No warnings or errors logged yet (" .. M.path .. ")", vim.log.levels.INFO)
   end
-  vim.cmd("botright split " .. vim.fn.fnameescape(M.path))
+  vim.cmd.split({ args = { M.path }, mods = { split = "botright" }, magic = { file = false } }) -- the path as it is
   vim.bo.readonly = true
   vim.bo.bufhidden = "wipe"
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = true, desc = "Close error log" })

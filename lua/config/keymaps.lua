@@ -204,7 +204,7 @@ map("n", "<leader>gd", function()
       if not choice then return end
       for _, d in ipairs(docs) do
         if d.name == choice then
-          vim.cmd.vsplit(vim.fn.fnameescape(d.path)) -- a space, # or % in the path is part of it
+          vim.cmd.vsplit({ args = { d.path }, magic = { file = false } }) -- the path as it is: a space, #, % or [ ] in it
           -- read-only, q closes it; links followed from it open the same way (config/mdlinks.lua)
           require("config.mdlinks").read_only(0)
           break
