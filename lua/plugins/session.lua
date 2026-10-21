@@ -37,6 +37,17 @@ return {
         return false
       end,
     },
+    config = function(_, opts)
+      -- The session file is named after the folder with % for every separator, and persisted read every % back as /:
+      -- the folder "100% done" became "100/ done", no such folder, and :Persisted clean deleted its session
+      -- (2026-10-21). A % of the name is %% in the file name now - names without one stay as they were.
+      local utils = require("persisted.utils")
+      utils.make_fs_safe = function(text) return (text:gsub("%%", "%%%%"):gsub("[\\/:]+", "%%")) end
+      utils.replace_separators = function(text)
+        return (text:gsub("%%(%%?)", function(second) return second == "%" and "%" or "/" end))
+      end
+      require("persisted").setup(opts)
+    end,
     keys = {
       { "<leader>ps", "<cmd>Persisted save<cr>",   desc = "Session: Save" },
       { "<leader>pl", "<cmd>Persisted load<cr>",   desc = "Session: Load (cwd)" },
