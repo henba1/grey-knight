@@ -45,6 +45,7 @@ function M.pytest_config(file, target)
     cwd = vim.fn.getcwd(),
     console = "integratedTerminal",
     pythonPath = python_for(file),
+    env = { PYTHONDONTWRITEBYTECODE = "1" }, -- no stale bytecode after a quick fix (runner.lua, pytest)
   }
 end
 

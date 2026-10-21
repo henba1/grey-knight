@@ -229,6 +229,10 @@ local function pytest(nearest)
     name = "pytest " .. target,
     cmd = ("%s -m pytest %s"):format(vim.fn.shellescape(util.python(file)), vim.fn.shellescape(target)),
     cwd = vim.fn.getcwd(),
+    -- no cached bytecode: Python takes a .pyc for current when the file's size and its mtime in whole seconds match -
+    -- a fix of the same length saved in the second of the last run ran the old test (2026-10-21: the fixed assert
+    -- printed, the old one failed)
+    env = { PYTHONDONTWRITEBYTECODE = "1" },
   })
 end
 
