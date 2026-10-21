@@ -352,6 +352,12 @@ local function explorer_world(fn)
   local ok, err = pcall(fn, require("config.explorer"), w)
   actions.update, util.confirm, Snacks.input, vim.notify = saved.update, saved.confirm, saved.input, saved.notify
   vim.fn.chdir(saved.cwd)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do -- the fixture's files the test opened
+    local name = vim.fs.normalize(vim.api.nvim_buf_get_name(buf))
+    if name:find(root .. "/", 1, true) == 1 or name:find(far .. "/", 1, true) == 1 then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
   vim.fn.delete(root, "rf")
   vim.fn.delete(far, "rf")
   assert(ok, err)
@@ -899,6 +905,239 @@ test("Explorer: a folder opened as a file (nvim <folder>, :e <folder>) opens the
   assert(ok, err)
 end)
 
+-- ── Edges (2026-10-21): names as people write them, another case of a name, unsaved changes, folders with open files ──
+test("Explorer: a creates names with spaces, umlauts, #, %, &, ' and [ ] exactly as typed", function()
+  explorer_world(function(ex, w)
+    local p, R = w.picker, w.root
+    local function last() return tostring(w.notes[#w.notes]) end
+    w.at(R .. "/a.txt")
+    w.answer = "Grüße & Co/100% #1 'quoted' [draft].txt"
+    ex.add(p)
+    local listed = vim.fn.isdirectory(R .. "/Grüße & Co") == 1 and vim.fn.readdir(R .. "/Grüße & Co") or {}
+    assert(vim.deep_equal(listed, { "100% #1 'quoted' [draft].txt" }),
+      "in Grüße & Co/: " .. vim.inspect(listed) .. ", in the folder: " .. vim.inspect(vim.fn.readdir(R)) .. " - " .. last())
+    w.answer = "Ördner ß/"
+    ex.add(p)
+    assert(vim.fn.isdirectory(R .. "/Ördner ß") == 1, "no folder Ördner ß: " .. vim.inspect(vim.fn.readdir(R)))
+  end)
+end)
+
+test("Explorer: r, m and c with spaces, umlauts, #, %, &, ' and [ ] in names - the open buffer goes along", function()
+  explorer_world(function(ex, w)
+    local p, R = w.picker, w.root
+    local function last() return tostring(w.notes[#w.notes]) end
+    local function shown() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) end
+    local from = R .. "/100% #1 'quoted' [draft].txt"
+    w.file(from, "content")
+    vim.cmd.edit(vim.fn.fnameescape(from))
+    w.answer = "Grüße & Co (2) [final].txt" -- r: from the working directory
+    ex.rename(p, w.at(from))
+    local renamed = R .. "/Grüße & Co (2) [final].txt"
+    assert(exists(renamed) and not exists(from), "r: " .. vim.inspect(vim.fn.readdir(R)) .. " - " .. last())
+    assert(shown() == renamed, "the buffer did not go along with r: " .. shown())
+    vim.fn.mkdir(R .. "/Ördner #2 & ß", "p")
+    ex.move(p, w.at(renamed)) -- m on it, m on the folder
+    ex.move(p, w.at(R .. "/Ördner #2 & ß"))
+    local moved = R .. "/Ördner #2 & ß/Grüße & Co (2) [final].txt"
+    assert(exists(moved) and not exists(renamed), "m: " .. last())
+    assert(shown() == moved, "the buffer did not go along with m: " .. shown())
+    assert(vim.api.nvim_buf_get_lines(0, 0, -1, false)[1] == "content" and not vim.bo.modified, "the buffer's text changed")
+    ex.copy(p, w.at(moved)) -- c on it, c on a file in the root: into the root
+    ex.copy(p, w.at(R .. "/a.txt"))
+    assert(exists(renamed) and exists(moved), "c: " .. last())
+  end)
+end)
+
+-- On Windows the case of a name is to read, not to tell files apart: readme.txt -> README.txt did nothing (the paths
+-- compared equal, so the rename was taken for no change)
+test("Explorer: r to another case of the name renames it (Windows too) - the open buffer goes along", function()
+  explorer_world(function(ex, w)
+    local p, R = w.picker, w.root
+    local function last() return tostring(w.notes[#w.notes]) end
+    w.file(R .. "/readme.txt", "read me")
+    vim.cmd.edit(vim.fn.fnameescape(R .. "/readme.txt"))
+    w.answer = "README.txt"
+    ex.rename(p, w.at(R .. "/readme.txt"))
+    local names = vim.fn.readdir(R)
+    assert(vim.tbl_contains(names, "README.txt") and not vim.tbl_contains(names, "readme.txt"), vim.inspect(names) .. " - " .. last())
+    assert(vim.fs.basename(vim.api.nvim_buf_get_name(0)) == "README.txt", "the buffer: " .. vim.api.nvim_buf_get_name(0))
+    assert(vim.api.nvim_buf_get_lines(0, 0, -1, false)[1] == "read me", "the buffer's text changed")
+  end)
+end)
+
+-- snacks moved the file, opened the new path from disk and threw the old buffer away: its unsaved changes were gone
+test("Explorer: r and m leave a file with unsaved changes where it is - nothing of them lost", function()
+  explorer_world(function(ex, w)
+    local p, R = w.picker, w.root
+    local function last() return tostring(w.notes[#w.notes]) end
+    vim.cmd.edit(vim.fn.fnameescape(R .. "/sub/b.txt"))
+    local buf = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "not saved yet" })
+    local function intact(what)
+      assert(vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified, what .. ": the buffer lost its changes")
+      local text = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      assert(text[1] == "not saved yet", what .. ": the buffer has " .. vim.inspect(text))
+    end
+    w.answer = "b-renamed.txt"
+    ex.rename(p, w.at(R .. "/sub/b.txt"))
+    intact("r")
+    assert(exists(R .. "/sub/b.txt") and not exists(R .. "/b-renamed.txt"), "r: renamed anyway")
+    assert(last():find("unsaved", 1, true), "r: no word why: " .. last())
+    ex.move(p, w.at(R .. "/sub/b.txt"))
+    ex.move(p, w.at(R .. "/other"))
+    intact("m")
+    assert(exists(R .. "/sub/b.txt") and not exists(R .. "/other/b.txt"), "m: moved anyway")
+    w.answer = "sub-renamed" -- its folder stays too
+    ex.rename(p, w.at(R .. "/sub"))
+    intact("r of its folder")
+    assert(exists(R .. "/sub/b.txt") and not exists(R .. "/sub-renamed"), "r of its folder: renamed anyway")
+    vim.bo[buf].modified = false
+  end)
+end)
+
+-- snacks moved only a buffer named like the folder itself: the buffers of the files in it stayed at the old paths (and
+-- :w put a file back where the folder had been)
+test("Explorer: m and r of a folder take its open files along", function()
+  explorer_world(function(ex, w)
+    local p, R = w.picker, w.root
+    local function last() return tostring(w.notes[#w.notes]) end
+    local function shown() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) end
+    w.file(R .. "/proj/src/main.txt", "main")
+    vim.cmd.edit(vim.fn.fnameescape(R .. "/proj/src/main.txt"))
+    ex.move(p, w.at(R .. "/proj"))
+    ex.move(p, w.at(R .. "/other"))
+    assert(exists(R .. "/other/proj/src/main.txt"), "m: " .. last())
+    assert(shown() == R .. "/other/proj/src/main.txt", "m: the buffer stayed at " .. shown())
+    w.answer = "renamed-proj"
+    ex.rename(p, w.at(R .. "/other/proj"))
+    assert(exists(R .. "/renamed-proj/src/main.txt"), "r: " .. last())
+    assert(shown() == R .. "/renamed-proj/src/main.txt", "r: the buffer stayed at " .. shown())
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      local name = vim.fs.normalize(vim.api.nvim_buf_get_name(b))
+      assert(not (name:find("/proj/src/", 1, true) and vim.api.nvim_buf_is_loaded(b)), "a buffer at an old path: " .. name)
+    end
+  end)
+end)
+
+-- The real explorer, the folders open in it (so watched). snacks closed only a buffer named like the deleted path: the
+-- buffers of the files in a deleted folder stayed. On Windows the explorer's watchers held the open subfolders: d on
+-- such a folder failed, now and then (as soon as they were watched), m too.
+test("Explorer: m and d on a folder open in the tree with open subfolders - its open files go along / are closed", function()
+  local util, config = Snacks.picker.util, Snacks.explorer.config
+  local saved = { confirm = util.confirm, trash = config.trash }
+  util.confirm = function(_, yes) yes() end
+  config.trash = false -- gone for good: no trash for temp folders everywhere
+  local fixture = { "old/notes.txt", "old/deep/todo.txt", "proj/sub/x.txt", "dest/", "keep.txt" }
+  local ok, err = pcall(with_explorer, fixture, function(p, root, x)
+    local function loaded(dir) -- the loaded buffers of files in dir
+      local found = {}
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        local name = vim.fs.normalize(vim.api.nvim_buf_get_name(b))
+        if name:find(dir .. "/", 1, true) == 1 and vim.api.nvim_buf_is_loaded(b) then found[#found + 1] = x.rel(name) end
+      end
+      return found
+    end
+    local notes, notify = {}, vim.notify
+    vim.notify = function(msg, ...) notes[#notes + 1] = tostring(msg); return notify(msg, ...) end
+    local function said() return table.concat(notes, " | ") end
+    vim.api.nvim_set_current_win(p.main)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/proj/sub/x.txt"))
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/old/deep/todo.txt"))
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/old/notes.txt"))
+    -- the tree follows the file in the editor: done with that before the keys
+    assert(H.wait(3000, function() return not p:is_active() and p:current() and p:current().file == root .. "/old/notes.txt" end),
+      "the tree did not follow: on " .. tostring(p:current() and x.rel(p:current().file)))
+    p:focus("list")
+    x.on("proj")
+    p:action("explorer_move") -- m: marks proj
+    x.on("dest")
+    p:action("explorer_move") -- m on dest: proj goes there
+    local ok, err = pcall(function()
+      assert(H.wait(3000, function() return vim.uv.fs_stat(root .. "/dest/proj/sub/x.txt") ~= nil end), "proj/ not moved: " .. said())
+      assert(#loaded(root .. "/proj") == 0, "buffers at the old paths: " .. table.concat(loaded(root .. "/proj"), ", "))
+      assert(vim.fn.bufexists(root .. "/dest/proj/sub/x.txt") == 1, "x.txt's buffer did not go along")
+      x.on("old")
+      p:action("explorer_del")
+      assert(H.wait(3000, function() return not vim.uv.fs_stat(root .. "/old") end), "old/ not deleted: " .. said())
+      assert(#loaded(root .. "/old") == 0, "buffers of deleted files: " .. table.concat(loaded(root .. "/old"), ", "))
+    end)
+    vim.notify = notify
+    assert(ok, err)
+  end, { open = { "old", "old/deep", "proj", "proj/sub" } })
+  util.confirm, config.trash = saved.confirm, saved.trash
+  assert(ok, err)
+end)
+
+-- vim.cmd("vsplit " .. path): a space split the path in two, # and % stood for the alternate and the current file
+test("Docs: <leader>gd opens a doc also when the config's path has spaces, # and %", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/my config #1 100%", "p")
+  local config = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp .. "/my config #1 100%")))
+  vim.fn.writefile({ "# test readme" }, config .. "/README.md")
+  local stdpath, select = vim.fn.stdpath, vim.ui.select
+  vim.fn.stdpath = function(what) return what == "config" and config or stdpath(what) end
+  vim.ui.select = function(_, _, choose) choose("README.md") end
+  local win = vim.api.nvim_get_current_win()
+  local ok, err = pcall(function()
+    vim.fn.maparg("<leader>gd", "n", false, true).callback()
+    local name = vim.fs.normalize(vim.api.nvim_buf_get_name(0))
+    assert(name == config .. "/README.md", "opened " .. name)
+    assert(vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == "# test readme", "not the readme")
+  end)
+  vim.fn.stdpath, vim.ui.select = stdpath, select
+  if vim.api.nvim_get_current_win() ~= win then pcall(vim.cmd, "close") end
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(config, 1, true) == 1 then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  end
+  vim.fn.delete(tmp, "rf")
+  assert(ok, err)
+end)
+
+-- One session per folder and git branch (persisted): a branch with a / in it (feature/login), a folder with spaces,
+-- an umlaut and a # - each branch gets its own session file and back on the branch its own files come back
+test("Session: one per git branch, also feature/login, in a folder with spaces, ä and # - each loads its own", function()
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local persisted, config = require("persisted"), require("persisted.config")
+  local saved_dir = config.save_dir
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/sessions", "p")
+  vim.fn.mkdir(tmp .. "/my project ä #1", "p")
+  config.save_dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp .. "/sessions"))) .. "/"
+  local project = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp .. "/my project ä #1")))
+  local before = vim.fn.getcwd()
+  local function git(...) vim.fn.system(vim.list_extend({ "git" }, { ... })); return vim.v.shell_error == 0 end
+  local function shown() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) end
+  local ok, err = pcall(function()
+    vim.fn.chdir(project)
+    assert(git("init", "-q") and git("symbolic-ref", "HEAD", "refs/heads/feature/login"), "git init")
+    assert(persisted.branch() == "feature/login", "branch: " .. tostring(persisted.branch()))
+    vim.fn.writefile({ "login" }, project .. "/login.txt")
+    vim.fn.writefile({ "main" }, project .. "/main.txt")
+    vim.cmd("silent! %bwipeout!")
+    vim.cmd.edit(vim.fn.fnameescape(project .. "/login.txt"))
+    persisted.save({ force = true })
+    local login = persisted.current()
+    assert(vim.fn.filereadable(login) == 1, "no session file: " .. login)
+    assert(git("symbolic-ref", "HEAD", "refs/heads/main") and persisted.branch() == "main", "branch main")
+    vim.cmd("silent! %bwipeout!")
+    vim.cmd.edit(vim.fn.fnameescape(project .. "/main.txt"))
+    persisted.save({ force = true })
+    local main = persisted.current()
+    assert(main ~= login and vim.fn.filereadable(main) == 1, "main's session: " .. main)
+    assert(git("symbolic-ref", "HEAD", "refs/heads/feature/login"), "back to feature/login")
+    vim.cmd("silent! %bwipeout!")
+    persisted.load()
+    assert(H.wait(3000, function() return shown() == project .. "/login.txt" end), "feature/login's session brought back " .. shown())
+  end)
+  config.save_dir = saved_dir
+  pcall(persisted.stop) -- load() starts recording: this test run saves no session
+  vim.g.persisting_session, vim.g.persisted_loaded_session = nil, nil
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(tmp, "rf")
+  assert(ok, err)
+end)
+
 test("Pickers: <leader>ff finds a file by name and opens it, <leader>fg finds a line and jumps to it (fd, rg)", function()
   local tmp = vim.fn.tempname()
   vim.fn.mkdir(tmp .. "/src/deep", "p")
@@ -1107,6 +1346,37 @@ test("Markdown: gd / Enter follow links, Ctrl+o comes back", function()
     assert(vim.fn.line(".") == 6, "Enter off a link: line " .. vim.fn.line("."))
   end)
   for _, f in ipairs({ "a.md", "b.md" }) do vim.cmd("silent! bwipeout! " .. vim.fn.fnameescape(dir .. "/" .. f)) end
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: a file with spaces in its name, linked as CommonMark has it - <my notes.md> or my%20notes.md (and
+-- %C3%BC for ü): the target ended at the first space, %20 stayed as it was - "No file my"
+test("Markdown: links to files with spaces and umlauts - <my notes.md>, my%20notes.md, Gr%C3%BC%C3%9Fe.md - are followed", function()
+  local md = require("config.mdlinks")
+  local links = md.links({ '[a](<my notes.md>) [b](my%20notes.md#teil-zwei "t") [c](Gr%C3%BC%C3%9Fe.md) [d](https://x.org/a%20b)' })
+  local targets = vim.tbl_map(function(l) return l.target end, links)
+  assert(vim.deep_equal(targets, { "my notes.md", "my notes.md#teil-zwei", "Grüße.md", "https://x.org/a%20b" }), vim.inspect(targets))
+  local dir = vim.fs.normalize(vim.fn.resolve(vim.fn.tempname()))
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ "[a](<my notes.md>) [b](my%20notes.md#teil-zwei) [c](Gr%C3%BC%C3%9Fe.md)" }, dir .. "/index.md")
+  vim.fn.writefile({ "# Notes", "", "## Teil zwei", "x" }, dir .. "/my notes.md")
+  vim.fn.writefile({ "# Grüße" }, dir .. "/Grüße.md")
+  local ok, err = pcall(function()
+    local function follow(link, want, lnum)
+      vim.cmd.edit(vim.fn.fnameescape(dir .. "/index.md"))
+      vim.api.nvim_win_set_cursor(0, { 1, (vim.fn.getline(1):find(link, 1, true)) })
+      vim.api.nvim_feedkeys(vim.keycode("gd"), "x", false)
+      local name = vim.fs.normalize(vim.api.nvim_buf_get_name(0))
+      assert(name == dir .. "/" .. want and vim.fn.line(".") == lnum, link .. " went to " .. name .. ":" .. vim.fn.line("."))
+    end
+    follow("[a]", "my notes.md", 1)
+    follow("[b]", "my notes.md", 3)
+    follow("[c]", "Grüße.md", 1)
+  end)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(dir, 1, true) == 1 then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  end
   vim.fn.delete(dir, "rf")
   assert(ok, err)
 end)

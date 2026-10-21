@@ -220,6 +220,47 @@ test("Errors: <CR> finds the code location in an output line", function()
   assert(errors.location("10.10.10.5:8080 open") == nil, "host:port is not a file")
 end)
 
+-- 2026-10-21: a script where people keep them - a folder with spaces, an umlaut, #, % and & - run with arguments in
+-- quotes, one with an umlaut, and stdin from a file (cmd.exe on Windows, sh elsewhere); its error marks the line, and
+-- <CR> finds the file from the traceback and from a "file:line:" line with a space in the name
+test("Runner: a script in a folder with spaces, ä, #, % and & - quoted args, < input; its error marks the line", function()
+  local runner, tasks, errors = require("devsuite.runner"), require("devsuite.tasks"), require("devsuite.errors")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local dir = root .. "/my scripts ä #1 100% & co"
+  vim.fn.mkdir(dir, "p")
+  local file = dir .. "/prog ü.py"
+  vim.fn.writefile({ "import sys", 'print("ARGV=" + "|".join(sys.argv[1:]))', 'print("STDIN=" + sys.stdin.readline().strip())' }, file)
+  vim.fn.writefile({ "from the file" }, dir .. "/input.txt")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(dir)
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(file))
+    runner.run_file({ args = '"a b" ä < input.txt' })
+    local task = tasks.state.last
+    assert(wait(10000, function() return task:is_complete() end), "did not finish: " .. task_out(task))
+    local out = task_out(task)
+    assert(task.status == "SUCCESS" and out:find("ARGV=a b|ä", 1, true) and out:find("STDIN=from the file", 1, true), task.status .. ": " .. out)
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "x = 1", "y = x / 0" })
+    vim.cmd("silent write")
+    tasks.set_args(file, "")
+    runner.run_file()
+    task = tasks.state.last
+    assert(wait(10000, function() return task:is_complete() end), "did not finish: " .. task_out(task))
+    vim.wait(200)
+    local d = run_diags("file:" .. file, file)
+    assert(#d == 1 and d[1].lnum == 1 and d[1].message:find("ZeroDivisionError", 1, true), vim.inspect(d) .. "\n" .. task_out(task))
+    local path, lnum = errors.location('  File "' .. file .. '", line 2, in <module>')
+    assert(path == file and lnum == 2, "traceback line: " .. tostring(path) .. ":" .. tostring(lnum))
+    local p2, l2 = errors.location("prog ü.py:2: ZeroDivisionError: division by zero", { cwd = dir })
+    assert(p2 == file and l2 == 2, "file:line: " .. tostring(p2) .. ":" .. tostring(l2))
+  end)
+  tasks.set_args(file, "")
+  vim.fn.chdir(before)
+  -- the script's buffer stays (deleting it closed the code window, and the next tests found only the output)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
 test("Runner: arguments are remembered per script (across sessions)", function()
   local tasks = require("devsuite.tasks")
   local key = "/tmp/greyknight-args-test.sh"
@@ -705,6 +746,31 @@ test("Tasks: stop, hide/show the output, status bar, watch, restart", function()
   wait(5000, function() return task:is_complete() end)
 end)
 
+-- 2026-10-21: <leader>ro with the output as the last window - a notification (a float) counted as a second window, the
+-- output was closed: E444 "Cannot close last window"
+test("Tasks: <leader>ro hides the output also when it is the last window, a notification up - the window shows code", function()
+  local tasks = require("devsuite.tasks")
+  local code = H.file("last.py", { "print('last window')" })
+  vim.cmd.edit(code)
+  require("devsuite.runner").run_file()
+  local task = tasks.state.last
+  assert(wait(10000, function() return task:is_complete() end), "did not finish")
+  local float = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), false, { relative = "editor", row = 1, col = 1, width = 20, height = 2 })
+  local ok, err = pcall(function()
+    vim.api.nvim_set_current_win(tasks.state.win)
+    vim.cmd("only") -- the output is the last window (the float aside)
+    tasks.toggle()
+    assert(tasks.state.win == nil, "output still shown")
+    local win = vim.api.nvim_get_current_win()
+    assert(vim.api.nvim_win_get_buf(win) ~= task:get_bufnr() and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "", "the window does not show code")
+    assert(vim.wo[win].number == vim.go.number and vim.wo[win].signcolumn == vim.go.signcolumn, "the output's window options stayed")
+    tasks.toggle() -- and back
+    assert(tasks.state.win and vim.api.nvim_win_get_buf(tasks.state.win) == task:get_bufnr(), "output not shown again")
+  end)
+  pcall(vim.api.nvim_win_close, float, true)
+  assert(ok, err)
+end)
+
 test("Runner: commands for sudo, trace, remembered args, venv python, plain executables", function()
   linux_only("sudo, bash -x and POSIX shell quoting")
   local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
@@ -891,6 +957,31 @@ test("Error log: a plugin that wraps vim.notify does not break notifications", f
   assert(ok, "notifications broke: " .. tostring(err))
   assert(calls == 2, "wrapper called " .. calls .. " times")
   assert(table.concat(vim.fn.readfile(el.path), "\n"):find("WARN  [Wrap] wrapped warning two", 1, true), "not logged")
+end)
+
+-- 2026-10-21: the log in a folder whose name has spaces and umlauts (a user name like that is in every path below the
+-- home folder); at startup a log past 512 KB keeps its last 2000 lines
+test("Error log: a path with spaces and umlauts works; past 512 KB it keeps the last 2000 lines (startup)", function()
+  local el = require("config.errorlog")
+  local saved_path, saved_notify = el.path, vim.notify
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/Jürgen Müller/state", "p")
+  el.path = vim.fs.normalize(assert(vim.uv.fs_realpath(root .. "/Jürgen Müller/state"))) .. "/greyknight.log"
+  local ok, err = pcall(function()
+    el.write("WARN", "test", "a warning with ü")
+    local lines = vim.fn.filereadable(el.path) == 1 and vim.fn.readfile(el.path) or {}
+    assert(lines[#lines] and lines[#lines]:find("WARN  [test] a warning with ü", 1, true), "not logged: " .. vim.inspect(lines))
+    local big = {}
+    for i = 1, 6000 do big[i] = ("2026-01-01 00:00:00 WARN  [old] line %05d %s"):format(i, string.rep("x", 80)) end
+    vim.fn.writefile(big, el.path) -- about 780 KB
+    el.setup()
+    local kept = vim.fn.readfile(el.path)
+    assert(#kept == 2000 and kept[1]:find("line 04001", 1, true) and kept[2000]:find("line 06000", 1, true),
+      #kept .. " lines, from " .. tostring(kept[1]))
+  end)
+  el.path, vim.notify = saved_path, saved_notify
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
 end)
 
 test("Qwen: <leader>am names the model the server runs, and says when none runs", function()
