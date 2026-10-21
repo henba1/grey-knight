@@ -147,6 +147,8 @@ again opens a file; the next `/` is a file search again. Lowercase text ignores 
 again - it moves there after a yes, open buffers and language servers follow. `c` instead copies it. Mark more
 with `<Tab>` first to move them together; `m` in the file's own folder unmarks it. A typed path that names an
 existing folder (or ends in `/` or `\`) takes the item under its own name, like `mv`; nothing is overwritten.
+Marks stay through searches and in the tree: `/` for the files, `<Tab>` on each, `D` for the target folder, `m`
+there.
 
 **Typing in the prompts** - `r`, `C`, `a` and every other input dialog (the agent's questions too) - works like
 a shell prompt:
@@ -722,16 +724,22 @@ Sessions auto-save when you quit nvim. Separate sessions per directory + git bra
 
 | Key | Action |
 |-----|--------|
-| `s` on dashboard | Restore previous session |
-| `<leader>ps` | Save session manually |
+| `s` on dashboard | Restore the session of this directory (and branch) |
+| `<leader>ps` | Save session now - also with no file open |
 | `<leader>pl` | Load session for current directory |
-| `<leader>pd` | Delete a session |
+| `<leader>pd` | Delete a session (pick one) |
+| `:Persisted clean` | Delete the sessions of folders and branches that no longer exist |
 
 **How it works:**
 1. Open nvim in a project, work on files
 2. Quit with `:qa` — session auto-saves
 3. Reopen nvim in same directory — press `s` on dashboard or `<leader>pl`
-4. All your files, splits, and cursor positions are restored
+4. All your files, splits, tabs and cursor positions are restored
+
+**What a session keeps:** files, splits, tabs and help windows. Not kept: terminals - agents, REPLs and shells
+start again with their keys (a restored one would run its program again, outside them) - and the explorer
+(`<leader>e`). Quitting with no file open (from the start screen, a picker) keeps the session there was; only
+`<leader>ps` saves then. No sessions are saved for the home folder itself, `/` and `/tmp`.
 
 ---
 
@@ -752,6 +760,9 @@ Oil lets you edit your filesystem like a buffer.
 **Deleting files:** Delete the line and save.
 
 **Renaming:** Edit the filename and save.
+
+**Folders opened as files** (`nvim <folder>`, `:e <folder>`) open in the explorer, with that folder as the root -
+Oil opens only with `-` and `<leader>o`.
 
 ---
 
@@ -782,7 +793,11 @@ the file; `Enter` on one jumps there.
 `<leader>w` saves instantly. No `:w Enter` needed.
 
 ### Copy to System Clipboard
-The config uses OSC 52 for clipboard — copy in nvim works in your local clipboard even over SSH.
+Yank and paste use the system clipboard (`unnamedplus`). On your own machine Neovim picks the tool itself
+(wl-clipboard, xclip / xsel, the Windows clipboard). Over SSH a yank goes to the clipboard of the computer in
+front of you via OSC 52, and `p` pastes the last yank made in nvim - text copied on that computer comes in with
+the terminal's paste (`Ctrl+Shift+V` / right-click). Reading the clipboard over OSC 52 works in few terminals; in
+the others (Windows Terminal) every `p` used to wait 10 seconds.
 
 ### Which-key
 Press `<leader>` and **wait** — a popup shows all available keybindings grouped by category.
@@ -831,7 +846,9 @@ send) when something broke and you did not see why.
 **Tests:** `tests/run.sh` runs the whole test suite headless (about ten seconds; the dev suite
 starts real python, bash and debugger processes) and exits with status 1 when anything fails. Run
 it after changing the config. On Windows: `tests\run.ps1` - each suite in a minimized Neovim window
-(a headless one gets no terminal output there), the bash tests skipped.
+(a headless one gets no terminal output there), the bash tests skipped. Some tests only:
+`GK_TEST_ONLY='Explorer workflow,Session' tests/run.sh smoke` runs the tests whose names contain one of the
+comma-separated pieces, `GK_TEST_SKIP` all but those.
 
 ---
 

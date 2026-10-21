@@ -136,6 +136,7 @@ whichever launcher runs answers - `<leader>am` shows which model that is.
 init.lua                    entry point (+ the optional dashboard bridge)
 ├── lua/config/
 │   ├── options.lua         vim opts, language toggles
+│   ├── clipboard.lua       over SSH: copy with OSC 52, paste the last copy; locally Neovim's own choice
 │   ├── lazy.lua            lazy.nvim bootstrap
 │   ├── keymaps.lua         all global keymaps + which-key groups
 │   ├── autocmds.lua        yank highlight, cursor restore
@@ -244,11 +245,15 @@ tests/run.sh
 # Qwen, completion - starts python, ipython3, bash, debugpy and bashdb)
 tests/run.sh smoke
 tests/run.sh devsuite
+
+# Some tests: those whose names contain one of the comma-separated pieces, or all but those
+GK_TEST_ONLY='Explorer workflow,Session' tests/run.sh smoke
+GK_TEST_SKIP=Debug tests/run.sh devsuite
 ```
 
 On Windows, `powershell -ExecutionPolicy Bypass -File tests\run.ps1` (or `... tests\run.ps1 devsuite`)
 runs each suite in a real, minimized Neovim window - a headless Neovim on Windows gets no output from
-terminal jobs - and skips the bash tests.
+terminal jobs - and skips the bash tests. The filters work there too: `$env:GK_TEST_ONLY = 'Explorer'` first.
 
 Warnings and errors that the tests provoke go to a temp log, not to `~/.local/state/nvim/greyknight.log`.
 

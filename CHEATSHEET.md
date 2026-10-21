@@ -102,7 +102,8 @@ explorer pane once focused.
 
 > The tree shows Neovim's working directory: `.`, `<BS>` and `-` change both (a message shows the new one).
 > Move by the tree: `m` on the file, then `m` on the target folder (`c` there: copy). On a file the target is its
-> folder; `m` in the file's own folder unmarks it. Nothing is overwritten.
+> folder; `m` in the file's own folder unmarks it. Nothing is overwritten. Marks stay through searches: `/` and
+> `<Tab>` the files, `D` the target folder, `m` there.
 >
 > The prompts (`r`, `C`, `a` — every input dialog) edit like a shell: `<C-a>`/`<C-e>` start/end, `<C-b>`/`<C-f>` a
 > character, `<M-b>`/`<M-f>` a word, `<C-d>` delete the character, `<C-k>` delete to the end, `<C-u>` to the start,
@@ -176,6 +177,7 @@ Python/bash REPL use `<leader>ri`).
 | `:checkhealth` | Plugins, LSP, DAP, overseer health |
 | `tests/run.sh` | All tests; exit status 1 on failure |
 | `tests\run.ps1` | The same on Windows (bash tests skipped) |
+| `GK_TEST_ONLY='Explorer,Session' tests/run.sh smoke` | Only the tests whose names contain a piece (`GK_TEST_SKIP`: all but those) |
 
 ## Trouble / Diagnostics — `<leader>x`
 
@@ -238,9 +240,13 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Action |
 |-----|--------|
-| `<leader>ps` | Save session |
+| `<leader>ps` | Save session (also with no file open) |
 | `<leader>pl` | Load session (cwd) |
-| `<leader>pd` | Delete session |
+| `<leader>pd` | Delete session (pick one) |
+| `:Persisted clean` | Delete the sessions of folders / branches that are gone |
+
+> Saved when Neovim quits, one per folder + git branch: files, splits, tabs, help - no terminals, no explorer.
+> Quitting with no file open keeps the old session; none for `~`, `/`, `/tmp`. Restore: `s` on the start screen.
 
 ## Editing
 
@@ -272,6 +278,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 ├── CHEATSHEET.md             ← this file
 ├── lua/config/
 │   ├── options.lua           ← vim opts + language toggles
+│   ├── clipboard.lua         ← over SSH: copy with OSC 52, paste the last copy
 │   ├── lazy.lua              ← lazy.nvim bootstrap
 │   ├── keymaps.lua           ← global keymaps
 │   ├── autocmds.lua          ← autocommands
