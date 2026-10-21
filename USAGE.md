@@ -176,6 +176,9 @@ goes one folder up (`cd ..`). Both move the tree **and** Neovim's working direct
 terminals and runs start there too; a message shows the new directory. (Snacks' own `.` / `<BS>`
 moved only the tree.) `Snacks.explorer({ cwd = "/path" })` still opens a one-off rooted view.
 
+**Folders you may not read** (another user's, Windows' old junctions in your home folder like `Anwendungsdaten`)
+open empty; the first time a message says why. The rest of the tree works as before.
+
 > Delete is **trash-first**: it shells to `trash`/`gio trash`/`kioclient` when present,
 > so `d` is recoverable on most desktops. Without a trash backend it falls back to a
 > permanent `:delete` — check with `:checkhealth snacks` before deleting anything precious.
@@ -275,6 +278,7 @@ Completion appears automatically as you type.
 
 Nothing is preselected, so `Enter` at the end of a line never takes a suggestion you did not
 choose. **Ghost text** shows a grey preview of the top suggestion: `Tab` takes it, `Enter` ignores it.
+`Esc` right after `Enter` - before the item went in - leaves the text as `Tab` showed it.
 
 **Signature help** shows function parameters as you type inside `()`.
 
@@ -821,7 +825,9 @@ the others (Windows Terminal) every `p` used to wait 10 seconds.
 Press `<leader>` and **wait** — a popup shows all available keybindings grouped by category.
 
 ### Format on Save
-Files auto-format when you save. To format manually: `<leader>fm`. In projects you also open in IntelliJ
+Files auto-format when you save. A file the formatter cannot read yet (an unfinished script) is saved as it
+is, without a message - `<leader>fm` says why it fails, `:ConformInfo` has the details. To format manually:
+`<leader>fm`. In projects you also open in IntelliJ
 (an `.idea` folder) saving does what IntelliJ's Actions on Save do - by default nothing; Java files get that
 default everywhere (see [Java and Angular](#java-and-angular)).
 
