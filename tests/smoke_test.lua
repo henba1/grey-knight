@@ -204,9 +204,16 @@ end)
 -- Snacks.explorer() closed it (a toggle) instead of opening one - one slow explorer failed the tests after it too.
 local OPEN_MS = 10000 -- the explorer shown and listed (usually well under a second)
 local function explorers() return Snacks.picker.get({ source = "explorer", tab = false }) end -- shown or not
-local function close_explorers() -- all of them: no explorer outlives its test
+local function close_explorers() -- all of them: no explorer outlives its test, nor its windows (closed scheduled)
   for _, p in ipairs(explorers()) do p:close() end
-  H.wait(2000, function() return #explorers() == 0 end)
+  H.wait(2000, function()
+    if #explorers() > 0 then return false end
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local ft = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+      if ft == "snacks_picker_list" or ft == "snacks_picker_input" or ft == "snacks_layout_box" then return false end
+    end
+    return true
+  end)
 end
 
 test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", function()
@@ -579,6 +586,11 @@ test("Explorer: / D S search files, folders by name, the current view, switch wi
     local gamma = root .. "/alpha/beta/gamma"
     assert(H.wait(3000, function() return p:current() and p:current().file == gamma end), "cursor not on gamma")
     p:action("confirm")
+    -- right then the watcher's refresh (a change on disk; batched, it came 100 ms later): its find replaced the one
+    -- that was to put the cursor on the match - it stayed on the match's row number in the search list, on beta
+    -- (2026-10-21, 1 in 5 runs on Kali)
+    p.list:set_target()
+    p:find()
     assert(H.wait(3000, function()
       return not p:is_active() and p.input.filter:is_empty() and p.title == "Explorer" and p:current() and p:current().file == gamma
     end), "<CR>: " .. p.title .. ", on " .. tostring(p:current() and p:current().file))
@@ -589,6 +601,8 @@ test("Explorer: / D S search files, folders by name, the current view, switch wi
     -- <Esc> <Esc>: the box, the list - and the search is over: the tree, the cursor where it was before it (gamma)
     p:action("gk_search_back")
     p:action("gk_search_leave")
+    p.list:set_target() -- the watcher's refresh again
+    p:find()
     assert(H.wait(3000, function()
       return not p:is_active() and p.input.filter:is_empty() and p.title == "Explorer" and p:current() and p:current().file == gamma
     end), "<Esc> in the list: " .. p.title .. ", on " .. tostring(p:current() and p:current().file))
@@ -642,6 +656,391 @@ test("Explorer: closed right after a find - no error from the finder that still 
   vim.fn.chdir(before)
   vim.fn.delete(tmp, "rf")
   assert(ok, err)
+end)
+
+-- ── Workflows (2026-10-21): what a user does in a row - the explorer, the pickers, sessions ──────────────────────
+-- with_explorer: the real explorer on a tree of `paths` (folders end in /) in a temp folder that is the working
+-- directory; fn(p, root, x) works it like a user, x has the helpers. opts.open: folders open in the tree. Afterwards
+-- the explorer is closed, the fixture's buffers are gone and the working directory is the old one.
+local function with_explorer(paths, fn, opts)
+  opts = opts or {}
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  for _, rel in ipairs(paths) do
+    if rel:sub(-1) == "/" then
+      vim.fn.mkdir(root .. "/" .. rel, "p")
+    else
+      vim.fn.mkdir(vim.fs.dirname(root .. "/" .. rel), "p")
+      vim.fn.writefile({ rel }, root .. "/" .. rel)
+    end
+  end
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  for _, rel in ipairs(opts.open or {}) do require("snacks.explorer.tree"):open(root .. "/" .. rel) end
+  close_explorers() -- Snacks.explorer() would close one left open instead of opening
+  Snacks.explorer()
+  local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
+  local ok, err = pcall(function()
+    assert(H.wait(OPEN_MS, picker), "explorer did not open")
+    local p = picker()
+    assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() > 0 end), "explorer did not list")
+    local x = {}
+    function x.rel(file) return file == root and "." or file:sub(#root + 2) end
+    function x.found() -- what the list shows (the folders above a match, only there for context, left out), sorted
+      local r = {}
+      for i = 1, p.list:count() do
+        local it = p.list:get(i)
+        if not it.child_match_only then r[#r + 1] = x.rel(it.file) .. (it.dir and "/" or "") end
+      end
+      table.sort(r)
+      return table.concat(r, " ")
+    end
+    function x.expect(title, want)
+      assert(H.wait(5000, function() return not p:is_active() and p.title == title and x.found() == want end),
+        ("%q (%s): %q, not %q (%s)"):format(p.input.filter.pattern, p.title, x.found(), want, title))
+    end
+    function x.search_for(text) -- as the search box does with typed text
+      p.input:set(text)
+      p:find({ refresh = false })
+    end
+    function x.item(rel)
+      for i = 1, p.list:count() do
+        if p.list:get(i).file == root .. "/" .. rel then return p.list:get(i) end
+      end
+      error("not in the list: " .. rel .. " (" .. x.found() .. ")")
+    end
+    function x.on(rel) -- the cursor there (the explorer sets its own target after a listing: until it stays)
+      local file = rel == "." and root or root .. "/" .. rel
+      assert(H.wait(3000, function()
+        local cur = p:current()
+        if cur and cur.file == file then return true end
+        for i = 1, p.list:count() do
+          if p.list:get(i).file == file then p.list:view(i) end
+        end
+      end), "cursor not on " .. rel .. ", on " .. tostring(p:current() and x.rel(p:current().file)))
+    end
+    function x.at(rel) -- the tree (no search), the cursor on rel
+      local file = rel == "." and root or root .. "/" .. rel
+      assert(H.wait(5000, function()
+        return not p:is_active() and p.input.filter:is_empty() and p.title == "Explorer" and p:current() and p:current().file == file
+      end), "not the tree on " .. rel .. ": " .. p.title .. ", on " .. tostring(p:current() and x.rel(p:current().file)))
+    end
+    fn(p, root, x)
+    if not p.closed then H.wait(3000, function() return not p:is_active() end) end -- done with its finds
+  end)
+  close_explorers()
+  vim.cmd("stopinsert") -- typing in the search box, started by the test's keys, would wait for the end of the script
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(root .. "/", 1, true) == 1 then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end
+
+test("Explorer workflow: D finds a folder, Enter and . root the tree there, / searches in it, <BS> widens, <Esc> leaves", function()
+  with_explorer({ "apps/web/src/main.ts", "apps/web/package.json", "apps/api/src/main.go", "docs/web-guide.md" }, function(p, root, x)
+    p:action("gk_search_folders")
+    x.search_for("web")
+    x.expect("Search folders", "apps/web/") -- by name: docs/web-guide.md is a file
+    x.on("apps/web")
+    p:action("confirm") -- Enter: the tree, the cursor on the folder
+    x.at("apps/web")
+    p:action("gk_cd_here") -- .: the tree's root and the working directory
+    assert(H.wait(3000, function()
+      return p:cwd() == root .. "/apps/web" and vim.fs.normalize(vim.fn.getcwd()) == root .. "/apps/web" and not p:is_active()
+    end), "cd here: " .. p:cwd())
+    p:action("gk_search_files")
+    x.search_for("main")
+    x.expect("Search files", "apps/web/src/main.ts") -- below the new root only
+    p:action("gk_search_back") -- <Esc>: the list
+    p:action("gk_cd_up") -- <BS>: one folder up, the same search there
+    assert(H.wait(3000, function() return p:cwd() == root .. "/apps" end), "cd ..: " .. p:cwd())
+    x.expect("Search files", "apps/api/src/main.go apps/web/src/main.ts")
+    p:action("gk_search_leave") -- <Esc>: the tree of apps
+    assert(H.wait(5000, function() return not p:is_active() and p.input.filter:is_empty() and p.title == "Explorer" end), "<Esc>: " .. p.title)
+  end)
+end)
+
+test("Explorer workflow: / finds files, <Tab> marks them, D finds the target folder, m moves them there", function()
+  local util = Snacks.picker.util
+  local confirm = util.confirm
+  util.confirm = function(_, yes) yes() end -- "Move 2 items to ...?": yes
+  local ok, err = pcall(with_explorer, { "inbox/report-1.txt", "inbox/report-2.txt", "inbox/notes.txt", "archive/2025/" }, function(p, root, x)
+    p:action("gk_search_files")
+    x.search_for("report")
+    x.expect("Search files", "inbox/report-1.txt inbox/report-2.txt")
+    p.list:select(x.item("inbox/report-1.txt")) -- <Tab> on each
+    p.list:select(x.item("inbox/report-2.txt"))
+    -- the marks stay while the search changes: the target folder by its name
+    p:action("gk_search_back")
+    p:action("gk_search_folders")
+    x.search_for("2025")
+    x.expect("Search folders", "archive/2025/")
+    assert(#p:selected() == 2, "marks after the search changed: " .. #p:selected())
+    x.on("archive/2025")
+    p:action("explorer_move") -- m: the marked into the folder under the cursor
+    x.at("archive/2025/report-2.txt") -- the search is over: the tree, on what moved last
+    for _, name in ipairs({ "report-1.txt", "report-2.txt" }) do
+      assert(vim.uv.fs_stat(root .. "/archive/2025/" .. name) and not vim.uv.fs_stat(root .. "/inbox/" .. name), name .. " not moved")
+    end
+    assert(vim.uv.fs_stat(root .. "/inbox/notes.txt"), "notes.txt moved too")
+    assert(#p:selected() == 0, "marks left: " .. #p:selected())
+  end)
+  util.confirm = confirm
+  assert(ok, err)
+end)
+
+-- snacks keyed a mark by the item's text: the full path in the tree, the path below the root in file search, the name
+-- in folder and view search (config/explorer.lua, setup)
+test("Explorer workflow: a file marked in a search is marked in the tree too - <Tab> there unmarks it, no second mark", function()
+  with_explorer({ "inbox/report-1.txt", "inbox/notes.txt" }, function(p, root, x)
+    p:action("gk_search_files")
+    x.search_for("report")
+    x.expect("Search files", "inbox/report-1.txt")
+    p.list:select(x.item("inbox/report-1.txt"))
+    p:action("gk_search_back")
+    p:action("gk_search_leave") -- <Esc> <Esc>: the tree, inbox open
+    assert(H.wait(5000, function() return not p:is_active() and p.input.filter:is_empty() end), "still a search")
+    x.on("inbox/report-1.txt")
+    assert(p.list:is_selected(p:current()), "marked in the search, not in the tree")
+    p.list:select(p:current()) -- <Tab>
+    assert(#p:selected() == 0, "<Tab> in the tree marked it again: " .. #p:selected() .. " marks")
+  end, { open = { "inbox" } })
+end)
+
+test("Explorer workflow: Enter twice opens a match in the editor, the explorer stays; a file opened elsewhere shows in the tree", function()
+  -- text files: no language server starts for them
+  with_explorer({ "src/app/main.txt", "src/lib/util.txt", "notes/todo.txt" }, function(p, root, x)
+    local editor = p.main
+    local function shown() return vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(editor))) end
+    p:action("gk_search_files")
+    x.search_for("main")
+    x.expect("Search files", "src/app/main.txt")
+    x.on("src/app/main.txt")
+    p:action("confirm") -- the tree, on the match
+    x.at("src/app/main.txt")
+    p:action("confirm") -- the file, in the editor
+    assert(H.wait(3000, function() return shown() == root .. "/src/app/main.txt" end), "not in the editor: " .. shown())
+    assert(not p.closed, "the explorer closed")
+    -- a file opened in the editor some other way: the tree opens its folder and goes to it
+    vim.api.nvim_set_current_win(editor)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/notes/todo.txt"))
+    assert(H.wait(3000, function() return p:current() and p:current().file == root .. "/notes/todo.txt" end),
+      "the tree did not follow: on " .. tostring(p:current() and x.rel(p:current().file)))
+  end)
+end)
+
+test("Explorer workflow: r renames a match, d deletes one - each search ends in the tree on the result, every row once", function()
+  local util, config = Snacks.picker.util, Snacks.explorer.config
+  local saved = { confirm = util.confirm, trash = config.trash, input = Snacks.input }
+  local answer
+  util.confirm = function(_, yes) yes() end
+  config.trash = false -- gone for good: no trash for temp folders everywhere
+  Snacks.input = function(_, done) done(answer) end
+  local ok, err = pcall(with_explorer, { "src/old-name.lua", "src/keep.lua", "tmp/scratch-1.txt", "tmp/scratch-2.txt" }, function(p, root, x)
+    p:action("gk_search_files")
+    x.search_for("old-name")
+    x.expect("Search files", "src/old-name.lua")
+    x.on("src/old-name.lua")
+    answer = "src/new-name.lua" -- from the working directory, as the prompt shows it
+    p:action("explorer_rename") -- r
+    x.at("src/new-name.lua")
+    assert(vim.uv.fs_stat(root .. "/src/new-name.lua") and not vim.uv.fs_stat(root .. "/src/old-name.lua"), "not renamed")
+    p:action("gk_search_files")
+    x.search_for("scratch")
+    x.expect("Search files", "tmp/scratch-1.txt tmp/scratch-2.txt")
+    x.on("tmp/scratch-1.txt")
+    p:action("explorer_del") -- d
+    x.at("tmp/scratch-2.txt") -- the next one below
+    assert(not vim.uv.fs_stat(root .. "/tmp/scratch-1.txt") and vim.uv.fs_stat(root .. "/tmp/scratch-2.txt"), "deleted the wrong one")
+    local seen = {}
+    for i = 1, p.list:count() do
+      local file = p.list:get(i).file
+      assert(not seen[file], "shown twice: " .. x.rel(file))
+      seen[file] = true
+    end
+  end)
+  util.confirm, config.trash, Snacks.input = saved.confirm, saved.trash, saved.input
+  assert(ok, err)
+end)
+
+-- 2026-10-21: once loaded (- or <leader>o once) oil took every folder buffer - the same :e opened the explorer or oil
+test("Explorer: a folder opened as a file (nvim <folder>, :e <folder>) opens the explorer there, also once oil is loaded", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/sub", "p")
+  vim.fn.writefile({ "x" }, tmp .. "/sub/x.txt")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local function name() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) end
+  close_explorers()
+  local ok, err = pcall(function()
+    require("oil") -- as after - or <leader>o
+    vim.cmd.edit(vim.fn.fnameescape(root))
+    assert(H.wait(OPEN_MS, function() local p = explorers()[1]; return p and p:cwd() == root end),
+      "no explorer on the folder: " .. tostring(explorers()[1] and explorers()[1]:cwd()) .. ", the buffer: " .. name())
+    assert(H.wait(2000, function()
+      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        local raw = vim.api.nvim_buf_get_name(buf) -- oil://C:/... as it is (vim.fs.normalize makes it oil:/C/...)
+        if vim.api.nvim_buf_is_loaded(buf) and (vim.fs.normalize(raw) == root or raw:find("^oil://")) then return false end
+      end
+      return true
+    end), "a buffer of the folder (or oil's) is still there")
+    -- oil still opens on its own command
+    close_explorers()
+    vim.cmd("Oil " .. vim.fn.fnameescape(root))
+    assert(H.wait(3000, function() return vim.api.nvim_buf_get_name(0):find("^oil://") ~= nil end), "oil did not open: " .. name())
+    require("oil").close()
+  end)
+  close_explorers()
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Pickers: <leader>ff finds a file by name and opens it, <leader>fg finds a line and jumps to it (fd, rg)", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/src/deep", "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  vim.fn.writefile({ "alpha", "beta needle_4711 gamma", "delta" }, root .. "/src/deep/target.txt")
+  vim.fn.writefile({ "nothing here" }, root .. "/src/other.txt")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local function picker(source) return Snacks.picker.get({ source = source })[1] end
+  local function current() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) end
+  local ok, err = pcall(function()
+    Snacks.picker.files() -- <leader>ff: fd lists the files, the typed text narrows them, Enter opens one
+    assert(H.wait(OPEN_MS, function() return picker("files") end), "the files picker did not open")
+    local p = picker("files")
+    p.input:set("target")
+    p:find({ refresh = false })
+    assert(H.wait(5000, function() return not p:is_active() and p.list:count() == 1 end), "files: " .. p.list:count() .. " found")
+    p:action("confirm")
+    assert(H.wait(3000, function() return current() == root .. "/src/deep/target.txt" end), "not opened: " .. current())
+    Snacks.picker.grep() -- <leader>fg: rg finds the line (live: the text goes to rg), Enter jumps there
+    assert(H.wait(OPEN_MS, function() return picker("grep") end), "the grep picker did not open")
+    local g = picker("grep")
+    g.input:set(nil, "needle_4711")
+    g:find({ refresh = false })
+    assert(H.wait(5000, function() return not g:is_active() and g.list:count() == 1 end), "grep: " .. g.list:count() .. " found")
+    g:action("confirm")
+    assert(H.wait(3000, function() return current() == root .. "/src/deep/target.txt" and vim.api.nvim_win_get_cursor(0)[1] == 2 end),
+      "not at the line: " .. current() .. ":" .. vim.api.nvim_win_get_cursor(0)[1])
+  end)
+  for _, source in ipairs({ "files", "grep" }) do
+    if picker(source) then picker(source):close() end
+  end
+  vim.cmd("stopinsert")
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(root .. "/", 1, true) == 1 then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  end
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: sessions (plugins/session.lua). persisted 2 ignored version 1's options: sessions for ~ and /, quitting
+-- from the start screen overwrote a session with an empty one, a restored session brought the explorer's frame back
+-- as an empty window and the terminals as new shells. And test runs saved theirs over the real one (tests/harness.lua).
+test("Session: a file, the explorer, a terminal and help - back are the file and help, no empty window, no new shell", function()
+  local persisted, config = require("persisted"), require("persisted.config")
+  assert(vim.g.persisting == false, "this test run records a session")
+  assert(not persisted.allowed_dir({ dir = vim.fn.expand("~") }) and not persisted.allowed_dir({ dir = "/" }), "a session for ~ or /")
+  assert(persisted.allowed_dir({ dir = vim.fn.expand("~") .. "/projects/x" }), "no session for a project below ~")
+  assert(not vim.o.sessionoptions:find("blank") and not vim.o.sessionoptions:find("terminal"), vim.o.sessionoptions)
+  -- quitting with no file open keeps the old session; with a file open it is saved
+  local listed = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[buf].buflisted then
+      listed[#listed + 1] = buf
+      vim.bo[buf].buflisted = false
+    end
+  end
+  local saves_none = config.should_save()
+  local file = H.file("kept.txt", { "kept" })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local saves_file = config.should_save()
+  for _, buf in ipairs(listed) do
+    if vim.api.nvim_buf_is_valid(buf) then vim.bo[buf].buflisted = true end
+  end
+  assert(saves_none == false, "no file open: the session would be overwritten")
+  assert(saves_file == true, "a file open: no session saved")
+  -- a session saved with the file, the explorer, a terminal and help open; all of it gone; the session back
+  local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(vim.fs.dirname(file))))
+  local session = dir .. "/session.vim"
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(dir)
+  local term
+  local ok, err = pcall(function()
+    close_explorers()
+    Snacks.explorer()
+    assert(H.wait(OPEN_MS, function() return Snacks.picker.get({ source = "explorer" })[1] end), "explorer did not open")
+    vim.cmd("wincmd l")
+    term = require("toggleterm.terminal").Terminal:new({ direction = "horizontal" }) -- a shell
+    term:toggle()
+    assert(H.wait(5000, function() return vim.bo.buftype == "terminal" end), "no terminal")
+    vim.cmd("wincmd k")
+    vim.cmd("help")
+    vim.cmd("mksession! " .. vim.fn.fnameescape(session))
+    close_explorers()
+    term:shutdown()
+    vim.cmd("silent! %bwipeout!")
+    vim.cmd("silent source " .. vim.fn.fnameescape(session))
+    local wins = {}
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_config(win).relative == "" then -- notifications float
+        local buf = vim.api.nvim_win_get_buf(win)
+        wins[#wins + 1] = vim.bo[buf].buftype .. ":" .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t")
+      end
+    end
+    table.sort(wins)
+    assert(vim.deep_equal(wins, { ":kept.txt", "help:help.txt" }), "restored: " .. table.concat(wins, " "))
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      assert(vim.bo[buf].buftype ~= "terminal", "a terminal came back: " .. vim.api.nvim_buf_get_name(buf))
+    end
+  end)
+  if term and term:is_open() then pcall(function() term:shutdown() end) end
+  close_explorers()
+  vim.cmd("silent! only")
+  vim.cmd("enew")
+  vim.fn.chdir(before)
+  assert(ok, err)
+end)
+
+-- 2026-10-21: the clipboard (config/clipboard.lua). Locally Neovim picks the tool - the hand-made choice took xclip
+-- wherever DISPLAY was set, installed or not. Over SSH OSC 52 copies and p pastes the last copy: a terminal that cannot
+-- answer an OSC 52 read (Windows Terminal) made every p wait 10 s.
+test("Clipboard: over SSH OSC 52 copies, p pastes the last copy; locally Neovim picks the tool", function()
+  local clip = require("config.clipboard")
+  local function env(vars) return function(name) return vars[name] end end
+  assert(clip.provider(env({ DISPLAY = ":0", WAYLAND_DISPLAY = "wayland-0" })) == nil, "locally a hand-made choice")
+  assert(clip.provider(env({ SSH_TTY = "" })) == nil, "an empty SSH_TTY is no SSH session")
+  local p = clip.provider(env({ SSH_TTY = "/dev/pts/1", DISPLAY = ":0" }))
+  assert(p and p.name:find("OSC 52", 1, true), "over SSH: " .. tostring(p and p.name))
+  -- a copy goes out with OSC 52 (a stand-in: no escape sequence for this terminal), a paste is the last copy
+  local sent, real = {}, package.loaded["vim.ui.clipboard.osc52"]
+  package.loaded["vim.ui.clipboard.osc52"] = {
+    copy = function(reg) return function(lines) sent[#sent + 1] = reg .. ":" .. table.concat(lines, "\n") end end,
+  }
+  local ok, err = pcall(function()
+    assert(vim.deep_equal(p.paste["+"](), { { "" }, "v" }), "before a copy: " .. vim.inspect(p.paste["+"]()))
+    p.copy["+"]({ "one", "two" }, "V")
+    assert(sent[1] == "+:one\ntwo", "not sent with OSC 52: " .. vim.inspect(sent))
+    assert(vim.deep_equal(p.paste["+"](), { { "one", "two" }, "V" }), "p: " .. vim.inspect(p.paste["+"]()))
+    assert(vim.deep_equal(p.paste["*"](), { { "" }, "v" }), "* has a last copy of its own")
+  end)
+  package.loaded["vim.ui.clipboard.osc52"] = real
+  assert(ok, err)
+  if (vim.env.SSH_TTY or "") == "" and (vim.env.AIDASH_TOKEN or "") == "" then -- this run: no SSH, no dashboard
+    assert(vim.g.clipboard == nil, "a hand-made clipboard: " .. vim.inspect(vim.g.clipboard))
+  end
+end)
+
+test("Providers: Node, Perl, Ruby and Python are off - no plugin here uses them, :checkhealth stays quiet", function()
+  for _, name in ipairs({ "node", "perl", "ruby", "python3" }) do
+    assert(vim.g["loaded_" .. name .. "_provider"] == 0, name .. " provider on")
+  end
 end)
 
 -- 2026-10-20: input dialogs (rename, copy to, the agent's questions: every vim.ui.input) edit like a shell prompt
