@@ -55,6 +55,77 @@ local function eq(a, b) return key(a) == key(b) end
 local function inside(path, dir) return vim.startswith(key(path), key(dir) .. "/") end
 local function path_of(item) return item and Snacks.picker.util.path(item) or nil end
 
+-- The file buffers of `path` - its own, for a folder those of the files in it - by their paths. snacks asked bufnr(),
+-- which takes a name for a pattern: for a folder it found a file in it, and [ ] in a name matched other names.
+local function buffers_of(path)
+  local found = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if name ~= "" and vim.bo[buf].buftype == "" and (eq(name, path) or inside(name, path)) then found[#found + 1] = buf end
+  end
+  return found
+end
+
+-- Why `path` stays where it is: buffers of it with unsaved changes (moving it would lose them), else nil
+local function unsaved(path)
+  local names = {}
+  for _, buf in ipairs(buffers_of(path)) do
+    if vim.bo[buf].modified then names[#names + 1] = vim.fs.basename(vim.api.nvim_buf_get_name(buf)) end
+  end
+  if #names == 0 then return nil end
+  return ("%s: unsaved changes in %s - save them (:w) or drop them (:e!) first"):format(vim.fs.basename(path), table.concat(names, ", "))
+end
+
+-- The explorer's watchers on `path` and the folders in it end first: on Windows a watched folder can be neither deleted
+-- nor moved - d and m on a folder whose subfolders were open in the tree failed (2026-10-21). The next listing watches
+-- what is still there.
+local function unwatch(path)
+  local ok, watch = pcall(require, "snacks.explorer.watch")
+  if not ok or type(watch._watches) ~= "table" then return end
+  for watched in pairs(watch._watches) do
+    if eq(watched, path) or inside(watched, path) then watch.stop(watched) end
+  end
+end
+
+-- Move a file or folder; its open buffers go along, in the same windows, the cursor where it was; language servers
+-- hear of it (snacks). snacks' own move (rename.lua) did that for the buffer bufnr() found: for a folder a file in it,
+-- which a buffer of the folder replaced. And it threw away a buffer with unsaved changes - callers check unsaved()
+-- first (2026-10-21). vim.fn.rename(): another case of a name on Windows, and a file onto another drive, work too.
+local function relocate(from, to)
+  local ok = false
+  Snacks.rename.on_rename_file(from, to, function()
+    vim.fn.mkdir(vim.fs.dirname(to), "p")
+    unwatch(from)
+    ok = vim.fn.rename(from, to) == 0
+    for _ = 1, WIN and not ok and 5 or 0 do -- Windows: a stopped watcher's handle on the folder can outlast it a moment
+      vim.wait(100)
+      ok = vim.fn.rename(from, to) == 0
+      if ok then break end
+    end
+    if not ok then return end
+    for _, buf in ipairs(buffers_of(from)) do
+      local new = to .. vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):sub(#from + 1)
+      local target = vim.fn.bufadd(new)
+      if target == buf then
+        -- Windows, another case of the name: the same buffer, only its name changes - edited again (it has no
+        -- unsaved changes), so :w writes without "file exists"
+        vim.api.nvim_buf_set_name(buf, new)
+        if vim.api.nvim_buf_is_loaded(buf) then vim.api.nvim_buf_call(buf, function() vim.cmd("silent! edit!") end) end
+      else
+        vim.bo[target].buflisted = vim.bo[buf].buflisted
+        for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+          local cursor = vim.api.nvim_win_get_cursor(win)
+          vim.api.nvim_win_set_buf(win, target)
+          pcall(vim.api.nvim_win_set_cursor, win, cursor)
+        end
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end
+  end)
+  if not ok then Snacks.notify.error("Could not move " .. show(from) .. " to " .. show(to), { title = "Explorer" }) end
+  return ok
+end
+
 --- What a typed path names: an absolute one (/x, ~/x, C:\x, \\server\x) as it is, a relative one below `base`.
 --- Returns the path and whether it names a folder (typed with a trailing / or \).
 function M.resolve(base, value)
@@ -108,6 +179,8 @@ local function plan(picker, dir, copying)
       if copying then stay[#stay + 1] = vim.fs.basename(from) .. " is in this folder already (C copies it under a new name)" end
     elseif eq(dir, from) or inside(dir, from) then
       stay[#stay + 1] = vim.fs.basename(from) .. ": not into itself"
+    elseif not copying and unsaved(from) then
+      stay[#stay + 1] = unsaved(from)
     elseif vim.uv.fs_stat(to) then
       stay[#stay + 1] = show(to) .. " exists - nothing overwritten"
     else
@@ -134,7 +207,7 @@ function M.move(picker, item)
   Snacks.picker.util.confirm(("Move %s to %s?"):format(what(todo), show(dir)), function()
     local dirs = { dir }
     for _, mv in ipairs(todo) do
-      Snacks.rename.rename_file({ from = mv.from, to = mv.to }) -- open buffers and language servers follow
+      relocate(mv.from, mv.to) -- open buffers and language servers follow
       dirs[#dirs + 1] = vim.fs.dirname(mv.from)
     end
     picker.list:set_selected()
@@ -163,6 +236,7 @@ function M.rename(picker, item)
   local from = path_of(item)
   if not from then return end
   if eq(from, picker:cwd()) then return warn("That is the tree's root (<BS> goes one folder up)") end
+  if unsaved(from) then return warn(unsaved(from)) end
   local base = vim.fs.normalize(vim.fn.getcwd(0))
   if not inside(from, base) then base = vim.fs.dirname(from) end
   local shown = from:sub(#base + 2)
@@ -170,14 +244,11 @@ function M.rename(picker, item)
     function(value)
       if not value or vim.trim(value) == "" or value == shown then return end
       local to = into(from, M.resolve(base, value))
-      if eq(to, from) then return end
+      -- the same path; another case of the name is a new name (on Windows the same file: M.same below)
+      if to == from then return end
       if inside(to, from) then return warn(vim.fs.basename(from) .. ": not into itself") end
       if vim.uv.fs_stat(to) and not M.same(to, from) then return warn(show(to) .. " exists - nothing overwritten") end
-      Snacks.rename.rename_file({
-        from = from,
-        to = to,
-        on_rename = function(new, old) refresh(picker, { vim.fs.dirname(old), vim.fs.dirname(new) }, new) end,
-      })
+      if relocate(from, to) then refresh(picker, { vim.fs.dirname(from), vim.fs.dirname(to) }, to) end
     end)
 end
 
@@ -230,9 +301,18 @@ function M.delete(picker, item)
   Snacks.picker.util.confirm("Delete " .. what .. "?", function()
     local actions, Tree = require("snacks.explorer.actions"), require("snacks.explorer.tree")
     for _, path in ipairs(paths) do
+      unwatch(path)
       local ok, err = actions.trash(path)
+      for _ = 1, WIN and not ok and 5 or 0 do -- as in relocate(): a watcher's handle can outlast its stop a moment
+        vim.wait(100)
+        ok, err = actions.trash(path)
+        if ok then break end
+      end
       if ok then
-        Snacks.bufdelete({ file = path, force = true })
+        -- its buffers - for a folder those of the files in it (snacks closed only one named like the path itself)
+        local gone = {}
+        for _, buf in ipairs(buffers_of(path)) do gone[buf] = true end
+        if next(gone) then Snacks.bufdelete({ filter = function(buf) return gone[buf] end, force = true }) end
       else
         Snacks.notify.error("Failed to delete `" .. path .. "`:\n" .. err)
       end
