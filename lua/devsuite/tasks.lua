@@ -62,16 +62,18 @@ local function output_win()
   if state.win and vim.api.nvim_win_is_valid(state.win) then return state.win end
 end
 
+-- The output window's own options (a window that stops being the output gets the usual ones back)
+local OUTPUT_OPTIONS = {
+  winfixheight = true, number = false, relativenumber = false, signcolumn = "no",
+  colorcolumn = "", cursorline = false,
+}
+
 local function open_window()
   local win = output_win()
   if win then return win end
   vim.cmd(("botright %dsplit"):format(math.max(10, math.floor(vim.o.lines * 0.3))))
   win = vim.api.nvim_get_current_win()
-  local options = {
-    winfixheight = true, number = false, relativenumber = false, signcolumn = "no",
-    colorcolumn = "", cursorline = false,
-  }
-  for option, value in pairs(options) do vim.wo[win][option] = value end
+  for option, value in pairs(OUTPUT_OPTIONS) do vim.wo[win][option] = value end
   state.win = win
   return win
 end
@@ -251,7 +253,18 @@ end
 function M.toggle()
   local win = output_win()
   if win then
-    if #vim.api.nvim_tabpage_list_wins(0) > 1 then vim.api.nvim_win_close(win, false) end
+    -- floats (notifications) aside: when it is the last window it stays and shows another buffer - closing it was
+    -- E444 "Cannot close last window" whenever a notification was up (2026-10-21)
+    local splits = vim.tbl_filter(function(w) return vim.api.nvim_win_get_config(w).relative == "" end, vim.api.nvim_tabpage_list_wins(0))
+    if #splits > 1 then
+      vim.api.nvim_win_close(win, false)
+    else
+      vim.api.nvim_win_call(win, function()
+        local alt = vim.fn.bufnr("#")
+        if alt > 0 and vim.bo[alt].buflisted and vim.bo[alt].buftype == "" then vim.cmd.buffer(alt) else vim.cmd.enew() end
+      end)
+      for option in pairs(OUTPUT_OPTIONS) do vim.wo[win][option] = vim.go[option] end
+    end
     state.win = nil
     return
   end
