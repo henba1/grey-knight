@@ -1249,6 +1249,40 @@ test("Git: added, changed and deleted lines get their signs; the explorer's ]g /
       return table.concat(seen, " ")
     end
     assert(H.wait(10000, function() return kinds() == "add change delete" end), "hunks: " .. kinds())
+    -- the hunk keys: ]c to a change, <leader>gs stages it, <leader>gr undoes the next, <leader>gp shows one, <leader>gb
+    local function key(lhs) return vim.fn.maparg(lhs, "n", false, true) end
+    local function line() return vim.api.nvim_win_get_cursor(0)[1] end
+    local function has_float(text)
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.api.nvim_win_get_config(win).relative ~= "" and H.text(vim.api.nvim_win_get_buf(win)):find(text, 1, true) then return win end
+      end
+    end
+    assert(key("]c").buffer == 1 and key("<leader>gs").buffer == 1, "no hunk keys in a file of the repository")
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    key("]c").callback()
+    assert(H.wait(3000, function() return line() == 2 end), "]c: line " .. line())
+    key("<leader>gs").callback()
+    local function staged() return vim.fn.system({ "git", "-C", root, "diff", "--cached" }) end
+    assert(H.wait(5000, function() return staged():find("+TWO", 1, true) ~= nil end), "<leader>gs did not stage: " .. staged())
+    key("]c").callback()
+    assert(H.wait(3000, function() return line() == 5 end), "]c to the added line: line " .. line())
+    key("<leader>gr").callback()
+    assert(H.wait(3000, function() return not vim.tbl_contains(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "four and a half") end),
+      "<leader>gr did not undo the added line")
+    key("]c").callback() -- the last change: eight deleted
+    key("<leader>gp").callback()
+    local preview = H.wait(5000, function() return has_float("eight") end)
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_config(win).relative ~= "" then pcall(vim.api.nvim_win_close, win, true) end
+    end
+    assert(preview, "<leader>gp showed no change with eight")
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    key("<leader>gb").callback()
+    local blame = H.wait(5000, function() return has_float("gk") end)
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_config(win).relative ~= "" then pcall(vim.api.nvim_win_close, win, true) end
+    end
+    assert(blame, "<leader>gb showed no author")
     -- the explorer: ]g / [g between the changed files a.txt and c.txt
     close_explorers()
     Snacks.explorer()
@@ -1334,11 +1368,17 @@ test("Session: a file, the explorer, a terminal and help - back are the file and
   local file = H.file("kept.txt", { "kept" })
   vim.cmd.edit(vim.fn.fnameescape(file))
   local saves_file = config.should_save()
+  -- nor in an ignored folder Neovim moved to (persisted checks them when it starts only: :cd ~ and quit saved one)
+  local cwd = vim.fn.getcwd()
+  vim.fn.chdir(vim.fn.expand("~"))
+  local saves_home = config.should_save()
+  vim.fn.chdir(cwd)
   for _, buf in ipairs(listed) do
     if vim.api.nvim_buf_is_valid(buf) then vim.bo[buf].buflisted = true end
   end
   assert(saves_none == false, "no file open: the session would be overwritten")
   assert(saves_file == true, "a file open: no session saved")
+  assert(saves_home == false, "a :cd ~ before quitting saved a session for ~")
   -- a session saved with the file, the explorer, a terminal and help open; all of it gone; the session back
   local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(vim.fs.dirname(file))))
   local session = dir .. "/session.vim"
@@ -1986,7 +2026,9 @@ end)
 test("Docs: every documented <leader> key exists", function()
   -- group prefixes in headings, LSP keys (exist once a server attaches), the AI Dashboard bridge (<leader>W*)
   local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
-    ["<leader>x"] = 1, ["<leader>ca"] = 1, ["<leader>rn"] = 1, ["<leader>D"] = 1, ["<leader>t1/t2/t3"] = 1 }
+    ["<leader>x"] = 1, ["<leader>ca"] = 1, ["<leader>rn"] = 1, ["<leader>D"] = 1, ["<leader>t1/t2/t3"] = 1,
+    -- gitsigns' keys: in files of a git repository (the Git test checks them there)
+    ["<leader>gs"] = 1, ["<leader>gr"] = 1, ["<leader>gp"] = 1, ["<leader>gb"] = 1 }
   local stale, checked = {}, {}
   for key in DOCS:gmatch("<leader>[%w%-%;%/%:%.]+") do
     if not checked[key] and not known[key] and not key:match("^<leader>W") and not key:match("%d%-%d$") then

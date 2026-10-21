@@ -295,7 +295,7 @@ end)
 test("Debug: a bash script stops at a breakpoint (bashdb)", function()
   linux_only("bash debugging (bashdb)")
   local dbg, dap = require("devsuite.debug"), require("dap")
-  assert(dbg.setup_bash(), "bash-debug-adapter not installed (:MasonInstall bash-debug-adapter)")
+  assert(dbg.setup_bash()) -- else why: the adapter missing, or node
   local file = vim.fn.tempname() .. ".sh"
   vim.fn.writefile({ "#!/bin/bash", "x=41", "x=$((x + 1))", 'echo "x is $x"' }, file)
   vim.cmd.edit(file)
@@ -315,6 +315,25 @@ test("Debug: a bash script stops at a breakpoint (bashdb)", function()
   dap.clear_breakpoints()
   if dap.session() then dap.terminate() end
   assert(ok, err)
+end)
+
+-- 2026-10-21: bash-debug-adapter is a Node program - without node on the PATH (the pi: nvm puts it there in interactive
+-- shells only) F5 started nothing and waited; the test above said "never stopped"
+test("Debug: F5 on a bash script without node on the PATH says why (bash-debug-adapter is a Node program)", function()
+  linux_only("bash debugging (bashdb)")
+  local dbg = require("devsuite.debug")
+  if vim.fn.executable(vim.fn.stdpath("data") .. "/mason/packages/bash-debug-adapter/bash-debug-adapter") ~= 1 then
+    H.skip("bash-debug-adapter not installed (Mason)")
+  end
+  vim.cmd.edit(vim.fn.fnameescape(H.file("nonode.sh", { "#!/bin/bash", "echo hi" })))
+  local notes, notify, path = {}, vim.notify, vim.env.PATH
+  vim.notify = function(msg, ...) notes[#notes + 1] = tostring(msg); return notify(msg, ...) end
+  vim.env.PATH = vim.fn.tempname() -- a folder that is not there: no node
+  local ok, err = pcall(dbg.launch)
+  vim.env.PATH, vim.notify = path, notify
+  assert(ok, err)
+  assert(table.concat(notes, " | "):find("Node.js", 1, true), "no word of node: " .. table.concat(notes, " | "))
+  assert(require("dap").session() == nil, "a debug session started anyway")
 end)
 
 test("Debug: a python program reads input() in the DAP console", function()
@@ -387,7 +406,7 @@ end)
 test("Debug: four bash sessions in a row", function()
   linux_only("bash debugging (bashdb)")
   local dbg, dap = require("devsuite.debug"), require("dap")
-  assert(dbg.setup_bash(), "bash-debug-adapter not installed (:MasonInstall bash-debug-adapter)")
+  assert(dbg.setup_bash()) -- else why: the adapter missing, or node
   local file = vim.fn.tempname() .. ".sh"
   vim.fn.writefile({ "#!/bin/bash", 'echo "run"' }, file)
   vim.cmd.edit(file)
@@ -532,6 +551,27 @@ end)
 
 -- 2026-10-19: the agent was started by its quoted name. cmd.exe gives a .cmd it found on the PATH the current
 -- directory as its own folder (%~dp0): on Windows opencode.cmd did not find its launcher script.
+-- 2026-10-21: the agent's command goes through cmd.exe on Windows (toggleterm), which expands %VAR% even in quotes - a
+-- first prompt about "%PATH%" arrived with the machine's PATH in it. On Windows it is pasted once the TUI is up.
+test("Agent: a first prompt never goes through cmd.exe - Windows pastes it, elsewhere it is one quoted argument", function()
+  local agent = require("integrations.agent")
+  local saved = vim.g.greyknight_agent
+  vim.g.greyknight_agent = "qwen"
+  local ok, err = pcall(function()
+    local prompt = 'explain "100% of %PATH%" & <this> !x! $(y) `z`'
+    local cmd = agent.command(prompt)
+    if WIN then
+      assert(not cmd:find("PATH", 1, true) and not cmd:find(" -i ", 1, true), "the prompt is on cmd.exe's command line: " .. cmd)
+    else
+      assert(vim.endswith(cmd, " -i " .. vim.fn.shellescape(prompt)), cmd)
+      local out = vim.fn.system({ "sh", "-c", "printf '%s' " .. vim.fn.shellescape(prompt) })
+      assert(out == prompt, "sh read the argument as " .. out)
+    end
+  end)
+  vim.g.greyknight_agent = saved
+  assert(ok, err)
+end)
+
 test("Agent: starts by the full path of its binary, not by a name looked up on the PATH", function()
   local agent = require("integrations.agent")
   local dir = tmpdir()
