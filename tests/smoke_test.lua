@@ -1604,6 +1604,192 @@ test("Big files: one over 1.5 MB opens as bigfile - no treesitter, no language s
   assert(ok, err)
 end)
 
+-- ── Round 6 (2026-10-21): folders you cannot read, oil, formatting, sessions with %, small daily things ───────────
+-- The Windows error log: "Failed to watch ...\Anwendungsdaten: EPERM" - legacy junctions in the home folder that no one
+-- may list; on Linux another user's folder. Opened in the tree it stays empty, and watching it was an error each time.
+test("Explorer: a folder it cannot read opens empty with a word why - no error, the rest of the tree works", function()
+  with_explorer({ "locked/secret.txt", "open/a.txt" }, function(p, root, x)
+    local locked = root .. "/locked"
+    local function lock(on)
+      if vim.fn.has("win32") == 1 then
+        vim.fn.system({ "icacls", locked, on and "/deny" or "/remove:d", vim.env.USERNAME .. (on and ":(RD)" or "") })
+      else
+        vim.uv.fs_chmod(locked, on and 0 or 493) -- 493: 0755
+      end
+    end
+    lock(true)
+    local notes, notify = {}, vim.notify
+    vim.notify = function(msg, level, opts)
+      notes[#notes + 1] = { level = level or 0, msg = tostring(msg) }
+      return notify(msg, level, opts)
+    end
+    local ok, err = pcall(function()
+      if vim.uv.fs_scandir(locked) then H.skip("this user reads every folder (root?)") end
+      x.on("locked")
+      p:action("confirm") -- open it
+      H.wait(3000, function() return not p:is_active() end)
+      x.on("open")
+      p:action("confirm")
+      x.on("open/a.txt") -- the rest of the tree works
+      local errors, why = {}, false
+      for _, n in ipairs(notes) do
+        if n.level >= vim.log.levels.ERROR then errors[#errors + 1] = n.msg end
+        if n.msg:find("locked", 1, true) and n.msg:find("cannot be read", 1, true) then why = true end
+      end
+      assert(#errors == 0, "errors: " .. table.concat(errors, " | "))
+      assert(why, "no word why locked/ is empty: " .. vim.inspect(notes))
+    end)
+    vim.notify = notify
+    lock(false) -- so it can be deleted
+    assert(ok, err)
+  end)
+end)
+
+test("Oil: - shows the file's folder; renamed, added and deleted lines are done on disk by :w - the open buffer goes along", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  for _, name in ipairs({ "a.txt", "keep.txt", "gone.txt" }) do vim.fn.writefile({ name }, dir .. "/" .. name) end
+  vim.cmd.edit(vim.fn.fnameescape(dir .. "/a.txt"))
+  local ok, err = pcall(function()
+    vim.api.nvim_feedkeys("-", "x", false)
+    assert(H.wait(5000, function() return vim.bo.filetype == "oil" and H.text(0):find("keep.txt", 1, true) end), "-: no listing: " .. H.text(0))
+    local buf, out = vim.api.nvim_get_current_buf(), {}
+    for _, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+      if l:find("gone.txt", 1, true) then -- deleted
+      elseif l:find("a.txt", 1, true) then out[#out + 1] = (l:gsub("a%.txt", "renamed.txt"))
+      else out[#out + 1] = l end
+    end
+    out[#out + 1] = "new.txt"
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, out)
+    local done = false
+    require("oil").save({ confirm = false }, function() done = true end)
+    assert(H.wait(5000, function() return done end), "oil did not save")
+    local function there(name) return vim.uv.fs_stat(dir .. "/" .. name) ~= nil end
+    assert(there("renamed.txt") and not there("a.txt") and there("new.txt") and not there("gone.txt") and there("keep.txt"),
+      vim.inspect(vim.fn.readdir(dir)))
+    assert(vim.fn.bufexists(dir .. "/renamed.txt") == 1, "the open buffer did not go along with the rename")
+  end)
+  pcall(function() require("oil").close() end)
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
+-- The Kali error log: "Formatter failed. See :ConformInfo" on saving bash scripts that did not parse yet (4 times)
+test("Formatting: :w formats a shell script (shfmt); an unfinished one is saved as it is, without an error popup", function()
+  if vim.fn.executable("shfmt") == 0 then H.skip("shfmt not installed (Mason)") end
+  -- on several lines: shfmt keeps a one-line if on one line
+  local file = H.file("fmt.sh", { "#!/bin/bash", "if [ 1 ];then", "echo hi", "fi" })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg, level, opts)
+    if (level or 0) >= vim.log.levels.ERROR then notes[#notes + 1] = tostring(msg) end
+    return notify(msg, level, opts)
+  end
+  local ok, err = pcall(function()
+    vim.cmd("silent write")
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    -- indented as the buffer is set up: spaces (expandtab, shiftwidth) - conform hands them to shfmt as -i
+    local indent = vim.bo.expandtab and string.rep(" ", vim.fn.shiftwidth()) or "\t"
+    assert(vim.deep_equal(lines, { "#!/bin/bash", "if [ 1 ]; then", indent .. "echo hi", "fi" }), "not formatted: " .. vim.inspect(lines))
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "#!/bin/bash", "if [ 1 ]; then", "echo hi" }) -- no fi yet
+    vim.cmd("silent write")
+    vim.wait(300) -- conform's message comes a moment after the write (scheduled)
+    assert(vim.fn.readfile(file)[3] == "echo hi", "the unfinished script was not saved as it is: " .. vim.inspect(vim.fn.readfile(file)))
+    assert(#notes == 0, "an error popup on saving an unfinished script: " .. table.concat(notes, " | "))
+  end)
+  vim.notify = notify
+  vim.cmd("bwipeout!")
+  assert(ok, err)
+end)
+
+-- persisted named the session file after the folder with % for every separator, and read every % back as / - the
+-- folder "100% done" became "100/ done", no such folder, so :Persisted clean deleted its session
+test("Session: :Persisted clean keeps the session of a folder with a % in its name", function()
+  local persisted, config = require("persisted"), require("persisted.config")
+  local saved_dir = config.save_dir
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/sessions", "p")
+  vim.fn.mkdir(tmp .. "/100% done", "p")
+  config.save_dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp .. "/sessions"))) .. "/"
+  local project = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp .. "/100% done")))
+  local before = vim.fn.getcwd()
+  local ok, err = pcall(function()
+    vim.fn.chdir(project)
+    persisted.save({ force = true })
+    local session = persisted.current()
+    assert(vim.fn.filereadable(session) == 1, "no session file: " .. session)
+    assert(persisted.session_info(session).dir == vim.fs.normalize(project), "read back as " .. persisted.session_info(session).dir)
+    persisted.clean({ confirm = false })
+    vim.wait(300)
+    assert(vim.fn.filereadable(session) == 1, ":Persisted clean deleted the session of " .. project)
+  end)
+  config.save_dir = saved_dir
+  vim.fn.chdir(before)
+  vim.fn.delete(tmp, "rf")
+  assert(ok, err)
+end)
+
+test("Search & replace: <leader>sw opens grug-far with the word under the cursor as the search", function()
+  vim.cmd("enew!")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "hello target_word_gk world" })
+  vim.api.nvim_win_set_cursor(0, { 1, 9 })
+  local ok, err = pcall(function()
+    vim.api.nvim_feedkeys(vim.keycode("<leader>sw"), "x", false)
+    assert(H.wait(5000, function() return vim.bo.filetype == "grug-far" end), "<leader>sw: no grug-far")
+    assert(H.wait(3000, function() return H.text(0):find("target_word_gk", 1, true) end), "the search is not the word: " .. H.text(0))
+  end)
+  pcall(function() require("grug-far").kill_instance(0) end)
+  vim.cmd("silent! %bwipeout!")
+  assert(ok, err)
+end)
+
+-- harpoon found a pinned file's buffer by bufnr(), a pattern: "notes [draft] #1.txt" is also "notes d #1.txt"
+test("Harpoon: a file named with [ ], # and spaces - pinned, and its slot opens it, not a file its name matches as a pattern", function()
+  local harpoon = require("harpoon")
+  harpoon.sync = function() end -- this test process never writes your real harpoon lists
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local real, decoy = dir .. "/notes [draft] #1.txt", dir .. "/notes d #1.txt"
+  vim.fn.writefile({ "real" }, real)
+  vim.fn.writefile({ "decoy" }, decoy)
+  local before = vim.fn.getcwd()
+  -- the names as they are (on Windows fnameescape() leaves [ ] alone, and :edit took the real one as a pattern)
+  local function open(path) vim.cmd.edit({ args = { path }, magic = { file = false } }) end
+  local ok, err = pcall(function()
+    open(decoy)
+    open(real)
+    -- then into their folder, as the explorer's . does: a list of its own (lists are per working directory), and
+    -- the buffers' names become relative - only then did harpoon's pattern name the decoy on Linux too
+    vim.fn.chdir(dir)
+    vim.api.nvim_feedkeys(vim.keycode("<leader>ha"), "x", false)
+    assert(harpoon:list():length() == 1, "not pinned: " .. vim.inspect(harpoon:list().items))
+    assert(harpoon:list().items[1].value:find("[draft]", 1, true), "pinned: " .. harpoon:list().items[1].value)
+    open(decoy)
+    vim.api.nvim_feedkeys(vim.keycode("<leader>1"), "x", false)
+    local shown = vim.fs.normalize(vim.api.nvim_buf_get_name(0))
+    assert(shown == real, "<leader>1 opened " .. shown)
+  end)
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
+test("Editing: gcc comments a line out in the file's language and back in", function()
+  vim.cmd("enew!")
+  vim.bo.filetype = "python"
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "x = 1" })
+  vim.api.nvim_feedkeys("gcc", "x", false)
+  local commented = vim.api.nvim_get_current_line()
+  vim.api.nvim_feedkeys("gcc", "x", false)
+  local back = vim.api.nvim_get_current_line()
+  vim.cmd("bwipeout!")
+  assert(commented == "# x = 1" and back == "x = 1", commented .. " / " .. back)
+end)
+
 test("Session: a file, the explorer, a terminal and help - back are the file and help, no empty window, no new shell", function()
   local persisted, config = require("persisted"), require("persisted.config")
   assert(vim.g.persisting == false, "this test run records a session")
@@ -1780,16 +1966,19 @@ end)
 
 -- 2026-10-21: a file with spaces in its name, linked as CommonMark has it - <my notes.md> or my%20notes.md (and
 -- %C3%BC for ü): the target ended at the first space, %20 stayed as it was - "No file my"
-test("Markdown: links to files with spaces and umlauts - <my notes.md>, my%20notes.md, Gr%C3%BC%C3%9Fe.md - are followed", function()
+-- [e]: on Windows fnameescape() left [ ] alone, and :edit took "notes [draft].md" as a pattern - "notes d.md" (2026-10-21)
+test("Markdown: links to files with spaces, umlauts and [ ] - <my notes.md>, my%20notes.md, Gr%C3%BC%C3%9Fe.md, <notes [draft].md> - are followed", function()
   local md = require("config.mdlinks")
-  local links = md.links({ '[a](<my notes.md>) [b](my%20notes.md#teil-zwei "t") [c](Gr%C3%BC%C3%9Fe.md) [d](https://x.org/a%20b)' })
+  local links = md.links({ '[a](<my notes.md>) [b](my%20notes.md#teil-zwei "t") [c](Gr%C3%BC%C3%9Fe.md) [d](https://x.org/a%20b) [e](<notes [draft].md>)' })
   local targets = vim.tbl_map(function(l) return l.target end, links)
-  assert(vim.deep_equal(targets, { "my notes.md", "my notes.md#teil-zwei", "Grüße.md", "https://x.org/a%20b" }), vim.inspect(targets))
+  assert(vim.deep_equal(targets, { "my notes.md", "my notes.md#teil-zwei", "Grüße.md", "https://x.org/a%20b", "notes [draft].md" }), vim.inspect(targets))
   local dir = vim.fs.normalize(vim.fn.resolve(vim.fn.tempname()))
   vim.fn.mkdir(dir, "p")
-  vim.fn.writefile({ "[a](<my notes.md>) [b](my%20notes.md#teil-zwei) [c](Gr%C3%BC%C3%9Fe.md)" }, dir .. "/index.md")
+  vim.fn.writefile({ "[a](<my notes.md>) [b](my%20notes.md#teil-zwei) [c](Gr%C3%BC%C3%9Fe.md) [e](<notes [draft].md>)" }, dir .. "/index.md")
   vim.fn.writefile({ "# Notes", "", "## Teil zwei", "x" }, dir .. "/my notes.md")
   vim.fn.writefile({ "# Grüße" }, dir .. "/Grüße.md")
+  vim.fn.writefile({ "# Draft" }, dir .. "/notes [draft].md")
+  vim.fn.writefile({ "# Decoy" }, dir .. "/notes d.md") -- what [draft] matches as a pattern
   local ok, err = pcall(function()
     local function follow(link, want, lnum)
       vim.cmd.edit(vim.fn.fnameescape(dir .. "/index.md"))
@@ -1801,6 +1990,7 @@ test("Markdown: links to files with spaces and umlauts - <my notes.md>, my%20not
     follow("[a]", "my notes.md", 1)
     follow("[b]", "my notes.md", 3)
     follow("[c]", "Grüße.md", 1)
+    follow("[e]", "notes [draft].md", 1)
   end)
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(dir, 1, true) == 1 then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end

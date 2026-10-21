@@ -38,6 +38,11 @@ local function fake_venv(venv)
   vim.fn.setfperm(python, "rwx------")
   return python
 end
+-- Language servers of a test go when it ends (the next test's files are elsewhere)
+local function stop_clients(buf)
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do client:stop(true) end
+  wait(5000, function() return #vim.lsp.get_clients({ bufnr = buf }) == 0 end)
+end
 -- An executable that does nothing: a #!/bin/sh script, a .cmd on Windows; returns its path
 local function fake_exe(path)
   if WIN then path = path .. ".cmd" end
@@ -257,6 +262,46 @@ test("Runner: a script in a folder with spaces, ä, #, % and & - quoted args, < 
   tasks.set_args(file, "")
   vim.fn.chdir(before)
   -- the script's buffer stays (deleting it closed the code window, and the next tests found only the output)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: on Windows fnameescape() left [ ] alone, and :edit took the path as a pattern - <CR> on an error in
+-- app/[id]/page.py opened app/i/page.py
+test("Runner: <CR> on an error line opens a file in a folder named with [ ] - not one its name matches as a pattern", function()
+  local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p")
+  vim.fn.mkdir(root .. "/app/[id]", "p")
+  vim.fn.mkdir(root .. "/app/i", "p")
+  local file = root .. "/app/[id]/page.py"
+  vim.fn.writefile({ "x = 1", "y = x / 0" }, file)
+  vim.fn.writefile({ "decoy = 1", "decoy = 2" }, root .. "/app/i/page.py")
+  vim.fn.writefile({ "import sys", 'print("app/[id]/page.py:2: boom")', "sys.exit(1)" }, root .. "/check.py")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local ok, err = pcall(function()
+    vim.cmd.edit({ args = { root .. "/check.py" }, magic = { file = false } })
+    runner.run_file()
+    local task = tasks.state.last
+    assert(wait(10000, function() return task:is_complete() end), "did not finish: " .. task_out(task))
+    vim.wait(200)
+    local out = task:get_bufnr()
+    local lnum
+    for i, l in ipairs(vim.api.nvim_buf_get_lines(out, 0, -1, false)) do
+      if l:find("page.py:2: boom", 1, true) then lnum = i end
+    end
+    assert(lnum, "no error line in the output: " .. task_out(task))
+    local win = vim.fn.bufwinid(out)
+    assert(win ~= -1, "the output is not shown")
+    vim.api.nvim_set_current_win(win)
+    vim.cmd("stopinsert")
+    vim.api.nvim_win_set_cursor(win, { lnum, 0 })
+    vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+    local shown = vim.fs.normalize(vim.api.nvim_buf_get_name(0))
+    assert(shown == file and vim.fn.line(".") == 2, "<CR> went to " .. shown .. ":" .. vim.fn.line("."))
+  end)
+  vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
   assert(ok, err)
 end)
@@ -699,6 +744,180 @@ test("Completion: Tab picks the suggestion, Enter accepts it", function()
   assert(vim.deep_equal(lines, { "foobar_long_identifier = 1", "foobar_long_identifier" }), vim.inspect(lines))
 end)
 
+-- 2026-10-21: completion as you use it - types `typed` at the end of line `lnum` (insert mode), waits until the menu
+-- has an item whose label starts with `want` (from `source`: lsp, snippets, path, buffer), picks it with <Tab>, takes
+-- it with <CR> and, once blink has taken it, leaves with <Esc> (opts.at_once: <CR><Esc> in one go, faster than blink).
+-- Returns the buffer's lines and what the menu showed.
+local function complete_in(lnum, typed, want, source, opts)
+  opts = opts or {}
+  local cmp = require("blink.cmp")
+  local seen, waited = {}, 0
+  -- an error in a step ends insert mode and is told: unseen, it was a hit-enter prompt that kept the test window
+  -- waiting for keys that never came
+  local function guarded(fn)
+    return function(...)
+      local ok, e = pcall(fn, ...)
+      if not ok then
+        seen.error = tostring(e)
+        vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
+      end
+    end
+  end
+  local function match(it) return it and tostring(it.label):find(want, 1, true) == 1 and (not source or it.source_id == source) end
+  local function find()
+    for _, it in ipairs(cmp.get_items() or {}) do if match(it) then return it end end
+  end
+  local taken, waited_esc = false, 0
+  local esc
+  esc = guarded(function() -- <Esc> once blink has taken the item (it does so a moment after <CR>), or after 5 s
+    if not taken and waited_esc < 5000 then
+      waited_esc = waited_esc + 50
+      return vim.defer_fn(esc, 50)
+    end
+    seen.taken, seen.mode = taken, vim.api.nvim_get_mode().mode
+    if not taken then -- what there was instead, for the failure message
+      local sel = cmp.get_selected_item()
+      seen.instead = ("line %q, menu %s, selected %s"):format(vim.api.nvim_get_current_line(), tostring(cmp.is_visible()), sel and tostring(sel.label) or "nothing")
+    end
+    vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
+  end)
+  local pick
+  pick = guarded(function(n) -- <Tab> until the item is the selected one, then <CR>
+    if match(cmp.get_selected_item()) then
+      if opts.at_once then return vim.api.nvim_feedkeys(vim.keycode("<CR><Esc>"), "t", false) end
+      vim.api.nvim_create_autocmd("User", { pattern = "BlinkCmpAccept", once = true, callback = function() taken = true end })
+      vim.api.nvim_feedkeys(vim.keycode("<CR>"), "t", false)
+      return vim.defer_fn(esc, 50)
+    end
+    if n > 20 then return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false) end
+    vim.api.nvim_feedkeys(vim.keycode("<Tab>"), "t", false)
+    vim.defer_fn(function() pick(n + 1) end, 150)
+  end)
+  local poll
+  poll = guarded(function()
+    if find() or waited >= 20000 then
+      seen.found = find() ~= nil
+      seen.items = vim.tbl_map(function(it) return tostring(it.source_id) .. ":" .. tostring(it.label) end, vim.list_slice(cmp.get_items() or {}, 1, 12))
+      if seen.found then return pick(0) end
+      return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
+    end
+    waited = waited + 100
+    vim.defer_fn(poll, 100)
+  end)
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  -- "A" first, the text a moment later, as a person types: queued with the "A", blink missed the session's first
+  -- completion (its menu came only with the next key)
+  vim.defer_fn(guarded(function()
+    vim.api.nvim_feedkeys(typed, "t", false)
+    vim.defer_fn(poll, 100)
+  end), 50)
+  vim.api.nvim_feedkeys("A", "tx!", false) -- returns when <Esc> ends insert mode
+  vim.wait(300)
+  assert(not seen.error, "a completion step failed: " .. tostring(seen.error))
+  return vim.api.nvim_buf_get_lines(0, 0, -1, false), seen
+end
+
+test("Completion: pyright's suggestions in the menu - os.getc offers getcwd (LSP), Tab picks it, Enter takes it", function()
+  if vim.fn.executable("pyright-langserver") == 0 then H.skip("pyright-langserver not installed (Mason installs it with the first Python file)") end
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p")
+  vim.fn.writefile({ "import os", "" }, root .. "/main.py")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  for _, c in ipairs(vim.lsp.get_clients()) do if c.name == "pyright" or c.name == "ruff" then c:stop(true) end end
+  -- gone, not only stopping: the file was given to the stopping one (an earlier test's), which answered nothing
+  wait(10000, function() return #vim.lsp.get_clients({ name = "pyright" }) + #vim.lsp.get_clients({ name = "ruff" }) == 0 end)
+  local buf
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/main.py"))
+    buf = vim.api.nvim_get_current_buf()
+    assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "pyright" }) > 0 end), "pyright did not start")
+    -- attached is not ready: on a busy machine pyright answered the first request (at the ".") only seconds later,
+    -- the menu stayed shut until the next key. Typing starts once it answers one - at the end of "import os".
+    assert(wait(60000, function()
+      local res = vim.lsp.buf_request_sync(buf, "textDocument/completion",
+        { textDocument = { uri = vim.uri_from_bufnr(buf) }, position = { line = 0, character = 9 } }, 5000)
+      for _, r in pairs(res or {}) do if r.result then return true end end
+    end), "pyright does not answer")
+    local lines, seen = complete_in(2, "os.getc", "getcwd", "lsp")
+    assert(seen.found, "no getcwd from pyright in the menu: " .. vim.inspect(seen.items))
+    assert(lines[2]:find("os.getcwd", 1, true) == 1, "after Tab and Enter: " .. lines[2])
+  end)
+  if buf then stop_clients(buf) end
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Completion: snippets - ifmain becomes the main guard (friendly-snippets), its placeholder selected to type over", function()
+  vim.cmd("enew!")
+  vim.bo.filetype = "python"
+  -- the snippets alone: a language server's late answer replaced the menu's items, and the picked one with them
+  vim.wait(100)
+  for _, c in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do vim.lsp.buf_detach_client(0, c.id) end
+  local ok, err = pcall(function()
+    local lines, seen = complete_in(1, "ifmai", "ifmain", "snippets")
+    assert(seen.found, "no ifmain snippet in the menu: " .. vim.inspect(seen.items))
+    assert(seen.taken, "blink did not take the snippet within 5 s - " .. tostring(seen.instead))
+    assert(table.concat(lines, "\n"):find('if __name__ == "__main__":', 1, true), "after Enter: " .. vim.inspect(lines))
+    assert(seen.mode == "s", "the placeholder is not selected to type over - mode " .. tostring(seen.mode))
+  end)
+  pcall(vim.snippet.stop)
+  vim.cmd("bwipeout!")
+  assert(ok, err)
+end)
+
+test("Completion: paths - ./sub/al offers alpha.txt from the file's folder (path source), Enter takes it", function()
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/sub", "p")
+  vim.fn.writefile({ "x" }, root .. "/sub/alpha.txt")
+  vim.fn.writefile({ "" }, root .. "/notes.txt")
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/notes.txt"))
+    local lines, seen = complete_in(1, "./sub/al", "alpha.txt", "path")
+    assert(seen.found, "no alpha.txt from the path source: " .. vim.inspect(seen.items))
+    assert(lines[1] == "./sub/alpha.txt", "after Enter: " .. lines[1])
+  end)
+  vim.cmd("bwipeout!")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Completion: Enter and Esc in one go - the item Tab showed stays, no window left behind, no error", function()
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/sub", "p")
+  vim.fn.writefile({ "x" }, root .. "/sub/alpha.txt")
+  vim.fn.writefile({ "" }, root .. "/notes.txt")
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg, level, o)
+    if (level or 0) >= vim.log.levels.ERROR then notes[#notes + 1] = tostring(msg) end
+    return notify(msg, level, o)
+  end
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/notes.txt"))
+    local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+    local _, seen = complete_in(1, "./sub/al", "alpha.txt", "path", { at_once = true })
+    assert(seen.found, "no alpha.txt from the path source: " .. vim.inspect(seen.items))
+    vim.wait(500) -- blink's accept comes now, after the Esc
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      assert(vim.bo[vim.api.nvim_win_get_buf(w)].filetype ~= "blink-cmp-dot-repeat", "blink's 1x1 dot-repeat window was left open")
+    end
+    assert(vim.api.nvim_get_current_win() == win, "the cursor is in another window, on " .. vim.bo.filetype)
+    assert(vim.api.nvim_get_mode().mode == "n", "mode " .. vim.api.nvim_get_mode().mode)
+    local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+    assert(line == "./sub/alpha.txt", "the line: " .. line)
+    assert(#notes == 0, "an error: " .. table.concat(notes, " | "))
+  end)
+  vim.notify = notify
+  for _, w in ipairs(vim.api.nvim_list_wins()) do -- a window left behind would hold every later test
+    if vim.api.nvim_win_get_config(w).relative ~= "" then pcall(vim.api.nvim_win_close, w, true) end
+  end
+  vim.cmd("silent! bwipeout!")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
 test("Keys: F6 runs the current file as a task", function()
   local tasks = require("devsuite.tasks")
   vim.cmd.edit(H.file("hello.py", { 'print("via F6")' }))
@@ -853,11 +1072,6 @@ test("Tasks: <leader>ro hides the output also when it is the last window, a noti
 end)
 
 -- ── Dev workflows (2026-10-21): the loops of a working day, end to end with the real tools ───────────────────────
--- Language servers of a test go when it ends (the next test's files are elsewhere)
-local function stop_clients(buf)
-  for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do client:stop(true) end
-  wait(5000, function() return #vim.lsp.get_clients({ bufnr = buf }) == 0 end)
-end
 
 test("Python: pyright and ruff - an undefined name marked, gd to another file, <leader>rn in both, a code action, :w formats", function()
   for _, exe in ipairs({ "pyright-langserver", "ruff" }) do
