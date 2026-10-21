@@ -12,6 +12,19 @@ function M.clean(line)
   return (line:gsub("\r", ""))
 end
 
+--- Output as lines of text: Windows' ConPTY skips blank lines by moving the cursor to a later row ("a\27[19;1Hb"),
+--- which made one line of two - pytest's "test_x.py:6: AssertionError" came after such a move and was never found
+--- (2026-10-21). A move to a row starts a new line; escapes and carriage returns go.
+function M.lines(raw)
+  local out = {}
+  for _, line in ipairs(raw) do
+    for _, piece in ipairs(vim.split((line:gsub("\27%[%d*;?%d*[Hf]", "\n")), "\n", { plain = true })) do
+      out[#out + 1] = M.clean(piece)
+    end
+  end
+  return out
+end
+
 -- Library frames are not where you want to jump
 local function is_user_file(path)
   return vim.fn.filereadable(path) == 1
@@ -64,8 +77,7 @@ function M.parse(lines, opts)
     frames = {}
   end
 
-  for _, raw in ipairs(lines) do
-    local line = M.clean(raw)
+  for _, line in ipairs(M.lines(lines)) do
     local file, lnum = line:match('^%s*File "(.-)", line (%d+)')
     if file then
       local path, n = resolve(file, tonumber(lnum), opts)

@@ -296,7 +296,7 @@ function M.fix_prompt()
   if not (task and not task:is_disposed() and task.status == "FAILURE") then task = state.last_failed end
   if not task or task:is_disposed() or not state.runs[task.id] then return nil end
   local run = state.runs[task.id]
-  local output = vim.tbl_map(errors.clean, vim.list_slice(run.lines, math.max(1, #run.lines - 60)))
+  local output = errors.lines(vim.list_slice(run.lines, math.max(1, #run.lines - 60)))
   local refs, seen = {}, {}
   for _, item in ipairs(run.items or {}) do
     local ref = ("@%s (line %d)"):format(vim.fn.fnamemodify(item.filename, ":."):gsub(" ", "\\ "), item.lnum)
