@@ -65,8 +65,9 @@ return {
           -- explorer: "." = cd to the folder under the cursor, "<BS>" / "-" = cd ..; m / c move and copy the
           -- marked items into the folder under the cursor (nothing marked: mark this one); r / C / a take typed
           -- paths, absolute ones as typed (config/explorer.lua). Same names as snacks' actions: they replace them.
-          -- Search: / files (snacks' own), D folders by name, S the rows the tree shows; <a-s> in the search box
-          -- goes on to the next of the three. finder and config: snacks' own, with the two other searches.
+          -- Search: / files (snacks' own), D folders by name, S the rows the tree shows - in the list and in the
+          -- search box when not typing; <a-s> while typing goes on to the next. <Esc> steps back: box -> list ->
+          -- tree -> closed. finder and config: snacks' own, with the two other searches.
           explorer = {
             finder = function(opts, ctx) return require("config.explorer").finder(opts, ctx) end,
             config = function(opts) return require("config.explorer").setup(opts) end,
@@ -79,15 +80,19 @@ return {
               gk_copy_to      = { action = function(p, item) require("config.explorer").copy_to(p, item) end, desc = "Copy to a path" },
               explorer_add    = { action = function(p) require("config.explorer").add(p) end,              desc = "New file or folder" },
               explorer_del    = { action = function(p, item) require("config.explorer").delete(p, item) end, desc = "Delete (the cursor stays)" },
-              gk_search_files   = { action = function(p) require("config.explorer").search_files(p) end,   desc = "Search files (during a search: the search box)" },
-              gk_search_folders = { action = function(p) require("config.explorer").search_folders(p) end, desc = "Search folders (by name)" },
-              gk_search_view    = { action = function(p) require("config.explorer").search_view(p) end,    desc = "Search the current view (the rows shown)" },
+              gk_search_files   = { action = function(p) require("config.explorer").search_files(p) end,   desc = "Search files (during a search: the same text)" },
+              gk_search_folders = { action = function(p) require("config.explorer").search_folders(p) end, desc = "Search folders by name (during a search: the same text)" },
+              gk_search_view    = { action = function(p) require("config.explorer").search_view(p) end,    desc = "Search the current view (during a search: the same text)" },
               gk_search_next    = { action = function(p) require("config.explorer").search_next(p) end,    desc = "Next search: files, folders, current view" },
+              gk_search_back    = { action = function(p) require("config.explorer").search_back(p) end,    desc = "To the list (the search stays)" },
+              gk_search_leave   = { action = function(p) require("config.explorer").search_leave(p) end,   desc = "Leave the search (back to the tree), else close" },
             },
             win = {
               list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to",
-                ["/"] = "gk_search_files", ["D"] = "gk_search_folders", ["S"] = "gk_search_view" } },
-              input = { keys = { ["<a-s>"] = { "gk_search_next", mode = { "i", "n" } } } },
+                ["/"] = "gk_search_files", ["D"] = "gk_search_folders", ["S"] = "gk_search_view", ["<Esc>"] = "gk_search_leave" } },
+              -- the search box: keys in normal mode (after <Esc>), so typing stays typing; <a-s> while typing too
+              input = { keys = { ["<a-s>"] = { "gk_search_next", mode = { "i", "n" } },
+                ["/"] = "gk_search_files", ["D"] = "gk_search_folders", ["S"] = "gk_search_view", ["<Esc>"] = "gk_search_back" } },
             },
           },
         },

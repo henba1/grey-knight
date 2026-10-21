@@ -11,7 +11,8 @@
 --   m  c        move / copy the marked items into the folder under the cursor; nothing marked: mark this one
 --   r  C  a     rename or move / copy / create at a typed path (absolute paths as typed)
 --   d           delete the marked, else this one - the cursor stays where it was
---   /  D  S     search files / folders / the current view; <a-s> in the search box: the next of the three
+--   /  D  S     search files / folders / the current view (in the search box too, after <Esc>); <a-s> while
+--               typing: the next of the three; <Esc> steps back: box -> list -> tree -> closed
 local M = {}
 
 local WIN = vim.fn.has("win32") == 1
@@ -262,12 +263,16 @@ end
 --   D   Search folders        only folders (fd --type d), the text matches a folder's name; no file is shown
 --   S   Search current view   only the rows the tree showed when the search started (the open folders'
 --                             contents); the text matches their names, closed folders are not looked into
--- <a-s> in the search box goes on to the next one and keeps the text. Matches show up under their folders;
--- <CR> goes back to the tree with the cursor on the match. During a search / goes back to the search box.
+-- / D S in the list, or in the search box when not typing (after <Esc>), start that search; during one they
+-- switch to it with the same text (2026-10-21: / went back to the search box, D in the box was Vim's D and
+-- deleted the text). While typing <a-s> goes on to the next one. Matches show up under their folders; <CR> on
+-- one: the tree with the cursor on it. <Esc> steps back: typing -> the search box -> the list (the results stay)
+-- -> the tree (the cursor where it was before the search) -> the explorer closes. snacks' second <Esc> closed
+-- the explorer from the search box, and there was no way back to the tree but <CR> on a match.
 
 local LABEL = { file = "Search files", folder = "Search folders", view = "Search current view" }
 local NEXT = { file = "folder", folder = "view", view = "file" }
-local searches = setmetatable({}, { __mode = "k" }) -- per explorer: { mode, title }
+local searches = setmetatable({}, { __mode = "k" }) -- per explorer: { mode, title, before }
 
 local function search_of(picker)
   local s = searches[picker]
@@ -296,13 +301,19 @@ local function sync(picker)
 end
 
 --- The explorer's config: snacks' own, then the searches' - the search box's title follows the search when
---- snacks switches between the tree and a search, and when the cursor goes in or out of the search box. And
---- closing it right after a find leaves no error behind (below).
+--- snacks switches between the tree and a search, and when the cursor goes in or out of the search box; the
+--- item under the cursor when a search starts is where <Esc> goes back to. And closing it right after a find
+--- leaves no error behind (below).
 function M.setup(opts)
   opts = require("snacks.picker.source.explorer").setup(opts)
   local transform = opts.filter.transform
   opts.filter.transform = function(picker, filter)
+    local was = filter.meta.searching
     local flipped = transform(picker, filter) -- true when it switched between the tree and a search
+    if flipped and filter.meta.searching and not was then
+      local item = picker:current() -- still the tree's
+      search_of(picker).before = item and item.file
+    end
     sync(picker)
     return flipped
   end
@@ -424,22 +435,23 @@ function M.finder(opts, ctx)
   return find
 end
 
--- Start a search in `mode` (during a search: switch to it, the text stays); the search box gets the cursor
+-- Start a search in `mode` (during a search: switch to it, the text stays); typing in the search box again
 local function search(picker, mode)
   local s = search_of(picker)
   if s.mode ~= mode then
     s.mode = mode
     if searching(picker) then picker:find() end -- the same text, found the other way
   end
-  picker:focus("input", { show = true })
+  if vim.api.nvim_get_current_win() ~= picker.input.win.win then
+    picker:focus("input", { show = true }) -- from the list: snacks starts typing in the box
+  elseif vim.fn.mode() == "n" then
+    vim.cmd("startinsert!") -- in the box after <Esc>: typing again, at the end of the text
+  end
   sync(picker)
 end
 
---- / - a file search (snacks' own); during a search: back to the search box, the search as it is
-function M.search_files(picker)
-  if searching(picker) then return picker:focus("input", { show = true }) end
-  search(picker, "file")
-end
+--- / - a file search (snacks' own); during a search: to it, with the same text
+function M.search_files(picker) search(picker, "file") end
 
 --- D - a folder search: only folders, the text matches their names
 function M.search_folders(picker) search(picker, "folder") end
@@ -447,7 +459,17 @@ function M.search_folders(picker) search(picker, "folder") end
 --- S - a search in the current view: only the rows the tree shows, the text matches their names
 function M.search_view(picker) search(picker, "view") end
 
---- <a-s> in the search box - the next search (files, folders, current view), the text stays
+--- <a-s> while typing - the next search (files, folders, current view), the text stays
 function M.search_next(picker) search(picker, NEXT[search_of(picker).mode]) end
+
+--- <Esc> in the search box when not typing - to the list; the search and its results stay
+function M.search_back(picker) picker:focus("list", { show = true }) end
+
+--- <Esc> in the list - during a search: the search is over, the tree with the cursor where it was before it;
+--- else snacks' own: the explorer closes
+function M.search_leave(picker)
+  if not searching(picker) then return require("snacks.picker.actions").cancel(picker) end
+  require("snacks.explorer.actions").update(picker, { target = search_of(picker).before })
+end
 
 return M
