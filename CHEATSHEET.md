@@ -205,7 +205,8 @@ Python/bash REPL use `<leader>ri`).
 | `<leader>fm` | Format buffer / selection (IntelliJ projects: like its Reformat Code, see USAGE.md) |
 
 > Neovim's own LSP keys work too: `grn` rename, `grr` references, `gra` code action, `gO` symbols.
-> Because of them `gr` waits a moment before it runs; `grr` is the instant one.
+> Because of them `gr` waits a moment before it runs; `grr` is the instant one. The keys come only with a server
+> that can do them: where none finds definitions, `gd` (and `K`) stay Vim's.
 
 ## Debug — `<F5>` / `<leader>d` (Python + bash)
 

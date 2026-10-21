@@ -245,10 +245,13 @@ Works automatically when you open a supported file. Mason installs the LSP serve
 | `gi` | Go to implementation |
 | `<leader>D` | Go to type definition |
 | `<leader>rn` | Rename symbol (project-wide) |
-| `<leader>ca` | Code action (quick fix, refactor) |
-| `[d` | Previous diagnostic (error/warning) |
+| `<leader>ca` | Code action (quick fix, refactor) - the cursor on the marked code |
+| `[d` | Previous diagnostic (error/warning), its message in a float |
 | `]d` | Next diagnostic |
 | `<leader>fm` | Format file (or selection in visual mode) |
+
+The keys come with a server that can do what they ask: where none finds definitions (plain HTML, a Python file
+with only ruff running), `gd` stays Vim's - the first use of the word in the file - and `K` Vim's keyword lookup.
 
 ### Inline Diagnostics
 
