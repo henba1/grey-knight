@@ -56,16 +56,24 @@ function M.anchors(lines, style)
   return found
 end
 
---- Links in `lines`, not in fenced or inline code: { lnum, s, e, target } (byte columns from 1)
+--- Links in `lines`, not in fenced or inline code: { lnum, s, e, target } (byte columns from 1). The target as a path:
+--- <my notes.md> (spaces) and %20, %C3%BC decoded - CommonMark's ways to write a name with spaces or umlauts
+--- (2026-10-21: the target ended at the first space, %20 stayed). URLs (https: ...) stay as they are.
 function M.links(lines)
   local out = {}
   text_lines(lines, function(lnum, line)
     local masked = line:gsub("`[^`]*`", function(code) return (" "):rep(#code) end)
     local init = 1
     while true do
-      local s, e, target = masked:find("%[[^%]]*%]%(<?([^%)%s>]+)>?[^%)]*%)", init)
+      local s, e, inner = masked:find("%[[^%]]*%]%(([^%)]*)%)", init) -- [text](<target> "title") or [text](target "title")
       if not s then break end
-      out[#out + 1] = { lnum = lnum, s = s, e = e, target = target }
+      local target = inner:match("^%s*<([^>]+)>") or inner:match("^%s*([^%s<>]+)")
+      if target then
+        if not target:match("^%a[%w+.-]*:") then
+          target = target:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end)
+        end
+        out[#out + 1] = { lnum = lnum, s = s, e = e, target = target }
+      end
       init = e + 1
     end
   end)
