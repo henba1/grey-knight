@@ -1182,6 +1182,140 @@ end)
 -- 2026-10-21: sessions (plugins/session.lua). persisted 2 ignored version 1's options: sessions for ~ and /, quitting
 -- from the start screen overwrote a session with an empty one, a restored session brought the explorer's frame back
 -- as an empty window and the terminals as new shells. And test runs saved theirs over the real one (tests/harness.lua).
+-- ── Dev workflows (2026-10-21): search & replace over a project, git ──────────────────────────────────────────────
+test("Search & replace: <leader>sr (grug-far) renames a name in every file of a folder - files elsewhere and other text stay", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/proj/sub", "p")
+  vim.fn.mkdir(tmp .. "/other", "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local files = {
+    ["proj/a.py"] = { "old_name = 1", "print(old_name)", "keep = 'unrelated'" },
+    ["proj/sub/b.py"] = { "from a import old_name", "print(old_name + 1)" },
+    ["other/c.py"] = { "old_name = 3" }, -- outside the folder searched
+  }
+  for rel, lines in pairs(files) do vim.fn.writefile(lines, root .. "/" .. rel) end
+  local gf = require("grug-far")
+  local ok, err = pcall(function()
+    gf.open({ instanceName = "gk-test", prefills = { search = "old_name", replacement = "new_name", paths = root .. "/proj" } })
+    local inst = gf.get_instance("gk-test")
+    local ready = false
+    inst:when_ready(function() ready = true end)
+    assert(H.wait(10000, function() return ready end), "grug-far did not get ready")
+    inst:replace()
+    local function text(rel) return table.concat(vim.fn.readfile(root .. "/" .. rel), "\n") end
+    assert(H.wait(10000, function() return text("proj/a.py"):find("new_name", 1, true) and text("proj/sub/b.py"):find("new_name", 1, true) end),
+      "not replaced: " .. text("proj/a.py") .. " | " .. text("proj/sub/b.py"))
+    assert(text("proj/a.py") == "new_name = 1\nprint(new_name)\nkeep = 'unrelated'", text("proj/a.py"))
+    assert(text("proj/sub/b.py") == "from a import new_name\nprint(new_name + 1)", text("proj/sub/b.py"))
+    assert(text("other/c.py") == "old_name = 3", "a file outside the folder changed: " .. text("other/c.py"))
+    H.wait(5000, function() -- done replacing: closing asks while a replace still runs
+      for _, task in ipairs(inst._context.state.tasks) do if not task.isFinished then return false end end
+      return true
+    end)
+    inst:close()
+  end)
+  if gf.has_instance("gk-test") then pcall(gf.kill_instance, "gk-test") end
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Git: added, changed and deleted lines get their signs; the explorer's ]g / [g go from changed file to changed file", function()
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local function git(...)
+    local out = vim.fn.system(vim.list_extend({ "git", "-C", root, "-c", "user.name=gk", "-c", "user.email=gk@example.invalid" }, { ... }))
+    assert(vim.v.shell_error == 0, "git " .. table.concat({ ... }, " ") .. ": " .. out)
+  end
+  local lines = { "one", "two", "three", "four", "five", "six", "seven", "eight" }
+  for _, name in ipairs({ "a.txt", "b.txt", "c.txt", "d.txt" }) do vim.fn.writefile(lines, root .. "/" .. name) end
+  git("init", "-q")
+  git("add", ".")
+  git("commit", "-q", "-m", "init")
+  -- a.txt: line 2 changed, a line after 4, line 8 gone; c.txt changed; b.txt and d.txt as committed
+  vim.fn.writefile({ "one", "TWO", "three", "four", "four and a half", "five", "six", "seven" }, root .. "/a.txt")
+  vim.fn.writefile({ "one", "two", "three", "four", "five", "six", "seven", "EIGHT" }, root .. "/c.txt")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    local buf = vim.api.nvim_get_current_buf()
+    local gs = require("gitsigns")
+    local function kinds()
+      local seen = {}
+      for _, h in ipairs(gs.get_hunks(buf) or {}) do seen[#seen + 1] = h.type end
+      table.sort(seen)
+      return table.concat(seen, " ")
+    end
+    assert(H.wait(10000, function() return kinds() == "add change delete" end), "hunks: " .. kinds())
+    -- the explorer: ]g / [g between the changed files a.txt and c.txt
+    close_explorers()
+    Snacks.explorer()
+    assert(H.wait(OPEN_MS, function() return explorers()[1] end), "explorer did not open")
+    local p = explorers()[1]
+    assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() >= 5 end), "explorer did not list")
+    local function on(file)
+      return H.wait(3000, function() return not p:is_active() and p:current() and p:current().file == root .. "/" .. file end)
+    end
+    assert(H.wait(5000, function() -- git status comes after the listing
+      for i = 1, p.list:count() do
+        local it = p.list:get(i)
+        if it.file == root .. "/c.txt" and it.status then return true end
+      end
+    end), "no git status in the tree")
+    assert(H.wait(3000, function() -- the cursor there (the tree follows the file in the editor: until it stays)
+      local cur = p:current()
+      if cur and cur.file == root .. "/b.txt" and not p:is_active() then return true end
+      for i = 1, p.list:count() do if p.list:get(i).file == root .. "/b.txt" then p.list:view(i) end end
+    end), "cursor not on b.txt")
+    p:action("explorer_git_next") -- ]g
+    assert(on("c.txt"), "]g from b.txt: " .. tostring(p:current() and p:current().file))
+    p:action("explorer_git_prev") -- [g
+    assert(on("a.txt"), "[g from c.txt: " .. tostring(p:current() and p:current().file))
+  end)
+  close_explorers()
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: one git run that could not start (its folder gone: vim.system threw) inside gitsigns' repository lock
+-- kept the lock taken - no file got signs any more for the rest of the session (the full suite on Kali, after the
+-- explorer's moves). Here the folder is there when gitsigns looks and gone when git starts.
+test("Git: a git run that cannot start (its folder just gone) does not stop gitsigns - the next file still gets its signs", function()
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local missing = vim.fs.normalize(vim.fn.tempname() .. "-gone")
+  local stat = vim.uv.fs_stat
+  vim.uv.fs_stat = function(path, ...) -- "there" for gitsigns' check, so git starts in it - and cannot
+    if type(path) == "string" and vim.fs.normalize(path) == missing then return { type = "directory" } end
+    return stat(path, ...)
+  end
+  local ok, err = pcall(function()
+    local task = require("gitsigns.async").run(function() return require("gitsigns.git.repo").get(missing) end)
+    task:pwait(5000)
+  end)
+  vim.uv.fs_stat = stat
+  assert(ok, err)
+  -- the lock is free: a file of a real repository gets its signs
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local function git(...) vim.fn.system(vim.list_extend({ "git", "-C", root, "-c", "user.name=gk", "-c", "user.email=gk@example.invalid" }, { ... })) end
+  vim.fn.writefile({ "one", "two" }, root .. "/a.txt")
+  git("init", "-q")
+  git("add", ".")
+  git("commit", "-q", "-m", "init")
+  vim.fn.writefile({ "one", "TWO" }, root .. "/a.txt")
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+  local buf = vim.api.nvim_get_current_buf()
+  local got = H.wait(10000, function() return #(require("gitsigns").get_hunks(buf) or {}) == 1 end)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.fn.delete(root, "rf")
+  assert(got, "no signs after the failed run: gitsigns' lock stayed taken")
+end)
+
 test("Session: a file, the explorer, a terminal and help - back are the file and help, no empty window, no new shell", function()
   local persisted, config = require("persisted"), require("persisted.config")
   assert(vim.g.persisting == false, "this test run records a session")

@@ -688,6 +688,25 @@ test("Keys: <leader>aa / <leader>ae send the file and the selected lines to Qwen
   assert(ok, err)
 end)
 
+-- 2026-10-21: what a pytest run on Windows wrote, as it arrived - ConPTY skips blank lines with a move to a later row
+-- ("\27[19;1H"), which joined "E ... where 4 = add(2, 2)" and "test_calc.py:6: AssertionError": no mark, no quickfix
+test("Errors: Windows' ConPTY output - a move to a later row starts a line; pytest's failure after one is found", function()
+  local errors = require("devsuite.errors")
+  local dir = tmpdir()
+  vim.fn.writefile({ "x" }, dir .. "/test_calc.py")
+  local raw = {
+    "collected 1 item      \27[9;1Htest_calc.py \27]9;4;2;0\27\\\27]9;4;0;\27\\F     [100%]\27[11;1H===== FAILURES =====",
+    ">       assert add(2, 2) == 5",
+    "E       assert 4 == 5",
+    "E        +  where 4 = add(2, 2)\27[19;1Htest_calc.py:6: AssertionError",
+  }
+  local lines = errors.lines(raw)
+  assert(vim.deep_equal(vim.list_slice(lines, #lines - 1), { "E        +  where 4 = add(2, 2)", "test_calc.py:6: AssertionError" }), vim.inspect(lines))
+  assert(lines[2] == "test_calc.py F     [100%]", vim.inspect(lines))
+  local items = errors.parse(raw, { cwd = dir })
+  assert(#items == 1 and items[1].lnum == 6 and items[1].text:find("assert 4 == 5", 1, true), vim.inspect(items))
+end)
+
 test("Errors: parser fixtures (chained, SyntaxError, library frames, set -u, dash, warnings, noise)", function()
   local errors = require("devsuite.errors")
   local py = H.file("app.py", { "x" })
@@ -768,6 +787,431 @@ test("Tasks: <leader>ro hides the output also when it is the last window, a noti
     assert(tasks.state.win and vim.api.nvim_win_get_buf(tasks.state.win) == task:get_bufnr(), "output not shown again")
   end)
   pcall(vim.api.nvim_win_close, float, true)
+  assert(ok, err)
+end)
+
+-- ── Dev workflows (2026-10-21): the loops of a working day, end to end with the real tools ───────────────────────
+-- Language servers of a test go when it ends (the next test's files are elsewhere)
+local function stop_clients(buf)
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do client:stop(true) end
+  wait(5000, function() return #vim.lsp.get_clients({ bufnr = buf }) == 0 end)
+end
+
+test("Python: pyright and ruff - an undefined name marked, gd to another file, <leader>rn in both, a code action, :w formats", function()
+  for _, exe in ipairs({ "pyright-langserver", "ruff" }) do
+    if vim.fn.executable(exe) == 0 then H.skip(exe .. " not installed (Mason installs it with the first Python file)") end
+  end
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p") -- the project's root for the servers
+  vim.fn.writefile({ "def greet(name):", '    return "hi " + name' }, root .. "/helpers.py")
+  vim.fn.writefile({ "import os", "from helpers import greet", "", 'print(greet("x"))', "print(undefined_name)", "x=1" }, root .. "/main.py")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  -- the project's own servers, as in a session started there: earlier tests' pyright had a temp folder above this one
+  -- as its workspace - this project was no workspace of its own, and pyright found "nothing to rename" (Kali)
+  for _, c in ipairs(vim.lsp.get_clients()) do
+    if c.name == "pyright" or c.name == "ruff" then c:stop(true) end
+  end
+  wait(5000, function() return #vim.lsp.get_clients({ name = "pyright" }) + #vim.lsp.get_clients({ name = "ruff" }) == 0 end)
+  local buf
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/main.py"))
+    buf = vim.api.nvim_get_current_buf()
+    local function client(name) return #vim.lsp.get_clients({ bufnr = buf, name = name }) > 0 end
+    assert(wait(60000, function() return client("pyright") and client("ruff") end), "servers: " .. table.concat(
+      vim.tbl_map(function(c) return c.name end, vim.lsp.get_clients({ bufnr = buf })), ", "))
+    local function diag(lnum, text)
+      for _, d in ipairs(vim.diagnostic.get(buf, { lnum = lnum })) do
+        if (d.message .. " " .. tostring(d.code)):find(text, 1, true) then return d end
+      end
+    end
+    assert(wait(60000, function() return diag(4, "undefined_name") and diag(0, "F401") end), "marks: " .. vim.inspect(vim.tbl_map(
+      function(d) return d.lnum .. ": " .. d.message end, vim.diagnostic.get(buf))))
+    -- gd: to the function in helpers.py
+    vim.api.nvim_win_set_cursor(0, { 4, 7 })
+    vim.api.nvim_feedkeys("gd", "x", false)
+    local function shown() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) end
+    assert(wait(10000, function() return shown() == root .. "/helpers.py" end), "gd went to " .. shown())
+    assert(vim.api.nvim_win_get_cursor(0)[1] == 1, "gd: line " .. vim.api.nvim_win_get_cursor(0)[1])
+    -- <leader>rn: greet -> welcome, here and in helpers.py
+    vim.cmd.buffer(buf)
+    vim.api.nvim_win_set_cursor(0, { 4, 7 })
+    local helpers = vim.fn.bufnr(root .. "/helpers.py")
+    local function has(b, text) return table.concat(vim.api.nvim_buf_get_lines(b, 0, -1, false), "\n"):find(text, 1, true) ~= nil end
+    local function renamed() return has(buf, 'welcome("x")') and has(buf, "import welcome") and has(helpers, "def welcome") end
+    for _ = 1, 15 do -- pyright answers "nothing to rename" while it is still analysing: as you would, again
+      vim.lsp.buf.rename("welcome")
+      if wait(2000, renamed) then break end
+    end
+    assert(renamed(), "rename: " .. H.text(buf) .. " | " .. H.text(helpers))
+    -- ruff's code action: the unused import goes (the cursor on it, as on any mark)
+    vim.api.nvim_win_set_cursor(0, { 1, 7 })
+    vim.lsp.buf.code_action({ apply = true, filter = function(a) return (a.title or ""):find("Remove unused import", 1, true) ~= nil end })
+    assert(wait(10000, function() return not has(buf, "import os") end), "code action: " .. H.text(buf))
+    -- :w formats (ruff format); both files written (not :wall - an earlier test's buffer may have no name)
+    for _, b in ipairs({ buf, helpers }) do vim.api.nvim_buf_call(b, function() vim.cmd("silent write") end) end
+    assert(wait(5000, function() return vim.tbl_contains(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "x = 1") end), "not formatted: " .. H.text(buf))
+    assert(vim.fn.readfile(root .. "/helpers.py")[1] == "def welcome(name):", "helpers.py on disk: " .. vim.fn.readfile(root .. "/helpers.py")[1])
+  end)
+  if buf then stop_clients(buf) end
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- A language server in this process that can only what `capabilities` says
+local function fake_lsp(capabilities)
+  return function(dispatchers)
+    local closing = false
+    return {
+      request = function(method, _, callback)
+        if method == "initialize" then callback(nil, { capabilities = capabilities })
+        elseif method == "shutdown" then callback(nil, vim.NIL) end
+        return true, 1
+      end,
+      notify = function(method)
+        if method == "exit" then
+          closing = true
+          dispatchers.on_exit(0, 0)
+        end
+        return true
+      end,
+      is_closing = function() return closing end,
+      terminate = function() closing = true end,
+    }
+  end
+end
+
+-- 2026-10-21, from the error log: gd in a file whose server finds no definitions (html, ruff alone) said "method
+-- textDocument/definition is not supported by any server" - the LSP keys came with every server
+test("LSP: keys only for what the server can - gd is Vim's where none finds definitions; ]d / [d jump (not the deprecated goto)", function()
+  local file = H.file("plain.txt", { "value = 1", "print(value)", "" })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local buf = vim.api.nvim_get_current_buf()
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg, level, opts)
+    notes[#notes + 1] = tostring(msg)
+    return notify(msg, level, opts)
+  end
+  local ok, err = pcall(function()
+    vim.lsp.start({ name = "gk-fake", cmd = fake_lsp({}), root_dir = vim.fs.dirname(file) }, { bufnr = buf })
+    assert(wait(5000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "gk-fake" }) > 0 end), "the fake server did not attach")
+    vim.wait(50)
+    assert(vim.fn.maparg("gd", "n", false, true).buffer ~= 1, "gd is the LSP's for a server without definitions")
+    vim.api.nvim_win_set_cursor(0, { 2, 7 }) -- on value
+    vim.api.nvim_feedkeys("gd", "x", false)
+    assert(vim.api.nvim_win_get_cursor(0)[1] == 1, "gd (Vim's): line " .. vim.api.nvim_win_get_cursor(0)[1] .. " - " .. table.concat(notes, " | "))
+    -- ]d / [d between diagnostics
+    local ns = vim.api.nvim_create_namespace("gk-test-jump")
+    vim.diagnostic.set(ns, buf, { { lnum = 1, col = 0, message = "here", severity = vim.diagnostic.severity.WARN } })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    local jump = vim.fn.maparg("]d", "n", false, true)
+    assert(jump.callback ~= vim.diagnostic.goto_next, "]d is the deprecated vim.diagnostic.goto_next")
+    vim.api.nvim_feedkeys("]d", "x", false)
+    assert(vim.api.nvim_win_get_cursor(0)[1] == 2, "]d: line " .. vim.api.nvim_win_get_cursor(0)[1])
+    vim.diagnostic.reset(ns, buf)
+    for _, note in ipairs(notes) do assert(not note:find("deprecated", 1, true) and not note:find("not supported", 1, true), note) end
+  end)
+  vim.notify = notify
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do -- ]d's float
+    if vim.api.nvim_win_get_config(win).relative ~= "" then pcall(vim.api.nvim_win_close, win, true) end
+  end
+  stop_clients(buf)
+  assert(ok, err)
+end)
+
+-- The config's own files: lua_ls knows Neovim's API and Snacks (lsp.lua: globals, the runtime as library)
+test("Lua: lua_ls knows vim and Snacks - no undefined global for them, one for a name that is defined nowhere", function()
+  if vim.fn.executable("lua-language-server") == 0 then H.skip("lua-language-server not installed (Mason)") end
+  local file = H.file("conf.lua", { "local buf = vim.api.nvim_get_current_buf()", "Snacks.notify(tostring(buf))", "print(not_defined_anywhere)" })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "lua_ls" }) > 0 end), "lua_ls did not attach")
+    local function messages() return vim.tbl_map(function(d) return d.lnum .. ": " .. d.message end, vim.diagnostic.get(buf)) end
+    assert(wait(90000, function()
+      for _, d in ipairs(vim.diagnostic.get(buf)) do if d.message:find("not_defined_anywhere", 1, true) then return true end end
+    end), "no mark for the undefined global: " .. vim.inspect(messages()))
+    for _, m in ipairs(messages()) do -- lua_ls: Undefined global `name`.
+      assert(not m:find("global", 1, true) or m:find("not_defined_anywhere", 1, true), m)
+    end
+  end)
+  stop_clients(buf)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  assert(ok, err)
+end)
+
+test("pytest: <leader>rt marks a failing assert, ]q goes there; fixed, <leader>rl passes and clears the mark; <leader>rT runs one test", function()
+  local python = require("devsuite.util").system_python()
+  vim.fn.system({ python, "-c", "import pytest" })
+  if vim.v.shell_error ~= 0 then H.skip("pytest not installed (pip install pytest)") end
+  local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local file = root .. "/test_calc.py"
+  vim.fn.writefile({ "def add(a, b):", "    return a + b", "", "", "def test_add():", "    assert add(2, 2) == 5", "", "",
+    "def test_other():", "    assert add(1, 1) == 2" }, file)
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(file))
+    local buf = vim.api.nvim_get_current_buf()
+    runner.test_file() -- <leader>rt
+    local task = tasks.state.last
+    assert(wait(60000, function() return task:is_complete() end), "pytest did not finish: " .. task_out(task))
+    assert(task.status == "FAILURE" and task_out(task):find("1 failed, 1 passed", 1, true), task.status .. ": " .. task_out(task))
+    vim.wait(200)
+    local key = "pytest:" .. vim.api.nvim_buf_get_name(buf) -- the runner's key: the buffer's name
+    local d = run_diags(key, file)
+    assert(#d >= 1 and d[1].lnum == 5, "marks: " .. vim.inspect(vim.tbl_map(function(x) return x.lnum .. " " .. x.message end,
+      vim.diagnostic.get(buf))) .. " out: " .. task_out(task))
+    -- ]q: to the failing line, in the file
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(buf))
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    vim.cmd("cfirst")
+    assert(vim.api.nvim_get_current_buf() == buf and vim.api.nvim_win_get_cursor(0)[1] == 6,
+      "]q: " .. vim.api.nvim_buf_get_name(0) .. ":" .. vim.api.nvim_win_get_cursor(0)[1])
+    -- fixed, <leader>rl: passes, the mark is gone
+    vim.api.nvim_buf_set_lines(buf, 5, 6, false, { "    assert add(2, 2) == 4" })
+    vim.cmd("silent write")
+    local run = tasks.state.runs[task.id]
+    local starts = run.starts
+    tasks.rerun()
+    assert(wait(60000, function() return run.starts > starts and task:is_complete() end), "re-run did not finish: " .. task_out(task))
+    assert(task.status == "SUCCESS" and task_out(task):find("2 passed", 1, true), task.status .. ": " .. task_out(task))
+    vim.wait(200)
+    assert(#run_diags(key, file) == 0, "the mark stayed after the fix")
+    -- <leader>rT in test_other: that test only
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(buf))
+    vim.api.nvim_win_set_cursor(0, { 10, 4 })
+    runner.test_nearest()
+    task = tasks.state.last
+    assert(wait(60000, function() return task:is_complete() end), "pytest (nearest) did not finish")
+    assert(task_out(task):find("1 passed", 1, true) and not task_out(task):find("2 passed", 1, true), task_out(task))
+  end)
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Debug (python): F9 sets a breakpoint, F5 stops there, F10 steps, a variable's value, F5 runs to the end", function()
+  local dbg, dap = require("devsuite.debug"), require("dap")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir()))) -- no .vscode/launch.json: F5 debugs the file
+  local file = root .. "/steps.py"
+  vim.fn.writefile({ "x = 41", "y = x + 1", "z = y * 2", 'print("z is", z)' }, file)
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local ok, err = pcall(function()
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    vim.fn.maparg("<F9>", "n", false, true).callback()
+    vim.fn.maparg("<F5>", "n", false, true).callback()
+    local function line() local s = dap.session(); return s and s.current_frame and s.current_frame.line end
+    assert(wait(30000, function() return line() == 2 end), "did not stop at line 2: " .. tostring(line()))
+    vim.fn.maparg("<F10>", "n", false, true).callback()
+    assert(wait(10000, function() return line() == 3 end), "F10: line " .. tostring(line()))
+    local value
+    local s = dap.session()
+    s:request("evaluate", { expression = "y", frameId = s.current_frame.id, context = "repl" }, function(e, r) value = r and r.result or tostring(e) end)
+    assert(wait(10000, function() return value end) and value == "42", "y = " .. tostring(value))
+    vim.fn.maparg("<F5>", "n", false, true).callback() -- continue
+    assert(wait(20000, function() return dap.session() == nil end), "the session did not end")
+  end)
+  dap.clear_breakpoints()
+  if dap.session() then dap.terminate() end
+  vim.fn.chdir(before)
+  assert(ok, err)
+end)
+
+-- VS Code writes launch.json with comments; people (and VS Code itself, when it edits) leave trailing commas
+test("Debug: F5 with a VS Code launch.json (comments, trailing commas) - the picked configuration runs with its args and env", function()
+  local dbg, dap = require("devsuite.debug"), require("dap")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.vscode", "p")
+  vim.fn.writefile({ "import os, sys", 'print("ARGS=" + " ".join(sys.argv[1:]) + " GK=" + os.environ.get("GK_MODE", "-"))' }, root .. "/app.py")
+  vim.fn.writefile({
+    "{",
+    "    // Use IntelliSense to learn about possible attributes.",
+    '    "version": "0.2.0",',
+    '    "configurations": [',
+    "        {",
+    '            "name": "App: with args",',
+    '            "type": "debugpy",',
+    '            "request": "launch",',
+    '            "program": "${workspaceFolder}/app.py",',
+    '            "args": ["--name", "knight"],',
+    '            "env": { "GK_MODE": "dev" },',
+    '            "console": "integratedTerminal",',
+    "        },",
+    "        {",
+    '            "name": "App: plain", /* the old type name */',
+    '            "type": "python",',
+    '            "request": "launch",',
+    '            "program": "${file}"',
+    "        }",
+    "    ]",
+    "}",
+  }, root .. "/.vscode/launch.json")
+  local before, select = vim.fn.getcwd(), vim.ui.select
+  local offered
+  vim.ui.select = function(items, opts, choose)
+    offered = vim.tbl_map(function(item) return item.name or tostring(item) end, items)
+    for _, item in ipairs(items) do
+      if item.name == "App: with args" then return choose(item) end
+    end
+    choose(nil)
+  end
+  vim.fn.chdir(root)
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/app.py"))
+    dbg.start_or_continue() -- F5
+    assert(wait(5000, function() return offered end), "no configurations offered")
+    assert(vim.tbl_contains(offered, "App: with args") and vim.tbl_contains(offered, "App: plain"), "offered: " .. vim.inspect(offered))
+    local function printed()
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.bo[b].buftype == "terminal" and H.text(b):find("ARGS=--name knight GK=dev", 1, true) then return true end
+      end
+    end
+    assert(wait(30000, printed), "the program did not run with the configuration's args and env")
+    wait(10000, function() return dap.session() == nil end)
+  end)
+  vim.ui.select = select
+  if dap.session() then dap.terminate() end
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Debug (python): <leader>de stops where an exception is raised, a caught one too; <leader>de again: only uncaught ones", function()
+  local dbg, dap = require("devsuite.debug"), require("dap")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local file = root .. "/exc.py"
+  vim.fn.writefile({ "def risky():", "    raise ValueError('boom')", "", "", "try:", "    risky()", "except ValueError:", "    print('caught')",
+    "print('done')" }, file)
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local function line() local s = dap.session(); return s and s.current_frame and s.current_frame.line end
+  local ok, err = pcall(function()
+    vim.fn.maparg("<leader>de", "n", false, true).callback() -- on: every raised exception
+    assert(dbg.break_on_raised, "<leader>de did not turn it on")
+    dbg.start_or_continue()
+    assert(wait(30000, function() return line() == 2 end), "did not stop at the raise: " .. tostring(line()))
+    for _ = 1, 5 do -- on to the end: debugpy stops once more where the exception passes into the caller
+      local s = dap.session()
+      if not s then break end
+      if s.stopped_thread_id then dap.continue() end
+      wait(5000, function() return dap.session() == nil end)
+    end
+    assert(dap.session() == nil, "the session did not end")
+    vim.fn.maparg("<leader>de", "n", false, true).callback() -- off: the caught one runs through
+    assert(not dbg.break_on_raised, "<leader>de did not turn it off")
+    local stopped = false
+    dap.listeners.after.event_stopped["gk_test"] = function() stopped = true end
+    dbg.start_or_continue()
+    assert(wait(30000, function() return dap.session() ~= nil end), "no session")
+    assert(wait(20000, function() return dap.session() == nil end), "the session did not end")
+    assert(not stopped, "stopped at a caught exception with only uncaught ones on")
+  end)
+  dap.listeners.after.event_stopped["gk_test"] = nil
+  if dbg.break_on_raised then dbg.toggle_exceptions() end
+  if dap.session() then dap.terminate() end
+  vim.fn.chdir(before)
+  assert(ok, err)
+end)
+
+test("Debug (python): <leader>dt debugs the test at the cursor - its breakpoint stops, the other test does not run", function()
+  local python = require("devsuite.util").system_python()
+  vim.fn.system({ python, "-c", "import pytest" })
+  if vim.v.shell_error ~= 0 then H.skip("pytest not installed (pip install pytest)") end
+  local dap = require("dap")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local file = root .. "/test_dbg.py"
+  vim.fn.writefile({ "def test_one():", "    total = 20 + 22", "    assert total == 42", "", "", "def test_two():", "    assert True" }, file)
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local function line() local s = dap.session(); return s and s.current_frame and s.current_frame.line end
+  local ok, err = pcall(function()
+    vim.api.nvim_win_set_cursor(0, { 3, 4 })
+    dap.toggle_breakpoint()
+    vim.fn.maparg("<leader>dt", "n", false, true).callback()
+    assert(wait(60000, function() return line() == 3 end), "did not stop in test_one: " .. tostring(line()))
+    local value
+    local s = dap.session()
+    s:request("evaluate", { expression = "total", frameId = s.current_frame.id, context = "repl" }, function(e, r) value = r and r.result or tostring(e) end)
+    assert(wait(10000, function() return value end) and value == "42", "total = " .. tostring(value))
+    dap.continue()
+    assert(wait(30000, function() return dap.session() == nil end), "the session did not end")
+    local function printed()
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.bo[b].buftype == "terminal" and H.text(b):find("1 passed", 1, true) then return true end
+      end
+    end
+    assert(wait(5000, printed), "pytest did not report 1 passed (only the test at the cursor)")
+  end)
+  dap.clear_breakpoints()
+  if dap.session() then dap.terminate() end
+  vim.fn.chdir(before)
+  assert(ok, err)
+end)
+
+test("Tasks: <leader>rw runs the script again with the new code whenever a file of its folder is saved", function()
+  local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
+  local file = H.file("watched.py", { 'print("version one")' })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local buf = vim.api.nvim_get_current_buf()
+  runner.run_file()
+  local task = tasks.state.last
+  assert(wait(10000, function() return task:is_complete() end) and task_out(task):find("version one", 1, true), task_out(task))
+  vim.fn.maparg("<leader>rw", "n", false, true).callback()
+  local ok, err = pcall(function()
+    assert(task:has_component("restart_on_save"), "watch did not turn on")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { 'print("version two")' })
+    vim.api.nvim_buf_call(buf, function() vim.cmd("silent write") end)
+    assert(wait(15000, function() return task_out(task):find("version two", 1, true) end), "not run again on save: " .. task_out(task))
+  end)
+  if task:has_component("restart_on_save") then tasks.toggle_watch() end
+  assert(ok, err)
+end)
+
+test("Runner: <leader>rc runs only the # %% cell at the cursor - its error marks the line in the file", function()
+  local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
+  local file = H.file("cells.py", { "# %% one", 'print("cell " + "one")', "", "# %% two", 'print("cell " + "two")', "x = 1 / 0", "",
+    "# %% three", 'print("cell " + "three")' })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  vim.api.nvim_win_set_cursor(0, { 5, 0 })
+  vim.fn.maparg("<leader>rc", "n", false, true).callback()
+  local task = tasks.state.last
+  assert(wait(10000, function() return task:is_complete() end), "did not finish: " .. task_out(task))
+  local out = task_out(task)
+  assert(out:find("cell two", 1, true) and not out:find("cell one", 1, true) and not out:find("cell three", 1, true), out)
+  vim.wait(200)
+  local name = vim.api.nvim_buf_get_name(vim.fn.bufnr(file)) -- the runner's key: the buffer's name, as Neovim writes it
+  local d = run_diags("snippet:" .. name, file)
+  assert(#d == 1 and d[1].lnum == 5 and d[1].message:find("ZeroDivisionError", 1, true), vim.inspect(d) .. " all: " .. vim.inspect(
+    vim.tbl_map(function(x) return x.lnum .. " " .. x.message end, vim.diagnostic.get(vim.fn.bufnr(file)))) .. " out: " .. out)
+end)
+
+test("Terminal: <leader>tl sends the line to terminal #2, which runs it", function()
+  local python = require("devsuite.util").system_python()
+  vim.cmd("enew!")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { vim.fn.shellescape(python) .. [[ -c "print('gk' + str(6*7))"]] })
+  local scratch_buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    vim.fn.maparg("<leader>tl", "n", false, true).callback()
+    local term = require("toggleterm.terminal").get(2)
+    assert(wait(5000, function() return term ~= nil or require("toggleterm.terminal").get(2) ~= nil end), "no terminal #2")
+    term = require("toggleterm.terminal").get(2)
+    assert(wait(15000, function()
+      for _, line in ipairs(vim.api.nvim_buf_get_lines(term.bufnr, 0, -1, false)) do
+        if vim.trim(line) == "gk42" then return true end
+      end
+    end), "terminal #2 did not run it: " .. H.text(term.bufnr))
+  end)
+  local term = require("toggleterm.terminal").get(2)
+  if term then pcall(function() term:shutdown() end) end
+  pcall(vim.api.nvim_buf_delete, scratch_buf, { force = true })
   assert(ok, err)
 end)
 
