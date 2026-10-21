@@ -11,8 +11,16 @@ suites=(tests/smoke_test.lua tests/devsuite_test.lua)
 
 status=0
 for suite in "${suites[@]}"; do
+  trace=$(mktemp) # each test's name as it starts: after a crash the last one is where it happened
   # report() exits; "cquit 2" only runs when the suite crashed before it (a crash is not a pass)
-  timeout 900 nvim --headless -c "luafile $suite" -c 'cquit 2' || status=1
+  GK_TEST_TRACE="$trace" timeout 900 nvim --headless -c "luafile $suite" -c 'cquit 2'
+  rc=$?
+  if [ $rc -ne 0 ]; then
+    status=1
+    # not a failed test (1): it crashed or ran out of time
+    [ $rc -ne 1 ] && [ -s "$trace" ] && echo "$suite: exit $rc - the last test that started: $(tail -n 1 "$trace")"
+  fi
+  rm -f "$trace"
 done
 echo
 [ $status -eq 0 ] && echo "ALL SUITES PASSED" || echo "SOME TESTS FAILED"

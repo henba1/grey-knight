@@ -44,8 +44,13 @@ local function named(name, list)
   return false
 end
 
+-- GK_TEST_TRACE=<file>: each test's name goes there as it starts - after "no report (the suite crashed)" the last
+-- line names the test that was running (2026-10-21)
+local TRACE = vim.env.GK_TEST_TRACE ~= "" and vim.env.GK_TEST_TRACE or nil
+
 function H.test(name, fn)
   if (#ONLY > 0 and not named(name, ONLY)) or named(name, SKIP) then return end
+  if TRACE then vim.fn.writefile({ os.date("%H:%M:%S ") .. name }, TRACE, "a") end
   -- Let earlier tests finish what they scheduled first: a terminal's scheduled stopinsert ended the next
   -- test's insert mode (2026-10-19, Windows, where the agent tests that used to flush it are skipped)
   vim.wait(20)

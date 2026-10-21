@@ -18,6 +18,11 @@ try {
     $report = Join-Path ([IO.Path]::GetTempPath()) "greyknight-$suite-report.txt"
     Remove-Item $report -ErrorAction SilentlyContinue
     $env:GK_TEST_REPORT = $report
+    # each test's name as it starts: when a suite ends without its report, the last one is where it happened
+    $trace = Join-Path ([IO.Path]::GetTempPath()) "greyknight-$suite-trace.txt"
+    Remove-Item $trace -ErrorAction SilentlyContinue
+    $env:GK_TEST_TRACE = $trace
+    $lastTest = { if (Test-Path $trace) { "  the last test that started: " + (Get-Content -Encoding UTF8 $trace -Tail 1) } }
     $nvimArgs = "-c `"luafile tests/${suite}_test.lua`" -c `"cquit 2`""
     $p = Start-Process -FilePath $nvim -ArgumentList $nvimArgs -WorkingDirectory $root -WindowStyle Minimized -PassThru
     $null = $p.Handle # keeps the exit code readable after the process ended
@@ -28,15 +33,16 @@ try {
       # The whole tree: the window's Neovim and the --embed server it started (Kill() left those, 2026-10-21)
       & taskkill /T /F /PID $p.Id | Out-Null
       if (Test-Path $report) { Get-Content -Encoding UTF8 $report; Write-Output "${suite}: Neovim did not quit after its report" }
-      else { Write-Output "${suite}: stopped after 15 minutes" }
+      else { Write-Output "${suite}: stopped after 15 minutes"; & $lastTest }
       $status = 1
       continue
     }
-    if (Test-Path $report) { Get-Content -Encoding UTF8 $report } else { Write-Output "${suite}: no report (the suite crashed)" }
+    if (Test-Path $report) { Get-Content -Encoding UTF8 $report }
+    else { Write-Output "${suite}: no report (the suite crashed, exit $($p.ExitCode))"; & $lastTest }
     if ($p.ExitCode -ne 0) { $status = 1 }
   }
 } finally {
-  Remove-Item Env:GK_TEST_REPORT -ErrorAction SilentlyContinue
+  Remove-Item Env:GK_TEST_REPORT, Env:GK_TEST_TRACE -ErrorAction SilentlyContinue
   [Console]::OutputEncoding = $encoding
 }
 Write-Output ''
