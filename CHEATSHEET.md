@@ -261,7 +261,7 @@ DAP console pane; variable values show next to the code while stopped. Full work
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `sa`/`sd`/`sr` | n | Surround add/delete/replace |
+| `gsa`/`gsd`/`gsr` | n (`gsa`: v too) | Surround add/delete/replace (`s` is Flash's jump) |
 | `J`/`K` | v | Move selection down/up |
 | `<leader>p` | x | Paste without yank |
 | `J` | n | Join lines, the cursor stays |

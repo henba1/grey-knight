@@ -644,19 +644,20 @@ them with `<leader>1-4` instead of searching.
 
 ## Surround
 
-Add, delete, or change surrounding characters.
+Add, delete, or change surrounding characters. The keys start with `gs` - `s` alone is Flash's jump, and with
+surround's own `sa`/`sd`/`sr` a quick `s` then `d` (to jump to a word starting with d) deleted a surrounding instead.
 
 | Key | Action | Example |
 |-----|--------|---------|
-| `sa` + motion + char | Add surround | `saiw"` → surround word with `"` |
-| `sd` + char | Delete surround | `sd"` → remove surrounding `"` |
-| `sr` + old + new | Replace surround | `sr"'` → change `"` to `'` |
+| `gsa` + motion + char | Add surround | `gsaiw"` → surround word with `"` |
+| `gsd` + char | Delete surround | `gsd"` → remove surrounding `"` |
+| `gsr` + old + new | Replace surround | `gsr"'` → change `"` to `'` |
 
 **Examples:**
-- Cursor on `hello` → `saiw"` → `"hello"`
-- Cursor inside `"hello"` → `sd"` → `hello`
-- Cursor inside `"hello"` → `sr"'` → `'hello'`
-- Visual select `hello world` → `sa"` → `"hello world"`
+- Cursor on `hello` → `gsaiw"` → `"hello"`
+- Cursor inside `"hello"` → `gsd"` → `hello`
+- Cursor inside `"hello"` → `gsr"'` → `'hello'`
+- Visual select `hello world` → `gsa"` → `"hello world"`
 
 ---
 
