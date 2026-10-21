@@ -108,9 +108,9 @@ explorer pane once focused.
 > character, `<M-b>`/`<M-f>` a word, `<C-d>` delete the character, `<C-k>` delete to the end, `<C-u>` to the start,
 > `<C-w>` a word.
 >
-> Search: the search box's title says which search runs; `<a-s>` there goes on to the next (files → folders →
-> current view) with the same text. `Enter` on a match: back to the tree, the cursor on it (`Enter` again opens it).
-> `^x` / `x$`: names (paths for files) starting / ending with x.
+> Search: the search box's title says which search runs; `<M-s>` (Alt+s) there goes on to the next (files →
+> folders → current view) with the same text. `Enter` on a match: back to the tree, the cursor on it (`Enter` again
+> opens it). `^x` / `x$`: names (paths for files) starting / ending with x.
 
 ## Find (Snacks Picker) — `<leader>f`
 
