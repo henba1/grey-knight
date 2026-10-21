@@ -84,6 +84,9 @@ explorer pane once focused.
 | `h` | Close the folder (cursor to its parent) |
 | `l`/`Enter` | Open file / toggle folder |
 | `.` | cd here — the folder under the cursor becomes the working directory |
+| `/` | Search files (the text matches the path below the root); during a search: back to the search box |
+| `D` | Search folders — by name, no files shown |
+| `S` | Search the current view — only the rows the tree shows (closed folders not looked into) |
 | `H`/`I` | Toggle hidden / ignored |
 | `<Tab>`/`<S-Tab>` | Mark / unmark, then next / prev (`V`…`<Tab>`: a range, `<C-a>`: all) |
 | `m` | Move the marked into the folder under the cursor (nothing marked: mark this one) |
@@ -104,6 +107,10 @@ explorer pane once focused.
 > The prompts (`r`, `C`, `a` — every input dialog) edit like a shell: `<C-a>`/`<C-e>` start/end, `<C-b>`/`<C-f>` a
 > character, `<M-b>`/`<M-f>` a word, `<C-d>` delete the character, `<C-k>` delete to the end, `<C-u>` to the start,
 > `<C-w>` a word.
+>
+> Search: the search box's title says which search runs; `<a-s>` there goes on to the next (files → folders →
+> current view) with the same text. `Enter` on a match: back to the tree, the cursor on it (`Enter` again opens it).
+> `^x` / `x$`: names (paths for files) starting / ending with x.
 
 ## Find (Snacks Picker) — `<leader>f`
 
@@ -266,7 +273,8 @@ DAP console pane; variable values show next to the code while stopped. Full work
 │   ├── lazy.lua              ← lazy.nvim bootstrap
 │   ├── keymaps.lua           ← global keymaps
 │   ├── autocmds.lua          ← autocommands
-│   ├── explorer.lua          ← explorer keys: cd here (.), cd .. (<BS>, -), m / c through the tree, typed paths
+│   ├── explorer.lua          ← explorer keys: cd here (.), cd .. (<BS>, -), m / c through the tree, typed paths,
+│   │                            search files / folders / the current view (/, D, S)
 │   ├── mdlinks.lua           ← markdown links: gd / Enter follow them
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite

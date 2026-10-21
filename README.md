@@ -23,8 +23,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
 - **Rust-powered completion** — blink.cmp with ghost text and signature help
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications. Its file explorer moves
-  and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts and
-  keeps the cursor in place on delete; input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
+  and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts,
+  keeps the cursor in place on delete and searches files (`/`), folders by name (`D`) or only what the tree
+  shows (`S`); input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
 - **Hacker tools** — Hex editor, multiple terminals (a shell, the REPL or an agent takes your keys as soon as you
   go to it), send-to-terminal workflow
 - **Session persistence** — Auto-saves per project + git branch
@@ -139,7 +140,8 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── keymaps.lua         all global keymaps + which-key groups
 │   ├── autocmds.lua        yank highlight, cursor restore
 │   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -), move / copy through the
-│   │                       tree (m, c), typed paths as typed (r, C, a)
+│   │                       tree (m, c), typed paths as typed (r, C, a), search files / folders /
+│   │                       the current view (/, D, S)
 │   ├── mdlinks.lua         markdown links: gd / Enter follow them (#heading, file, URL)
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/

@@ -113,6 +113,19 @@ has focus.
 | `<leader>/` | Grep inside the tree |
 | `<C-t>` | Drop a terminal at the current dir |
 
+**Search** - three kinds; the search box's title says which one runs:
+
+| Key | Action |
+|-----|--------|
+| `/` | Search files: every file and folder below the root, the text matches the path (`config/ex` finds `lua/config/explorer.lua`). During a search `/` only goes back to the search box |
+| `D` | Search folders: only folders, the text matches a folder's name - `java` finds `src/main/java` and `src/test/java`, not every package folder below them. No file is shown |
+| `S` | Search the current view: only the rows the tree shows when you start - the open folders' contents; closed folders are not looked into. The text matches the names |
+| `<a-s>` | In the search box: the next search (files → folders → current view), the typed text stays |
+
+Matches show up in the tree under their folders. `Enter` (or `l`) on one goes back to the tree with the cursor on
+it - `Enter` again opens a file; the next `/` is a file search again. Lowercase text ignores case; `^x` / `x$` match
+names (paths, in file search) that start / end with x, `!x` leaves them out.
+
 **Filesystem ops**
 
 | Key | Action |
