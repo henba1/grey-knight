@@ -198,6 +198,17 @@ test("Terminal: Ctrl+L goes to the program (clears a shell), Ctrl+h/j/k still mo
   end
 end)
 
+-- The real explorer in tests (2026-10-21). snacks shows a picker once it has listed - on a slow moment (Windows: a
+-- test window that stalled for seconds) only after the test gave up waiting. Snacks.picker.get() without tab = false
+-- leaves out a picker not shown yet, so the test's cleanup missed it; it showed afterwards, and the next test's
+-- Snacks.explorer() closed it (a toggle) instead of opening one - one slow explorer failed the tests after it too.
+local OPEN_MS = 10000 -- the explorer shown and listed (usually well under a second)
+local function explorers() return Snacks.picker.get({ source = "explorer", tab = false }) end -- shown or not
+local function close_explorers() -- all of them: no explorer outlives its test
+  for _, p in ipairs(explorers()) do p:close() end
+  H.wait(2000, function() return #explorers() == 0 end)
+end
+
 test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", function()
   local before = vim.fn.getcwd()
   -- the real path with / (on Windows tempname() is an 8.3 short name with \, getcwd() has \ too)
@@ -209,11 +220,11 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
   Snacks.explorer()
   local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
   local ok, err = pcall(function()
-    assert(H.wait(5000, picker), "explorer did not open")
+    assert(H.wait(OPEN_MS, picker), "explorer did not open")
     local p = picker()
     -- like a user: act once the first listing is there (a cd while snacks still lists shows entries twice,
     -- with its own keys too)
-    assert(H.wait(5000, function() return not p:is_active() and p.list:count() > 0 end), "explorer did not list")
+    assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() > 0 end), "explorer did not list")
     for key, action in pairs({ ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to" }) do
       local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(key, "n", false, true) end)
       assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
@@ -250,8 +261,7 @@ test("Explorer: . = cd here, <BS> / - = cd .. (tree and working directory)", fun
     p:action("gk_cd_here")
     assert(H.wait(2000, function() return cwd() == root .. "/a" and p:cwd() == root .. "/a" end), "cd here: " .. cwd() .. " / " .. tostring(p:cwd()))
   end)
-  if picker() then picker():close() end
-  H.wait(2000, function() return picker() == nil end) -- gone, so no later test starts in its window
+  close_explorers() -- gone, so no later test starts in its window
   vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
   assert(ok, err)
@@ -434,9 +444,9 @@ test("Explorer: d keeps the cursor on its item, else on the next one (also for t
   Snacks.explorer()
   local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
   local ok, err = pcall(function()
-    assert(H.wait(5000, picker), "explorer did not open")
+    assert(H.wait(OPEN_MS, picker), "explorer did not open")
     local p = picker()
-    assert(H.wait(5000, function() return not p:is_active() and p.list:count() >= 10 end), "explorer did not list")
+    assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() >= 10 end), "explorer did not list")
     local function index(file)
       for i = 1, p.list:count() do
         if p.list:get(i).file == file then return i end
@@ -471,10 +481,142 @@ test("Explorer: d keeps the cursor on its item, else on the next one (also for t
     delete("f8.txt") -- the last one: the one above
   end)
   util.confirm, config.trash = saved.confirm, saved.trash
-  if picker() then picker():close() end
-  H.wait(2000, function() return picker() == nil end)
+  close_explorers()
   vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: three searches in the explorer (config/explorer.lua). / files as snacks searched (paths), D folders by
+-- name only (no file shown), S only the rows the tree shows (closed folders not looked into); <a-s> in the search
+-- box goes on to the next one with the same text, the box's title names the search. <CR> goes back to the tree on
+-- the match; the next search starts as a file search again. The real explorer, on alpha/ (open), beta/, zeta/ (closed).
+test("Explorer: / D S search files, folders by name, the current view; <a-s> switches, <CR> back to the tree", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  for _, rel in ipairs({ "alpha/beta/gamma/keep.txt", "alpha/beta/needle-deep.txt", "alpha/needle-a.txt", "zeta/needle-z.txt", "needle-root.txt" }) do
+    vim.fn.mkdir(vim.fs.dirname(root .. "/" .. rel), "p")
+    vim.fn.writefile({ "x" }, root .. "/" .. rel)
+  end
+  vim.fn.mkdir(root .. "/NeedleDir", "p")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  require("snacks.explorer.tree"):open(root .. "/alpha") -- the tree shows alpha's contents, not beta's or zeta's
+  close_explorers() -- Snacks.explorer() would close one left open instead of opening
+  Snacks.explorer()
+  local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
+  local ok, err = pcall(function()
+    assert(H.wait(OPEN_MS, picker), "explorer did not open")
+    local p = picker()
+    assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() >= 7 end), "explorer did not list")
+    for key, action in pairs({ ["/"] = "gk_search_files", D = "gk_search_folders", S = "gk_search_view" }) do
+      local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(key, "n", false, true) end)
+      assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
+    end
+    local alt = vim.api.nvim_buf_call(p.input.win.buf, function() return vim.fn.maparg("<a-s>", "i", false, true) end)
+    assert(tostring(alt.desc):find("Next search", 1, true), "<a-s> in the search box: " .. tostring(alt.desc))
+    -- what a search found (the folders above a match, only there for context, left out), sorted
+    local function found()
+      local r = {}
+      for i = 1, p.list:count() do
+        local it = p.list:get(i)
+        if not it.child_match_only then r[#r + 1] = it.file:sub(#root + 2) .. (it.dir and "/" or "") end
+      end
+      table.sort(r)
+      return table.concat(r, " ")
+    end
+    local function expect(title, want)
+      assert(H.wait(5000, function() return not p:is_active() and p.title == title and found() == want end),
+        ("%q (%s): %q, not %q (%s)"):format(p.input.filter.pattern, p.title, found(), want, title))
+    end
+    local function search_for(text) -- as the search box does with typed text
+      p.input:set(text)
+      p:find({ refresh = false })
+    end
+    local function in_box() return vim.api.nvim_get_current_win() == p.input.win.win end
+
+    p:action("gk_search_view") -- S
+    assert(in_box() and p.title == "Search current view", "S: " .. p.title)
+    search_for("needle")
+    expect("Search current view", "NeedleDir/ alpha/needle-a.txt needle-root.txt") -- not in closed beta / zeta
+    p:action("gk_search_next") -- <a-s>: the same text, all files
+    expect("Search files", "NeedleDir/ alpha/beta/needle-deep.txt alpha/needle-a.txt needle-root.txt zeta/needle-z.txt")
+    p:action("gk_search_next")
+    expect("Search folders", "NeedleDir/")
+    search_for("alpha")
+    expect("Search folders", "alpha/") -- the name: not alpha/beta, alpha/beta/gamma
+    search_for("gamma")
+    expect("Search folders", "alpha/beta/gamma/") -- everywhere, closed folders too
+    p:action("gk_search_next")
+    expect("Search current view", "") -- gamma is in closed beta
+    p:action("gk_search_next")
+    expect("Search files", "alpha/beta/gamma/ alpha/beta/gamma/keep.txt") -- the path, as snacks matches it
+    -- from the list: D switches to folders, / only goes back to the search box
+    p.list.win:focus()
+    p:action("gk_search_folders")
+    expect("Search folders", "alpha/beta/gamma/")
+    assert(in_box(), "D: the search box does not have the cursor")
+    p.list.win:focus()
+    p:action("gk_search_files")
+    assert(in_box() and p.title == "Search folders", "/ during a folder search: " .. p.title)
+    -- <CR>: the tree, the cursor on the match, the explorer's title
+    local gamma = root .. "/alpha/beta/gamma"
+    assert(H.wait(3000, function() return p:current() and p:current().file == gamma end), "cursor not on gamma")
+    p:action("confirm")
+    assert(H.wait(3000, function()
+      return not p:is_active() and p.input.filter:is_empty() and p.title == "Explorer" and p:current() and p:current().file == gamma
+    end), "<CR>: " .. p.title .. ", on " .. tostring(p:current() and p:current().file))
+    -- beta is open now (gamma was revealed in it): the current view has its contents, still not zeta's
+    p:action("gk_search_view")
+    search_for("needle")
+    expect("Search current view", "NeedleDir/ alpha/beta/needle-deep.txt alpha/needle-a.txt needle-root.txt")
+    -- no text left and the cursor out of the box: the search is over, / is a file search again
+    search_for("")
+    p.list.win:focus()
+    assert(H.wait(2000, function() return p.title == "Explorer" end), "after the search: " .. p.title)
+    p:action("gk_search_files")
+    assert(in_box() and p.title == "Search files", "/: " .. p.title)
+    H.wait(3000, function() return not p:is_active() end) -- done with its finds, as before closing it by hand
+  end)
+  close_explorers()
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: the explorer closed right after a find (a refresh, a cd, typed text): snacks' cleanup put a new task in
+-- place of the finder's last one, which still ran once, and snacks then resumed the matcher, gone by then - "attempt
+-- to index field 'matcher' (a nil value)", a prompt that kept the test window from quitting (config/explorer.lua,
+-- setup). Without the fix in 6 of 10 tries.
+test("Explorer: closed right after a find - no error from the finder that still runs once", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/a", "p")
+  vim.fn.writefile({ "x" }, tmp .. "/a/x.txt")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(tmp)
+  local function picker() return Snacks.picker.get({ source = "explorer" })[1] end
+  local function errors() -- the finder's error comes from snacks' async loop: in :messages, not raised here
+    local messages = vim.api.nvim_exec2("messages", { output = true }).output
+    return select(2, messages:gsub("index field 'matcher'", ""))
+  end
+  local ok, err = pcall(function()
+    local had = errors()
+    for _ = 1, 6 do
+      close_explorers() -- Snacks.explorer() would close one left open instead of opening
+      Snacks.explorer()
+      assert(H.wait(OPEN_MS, picker), "explorer did not open")
+      local p = picker()
+      assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() > 0 end), "explorer did not list")
+      p:find() -- a refresh: its finder task has not run yet
+      p:close()
+      vim.wait(300)
+    end
+    assert(errors() == had, (errors() - had) .. " times: attempt to index field 'matcher' (a nil value)")
+  end)
+  close_explorers()
+  vim.fn.chdir(before)
+  vim.fn.delete(tmp, "rf")
   assert(ok, err)
 end)
 
