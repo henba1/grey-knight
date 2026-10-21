@@ -172,21 +172,30 @@ return {
       -- Angular / AngularJS: angularls, eslint, html, css - installed with the first file that needs them
       if lang.angular then require("integrations.web").setup(capabilities) end
 
-      -- LSP keymaps
+      -- LSP keymaps, each for a server that can do it: gd with only ruff, html or eslint attached said "method
+      -- textDocument/definition is not supported by any server" - now it stays Vim's gd there (2026-10-21, error log)
       vim.api.nvim_create_autocmd("LspAttach", {
         callback = function(ev)
           local b = ev.buf
-          local map = function(k, f, d) vim.keymap.set("n", k, f, { buffer = b, desc = "LSP: " .. d }) end
-          map("gd",         vim.lsp.buf.definition,     "Definition")
-          map("gD",         vim.lsp.buf.declaration,    "Declaration")
-          map("gr",         vim.lsp.buf.references,     "References")
-          map("gi",         vim.lsp.buf.implementation, "Implementation")
-          map("K",          vim.lsp.buf.hover,          "Hover")
-          map("<leader>rn", vim.lsp.buf.rename,         "Rename")
-          map("<leader>ca", vim.lsp.buf.code_action,    "Code action")
-          map("<leader>D",  vim.lsp.buf.type_definition,"Type definition")
-          map("[d",         vim.diagnostic.goto_prev,    "Prev diagnostic")
-          map("]d",         vim.diagnostic.goto_next,    "Next diagnostic")
+          local client = vim.lsp.get_client_by_id(ev.data.client_id)
+          local map = function(k, method, f, d)
+            if client and client:supports_method(method, b) then
+              vim.keymap.set("n", k, f, { buffer = b, desc = "LSP: " .. d })
+            end
+          end
+          map("gd",         "textDocument/definition",     vim.lsp.buf.definition,      "Definition")
+          map("gD",         "textDocument/declaration",    vim.lsp.buf.declaration,     "Declaration")
+          map("gr",         "textDocument/references",     vim.lsp.buf.references,      "References")
+          map("gi",         "textDocument/implementation", vim.lsp.buf.implementation,  "Implementation")
+          map("K",          "textDocument/hover",          vim.lsp.buf.hover,           "Hover")
+          map("<leader>rn", "textDocument/rename",         vim.lsp.buf.rename,          "Rename")
+          map("<leader>ca", "textDocument/codeAction",     vim.lsp.buf.code_action,     "Code action")
+          map("<leader>D",  "textDocument/typeDefinition", vim.lsp.buf.type_definition, "Type definition")
+          -- diagnostics of any source (runs too), with the message in a float as before; goto_prev/goto_next are
+          -- deprecated
+          local function jump(count) return function() vim.diagnostic.jump({ count = count, float = true }) end end
+          vim.keymap.set("n", "[d", jump(-1), { buffer = b, desc = "Prev diagnostic" })
+          vim.keymap.set("n", "]d", jump(1), { buffer = b, desc = "Next diagnostic" })
         end,
       })
     end,
