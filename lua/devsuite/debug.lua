@@ -49,9 +49,17 @@ function M.pytest_config(file, target)
   }
 end
 
---- The bash debug adapter (bashdb, from Mason's bash-debug-adapter); false when it is not installed.
+--- The bash debug adapter (bashdb, from Mason's bash-debug-adapter); false and why when it cannot run.
 function M.setup_bash()
-  if vim.fn.executable(BASHDB .. "/bash-debug-adapter") ~= 1 then return false end
+  if vim.fn.executable(BASHDB .. "/bash-debug-adapter") ~= 1 then
+    return false, "bash debugger missing - run :MasonInstall bash-debug-adapter"
+  end
+  -- a Node program: without node on the PATH it never started and F5 waited for nothing (2026-10-21, the pi: nvm puts
+  -- node on the PATH in interactive shells only)
+  if vim.fn.executable("node") ~= 1 then
+    return false, "bash debugging needs Node.js on the PATH (bash-debug-adapter is a Node program) - start Neovim"
+      .. " from a shell where node runs (with nvm: one that loaded it)"
+  end
   local dap = require("dap")
   dap.adapters.bashdb = dap.adapters.bashdb or { type = "executable", command = BASHDB .. "/bash-debug-adapter", name = "bashdb" }
   return true
@@ -89,7 +97,8 @@ function M.launch(with_args)
     config = M.python_config
   elseif SHELLS[ft] then
     if util.WIN then return notify("Debug: bash scripts are debugged on Linux (bashdb)", WARN) end
-    if not M.setup_bash() then return notify("Debug: bash debugger missing - run :MasonInstall bash-debug-adapter", WARN) end
+    local ok, why = M.setup_bash()
+    if not ok then return notify("Debug: " .. why, WARN) end
     config = M.bash_config
   else
     return require("dap").continue() -- other languages: the configurations nvim-dap knows
