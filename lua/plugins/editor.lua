@@ -22,11 +22,43 @@ return {
     dependencies = { "nvim-lua/plenary.nvim" },
     config = function()
       local harpoon = require("harpoon")
+      -- A slot opens the file by its own name: harpoon looked its buffer up with bufnr(), whose argument is a pattern -
+      -- "notes [draft].txt" also named an open "notes d.txt", and the slot opened that one (2026-10-21). As harpoon's
+      -- own select otherwise: the cursor where it was for a file not open yet, split / vsplit / tabedit, its event.
+      local win = vim.fn.has("win32") == 1
+      local function key(path)
+        path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+        return win and path:lower() or path
+      end
+      local function select(item, _, options)
+        if item == nil then return end
+        options = options or {}
+        local buf
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_get_name(b) ~= "" and key(vim.api.nvim_buf_get_name(b)) == key(item.value) then buf = b end
+        end
+        local fresh = buf == nil
+        if fresh then buf = vim.fn.bufadd(vim.fn.fnamemodify(item.value, ":p")) end
+        if not vim.api.nvim_buf_is_loaded(buf) then
+          vim.fn.bufload(buf)
+          vim.bo[buf].buflisted = true
+        end
+        if options.vsplit then vim.cmd("vsplit") elseif options.split then vim.cmd("split") elseif options.tabedit then vim.cmd("tabedit") end
+        vim.api.nvim_set_current_buf(buf)
+        if fresh and type(item.context) == "table" then
+          local row = math.max(1, math.min(item.context.row or 1, vim.api.nvim_buf_line_count(buf)))
+          local col = math.min(item.context.col or 0, #(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""))
+          pcall(vim.api.nvim_win_set_cursor, 0, { row, col })
+        end
+        local Extensions = require("harpoon.extensions")
+        Extensions.extensions:emit(Extensions.event_names.NAVIGATE, { buffer = buf })
+      end
       harpoon:setup({
         settings = {
           save_on_toggle = true,   -- closing the menu with q / Esc keeps your edits (default: drops them)
           sync_on_ui_close = true, -- and writes them to disk right away, not only when Neovim exits
         },
+        default = { select = select },
       })
       -- Pin the current file, save the list at once, and say which slot it got
       vim.keymap.set("n", "<leader>ha", function()
