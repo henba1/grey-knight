@@ -296,7 +296,8 @@ local function sync(picker)
 end
 
 --- The explorer's config: snacks' own, then the searches' - the search box's title follows the search when
---- snacks switches between the tree and a search, and when the cursor goes in or out of the search box.
+--- snacks switches between the tree and a search, and when the cursor goes in or out of the search box. And
+--- closing it right after a find leaves no error behind (below).
 function M.setup(opts)
   opts = require("snacks.picker.source.explorer").setup(opts)
   local transform = opts.filter.transform
@@ -311,6 +312,19 @@ function M.setup(opts)
     local function later() vim.schedule(function() if ref() then sync(ref()) end end) end
     picker.input.win:on({ "BufEnter", "BufLeave" }, function() later() end, { buf = true })
     if on_show then on_show(picker) end
+  end
+  -- Closing right after a find (a refresh, a cd, typing): snacks' cleanup (picker.lua, close) put a new task in
+  -- place of the finder's last one, which still ran once - aborted, but not started yet. When it ended, snacks
+  -- (finder.lua) took the new task for it, as not aborted, and resumed the matcher, gone by then: "attempt to
+  -- index field 'matcher' (a nil value)" - a prompt, in the test window one that kept Neovim from quitting
+  -- (2026-10-21; snacks' own, the searches here only made it likelier). The finder keeps its aborted task.
+  local on_close = opts.on_close
+  opts.on_close = function(picker)
+    picker.finder.close = function(finder)
+      finder.task:abort()
+      finder._find = function() return {} end
+    end
+    if on_close then on_close(picker) end
   end
   return opts
 end
