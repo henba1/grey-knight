@@ -155,6 +155,13 @@ explorer pane once focused.
 | `<leader>gl` | Git log |
 | `<leader>gv` | Diffview (side-by-side diffs) |
 | `<leader>gh` | File history |
+| `]c` / `[c` | Next / previous change in the file (in diff mode: Vim's) |
+| `<leader>gs` | Stage the change at the cursor (again: unstage); visual: the selected lines |
+| `<leader>gr` | Undo the change at the cursor (`u` brings it back); visual: the selected lines |
+| `<leader>gp` | Show the change (what it was) |
+| `<leader>gb` | Who changed the line, when, in which commit (blame) |
+
+> The change keys work in files of a git repository; the gutter shows their changes.
 
 ## Terminal — `<leader>t`
 

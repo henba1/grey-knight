@@ -503,6 +503,19 @@ When editing files in a git repo, you'll see markers in the left gutter:
 - **Blue bar** — changed lines  
 - **Red triangle** — deleted lines
 
+And keys for those changes (in files of a git repository):
+
+| Key | Action |
+|-----|--------|
+| `]c` / `[c` | Next / previous change (in diff mode, Diffview: Vim's next / previous difference) |
+| `<leader>gs` | Stage the change at the cursor - on a staged one: unstage it. Visual: stage the selected lines |
+| `<leader>gr` | Undo the change at the cursor (back to what git has; `u` brings it back). Visual: the selected lines |
+| `<leader>gp` | Show the change in a popup: what the lines were |
+| `<leader>gb` | Who changed the line, when, and the commit (blame) |
+
+Committing stays with Lazygit (`<leader>gg`): stage what belongs together with `<leader>gs` while you look at it, then
+commit there.
+
 ---
 
 ## Search & Replace
