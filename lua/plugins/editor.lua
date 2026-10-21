@@ -104,7 +104,26 @@ return {
   { "windwp/nvim-autopairs", event = "InsertEnter", config = true },
 
   -- Gitsigns
-  { "lewis6991/gitsigns.nvim", event = "BufReadPost", config = true },
+  {
+    "lewis6991/gitsigns.nvim",
+    event = "BufReadPost",
+    config = function(_, opts)
+      -- A git run that cannot start throws (vim.system: ENOENT when its folder went a moment before - a file's
+      -- folder moved or deleted right after the file was opened). Inside gitsigns' repository lock that kept the
+      -- lock taken for good: no file got signs any more for the rest of the session (2026-10-21; gitsigns' async.lua
+      -- drops such a task without unwinding it, upstream too). Such a failure now comes back as a failed run. The
+      -- git module takes this function once, when it loads - so before setup.
+      local sys = require("gitsigns.system")
+      local spawn = sys.system
+      sys.system = function(cmd, o, on_exit)
+        local ok, obj = pcall(spawn, cmd, o, on_exit)
+        if ok then return obj end
+        if not on_exit then error(obj, 0) end -- waited for in place: as before
+        vim.schedule(function() on_exit({ code = 127, signal = 0, stdout = "", stderr = tostring(obj) }) end)
+      end
+      require("gitsigns").setup(opts)
+    end,
+  },
 
   -- todo-comments
   {
