@@ -113,3 +113,10 @@ o.maxmempattern = 20000
 
 -- Clipboard: over SSH copy with OSC 52 and paste the last copy; locally Neovim picks the tool (config/clipboard.lua)
 vim.g.clipboard = require("config.clipboard").provider()
+
+-- No plugin here talks to Neovim through Node, Perl, Ruby or Python (remote plugins): their providers are off -
+-- no probing for host programs, no :checkhealth warnings about missing host packages (2026-10-21)
+vim.g.loaded_node_provider = 0
+vim.g.loaded_perl_provider = 0
+vim.g.loaded_ruby_provider = 0
+vim.g.loaded_python3_provider = 0
