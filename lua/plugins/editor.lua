@@ -103,10 +103,29 @@ return {
   -- Autopairs
   { "windwp/nvim-autopairs", event = "InsertEnter", config = true },
 
-  -- Gitsigns
+  -- Gitsigns: the changes in the gutter, and keys for them in files of a git repository
   {
     "lewis6991/gitsigns.nvim",
     event = "BufReadPost",
+    opts = {
+      on_attach = function(buf)
+        local gs = require("gitsigns")
+        local function map(mode, lhs, rhs, desc) vim.keymap.set(mode, lhs, rhs, { buffer = buf, desc = desc }) end
+        local function lines() -- the visual selection, top to bottom
+          local a, b = vim.fn.line("."), vim.fn.line("v")
+          return { math.min(a, b), math.max(a, b) }
+        end
+        -- in diff mode (Diffview) ]c / [c stay Vim's
+        map("n", "]c", function() if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) else gs.nav_hunk("next") end end, "Git: Next change")
+        map("n", "[c", function() if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else gs.nav_hunk("prev") end end, "Git: Previous change")
+        map("n", "<leader>gs", gs.stage_hunk, "Git: Stage the change (again: unstage)")
+        map("v", "<leader>gs", function() gs.stage_hunk(lines()) end, "Git: Stage the selected lines")
+        map("n", "<leader>gr", gs.reset_hunk, "Git: Undo the change (u brings it back)")
+        map("v", "<leader>gr", function() gs.reset_hunk(lines()) end, "Git: Undo the selected lines")
+        map("n", "<leader>gp", gs.preview_hunk, "Git: Show the change")
+        map("n", "<leader>gb", function() gs.blame_line({ full = true }) end, "Git: Who changed the line (blame)")
+      end,
+    },
     config = function(_, opts)
       -- A git run that cannot start throws (vim.system: ENOENT when its folder went a moment before - a file's
       -- folder moved or deleted right after the file was opened). Inside gitsigns' repository lock that kept the
