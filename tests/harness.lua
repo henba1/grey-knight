@@ -7,6 +7,17 @@ local SKIP = {} -- metatable of the error H.skip() raises
 pcall(function() require("config.errorlog").path = vim.fn.tempname() .. "-greyknight-test.log" end)
 -- Test processes never write harpoon lists (harpoon saves every loaded list when Neovim exits)
 pcall(function() require("harpoon").sync = function() end end)
+-- ... nor sessions: persisted saved the test's leftover windows as the session of the folder the tests ran in (the
+-- config's own, over the real one) and of temp folders (2026-10-21)
+pcall(function() require("persisted").stop() end)
+-- gitsigns follows the working directory: each change ran git rev-parse and restarted its watcher on .git/HEAD.
+-- The tests change it hundreds of times - on Windows a thousand git processes in a run, libuv lost the ends of
+-- some, and Neovim hung on quitting (2026-10-21; gitsigns' own note on stop/start of that watcher: #1027). Test
+-- runs keep the watcher it started with; signs and attaching to files are untouched.
+pcall(function()
+  require("gitsigns") -- loaded now (lazy: with the first file), so its autocmds exist
+  vim.api.nvim_clear_autocmds({ group = "gitsigns", event = "DirChanged" })
+end)
 -- Tests delete their files; a buffer of one can outlive that (a cleanup that deletes buffers shows another one in
 -- the window). Entering it reported E211 "File ... no longer available" - in the Windows test window a prompt that
 -- kept Neovim from quitting (2026-10-21). A deleted file goes without a message; anything else as without this
@@ -18,7 +29,23 @@ vim.api.nvim_create_autocmd("FileChangedShell", {
   end,
 })
 
+-- Some tests of a suite (2026-10-21): GK_TEST_ONLY / GK_TEST_SKIP, comma-separated pieces of test names, e.g.
+--   GK_TEST_ONLY='Explorer workflow,Session' tests/run.sh smoke
+local function names(var)
+  local list = {}
+  for piece in (vim.env[var] or ""):gmatch("[^,]+") do list[#list + 1] = vim.trim(piece) end
+  return list
+end
+local ONLY, SKIP = names("GK_TEST_ONLY"), names("GK_TEST_SKIP")
+local function named(name, list)
+  for _, piece in ipairs(list) do
+    if name:find(piece, 1, true) then return true end
+  end
+  return false
+end
+
 function H.test(name, fn)
+  if (#ONLY > 0 and not named(name, ONLY)) or named(name, SKIP) then return end
   -- Let earlier tests finish what they scheduled first: a terminal's scheduled stopinsert ended the next
   -- test's insert mode (2026-10-19, Windows, where the agent tests that used to flush it are skipped)
   vim.wait(20)
@@ -69,8 +96,33 @@ function H.file(name, lines)
   return path
 end
 
+--- Before quitting: language servers stopped, programs that plugins started and that still run ended - a test run
+--- leaves no process behind (a language server outlived its run, 2026-10-21). On Windows the whole tree goes
+--- (taskkill /T): git.EXE is a launcher, the git.exe it starts holds the pipes.
+function H.settle()
+  for _, client in ipairs(vim.lsp.get_clients()) do pcall(function() client:stop(true) end) end
+  local function running()
+    local list = {}
+    vim.uv.walk(function(h)
+      if h:get_type() == "process" and h:is_active() and not h:is_closing() then list[#list + 1] = h end
+    end)
+    return list
+  end
+  vim.wait(2000, function() return #running() == 0 end, 50) -- most end by themselves
+  for _, h in ipairs(running()) do
+    if vim.fn.has("win32") == 1 then
+      pcall(vim.fn.system, { "taskkill", "/T", "/F", "/PID", tostring(h:get_pid()) })
+    else
+      pcall(h.kill, h, "sigkill")
+    end
+  end
+  vim.wait(3000, function() return #running() == 0 end, 50)
+end
+
 --- Print the results; exit with status 1 if anything failed.
 function H.report(title)
+  if #ONLY > 0 then title = title .. " (only: " .. table.concat(ONLY, ", ") .. ")" end
+  if #SKIP > 0 then title = title .. " (skipped: " .. table.concat(SKIP, ", ") .. ")" end
   local out = { "", "═══════════════════════════════════════════", "  GREY KNIGHT — " .. title, "═══════════════════════════════════════════" }
   for _, r in ipairs(H.results) do out[#out + 1] = "  " .. r end
   out[#out + 1] = "───────────────────────────────────────────"
@@ -84,6 +136,7 @@ function H.report(title)
     io.stdout:write(table.concat(out, "\n") .. "\n")
     io.stdout:flush()
   end
+  H.settle()
   -- exit here, also on success: tests/run.sh ends with "cquit 2", reached only when a suite crashed before
   -- its report - a crash must not count as passed
   vim.cmd(H.failed > 0 and "cquit 1" or "qall!")

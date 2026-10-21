@@ -21,9 +21,14 @@ try {
     $nvimArgs = "-c `"luafile tests/${suite}_test.lua`" -c `"cquit 2`""
     $p = Start-Process -FilePath $nvim -ArgumentList $nvimArgs -WorkingDirectory $root -WindowStyle Minimized -PassThru
     $null = $p.Handle # keeps the exit code readable after the process ended
-    if (-not $p.WaitForExit(900000)) {
-      $p.Kill()
-      Write-Output "${suite}: stopped after 15 minutes"
+    # The harness writes the report just before quitting: wait for it (at most 15 minutes), then for the exit
+    $deadline = (Get-Date).AddMinutes(15)
+    while (-not $p.HasExited -and -not (Test-Path $report) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    if (-not $p.WaitForExit(30000)) {
+      # The whole tree: the window's Neovim and the --embed server it started (Kill() left those, 2026-10-21)
+      & taskkill /T /F /PID $p.Id | Out-Null
+      if (Test-Path $report) { Get-Content -Encoding UTF8 $report; Write-Output "${suite}: Neovim did not quit after its report" }
+      else { Write-Output "${suite}: stopped after 15 minutes" }
       $status = 1
       continue
     }
