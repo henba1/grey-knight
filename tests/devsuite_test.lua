@@ -698,6 +698,134 @@ test("Terminals: going to a shell, REPL or agent window means insert mode, not o
   assert(ok, err)
 end)
 
+-- 2026-10-21: every terminal, not only toggleterm's - a run's output where the program waits for input, :terminal:
+-- going there means terminal mode (on Windows they stayed in normal mode); not once the program has exited
+test("Terminals: going to any terminal whose program runs - a run's output, :terminal - means terminal mode; not once it has exited", function()
+  local runner, tasks = require("devsuite.runner"), require("devsuite.tasks")
+  local code = vim.api.nvim_get_current_win()
+  local real = vim.cmd
+  local function enter(win) -- from the code window into `win`; startinsert / stopinsert recorded, not done
+    vim.api.nvim_set_current_win(code)
+    local calls = {}
+    vim.cmd = setmetatable({}, {
+      __call = function(_, c)
+        if c == "startinsert" or c == "stopinsert" then calls[#calls + 1] = c else return real(c) end
+      end,
+      __index = function(_, k) return real[k] end,
+    })
+    vim.api.nvim_set_current_win(win)
+    wait(300, function() return false end) -- the scheduled callbacks run
+    vim.cmd = real
+    vim.api.nvim_set_current_win(code)
+    return calls
+  end
+  local root = tmpdir()
+  local file = root .. "/ask.py"
+  vim.fn.writefile({ 'input("name? ")' }, file)
+  local term_win, term_buf, task
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(file))
+    code = vim.api.nvim_get_current_win()
+    runner.run_file()
+    task = tasks.state.last
+    assert(wait(10000, function() return task_out(task):find("name?", 1, true) end), "the run did not ask: " .. task_out(task))
+    local out_win = vim.fn.bufwinid(task:get_bufnr())
+    assert(out_win ~= -1, "the run's output is not shown")
+    local seq = enter(out_win)
+    assert(seq[#seq] == "startinsert", "a run's output waiting for input: no terminal mode on the way in - " .. vim.inspect(seq))
+    vim.cmd("belowright split")
+    vim.cmd.terminal(py_cmd("import time; time.sleep(60)"))
+    term_win, term_buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+    vim.cmd("stopinsert")
+    vim.api.nvim_set_current_win(code)
+    seq = enter(term_win)
+    assert(seq[#seq] == "startinsert", ":terminal: no terminal mode on the way in - " .. vim.inspect(seq))
+    vim.fn.jobstop(vim.b[term_buf].terminal_job_id)
+    assert(wait(5000, function() return vim.fn.jobwait({ vim.b[term_buf].terminal_job_id }, 0)[1] ~= -1 end), ":terminal's program did not end")
+    seq = enter(term_win)
+    assert(seq[#seq] ~= "startinsert", "terminal mode in an exited program's window: " .. vim.inspect(seq))
+  end)
+  vim.cmd = real
+  if task then pcall(function() task:stop() end) end
+  if term_win and vim.api.nvim_win_is_valid(term_win) then pcall(vim.api.nvim_win_close, term_win, true) end
+  if term_buf and vim.api.nvim_buf_is_valid(term_buf) then pcall(vim.api.nvim_buf_delete, term_buf, { force = true }) end
+  if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
+  vim.cmd("stopinsert")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: in a terminal only the window keys are Neovim's - Ctrl+H/J/K/L to the next window, Ctrl+arrows resize;
+-- every other key is the program's: bash's Ctrl+A/E/W/U/R and Alt+B/F as typed. Ctrl+L went to the shell (its clear),
+-- Ctrl+arrows too. The stand-in reports every key it gets (Windows: msvcrt, where Alt+B arrives as b).
+local KEY_REPORTER = WIN and {
+  "import msvcrt, sys",
+  "print('READY', flush=True)",
+  "while True:",
+  "    c = msvcrt.getwch()",
+  "    s = c + (msvcrt.getwch() if c in '\\x00\\xe0' else '')",
+  "    print('GOT ' + ' '.join('%02x' % ord(ch) for ch in s), flush=True)",
+} or {
+  "import os, sys, tty, termios",
+  "fd = sys.stdin.fileno(); old = termios.tcgetattr(fd); tty.setraw(fd)",
+  "os.write(1, b'READY\\r\\n')",
+  "try:",
+  "    while True:",
+  "        os.write(1, ('GOT ' + ' '.join('%02x' % x for x in os.read(fd, 32)) + '\\r\\n').encode())",
+  "finally:",
+  "    termios.tcsetattr(fd, termios.TCSADRAIN, old)",
+}
+test("Terminals: Ctrl+L goes to the window on the right, Ctrl+arrows resize - bash's own keys reach the program as typed", function()
+  local script = vim.fn.tempname() .. ".py"
+  vim.fn.writefile(KEY_REPORTER, script)
+  local start = vim.api.nvim_get_current_win()
+  vim.cmd("vsplit")
+  local right = vim.api.nvim_get_current_win()
+  vim.cmd("wincmd h")
+  local left = vim.api.nvim_get_current_win()
+  vim.cmd("enew")
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    vim.fn.jobstart({ require("devsuite.util").system_python(), script }, { term = true })
+    assert(wait(10000, function() return text(buf):find("READY", 1, true) end), "the stand-in did not start: " .. text(buf))
+    local width, narrowed = vim.api.nvim_win_get_width(left), nil
+    local keys, i = { "<C-a>", "<A-b>", "<A-f>", "<C-e>", "<C-w>", "<C-u>", "<C-r>", "<C-Left>", "<C-l>" }, 0
+    local function step() -- one key every 200 ms, in terminal mode
+      i = i + 1
+      if keys[i - 1] == "<C-Left>" then narrowed = vim.api.nvim_win_get_width(left) end
+      if not keys[i] then return end
+      vim.api.nvim_feedkeys(vim.keycode(keys[i]), "t", false)
+      vim.defer_fn(step, 200)
+    end
+    vim.defer_fn(step, 200)
+    local stop = vim.uv.new_timer() -- out of terminal mode if Ctrl+L does not leave it
+    stop:start(15000, 0, vim.schedule_wrap(function() vim.api.nvim_feedkeys(vim.keycode("<C-\\><C-n>"), "nt", false) end))
+    vim.api.nvim_feedkeys("i", "tx!", false) -- returns when terminal mode ends
+    stop:stop()
+    stop:close()
+    assert(vim.api.nvim_get_current_win() == right, "Ctrl+L did not go to the window on the right")
+    assert(narrowed == width - 2, ("Ctrl+Left: the terminal is %s wide, was %d"):format(tostring(narrowed), width))
+    local want = WIN and { "01", "62", "66", "05", "17", "15", "12" } or { "01", "1b 62", "1b 66", "05", "17", "15", "12" }
+    wait(3000, function() local _, n = text(buf):gsub("GOT ", ""); return n >= #want end)
+    local got = {}
+    for g in text(buf):gmatch("GOT ([%x ]+)") do got[#got + 1] = vim.trim(g) end
+    assert(vim.deep_equal(got, want), "typed " .. vim.inspect(want) .. ", the program got " .. vim.inspect(got))
+  end)
+  -- the program ended before its window changes size: Neovim 0.12.6 on Windows crashed (access violation) deleting a
+  -- terminal that was resized between jobstop() and the end of its program
+  local job = vim.b[buf].terminal_job_id
+  if job then
+    pcall(vim.fn.jobstop, job)
+    wait(5000, function() return vim.fn.jobwait({ job }, 0)[1] ~= -1 end)
+  end
+  if vim.api.nvim_win_is_valid(right) and right ~= start then pcall(vim.api.nvim_win_close, right, true) end
+  if vim.api.nvim_win_is_valid(left) then vim.api.nvim_set_current_win(left) end
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.cmd("stopinsert")
+  vim.fn.delete(script)
+  assert(ok, err)
+end)
+
 -- ── Stabilization: the behaviour of 2026-10-15, pinned down ──
 
 -- Completion: types like a user; each step waits until the menu is open (or 5 s), then feeds its keys
@@ -769,8 +897,10 @@ local function complete_in(lnum, typed, want, source, opts)
   end
   local taken, waited_esc = false, 0
   local esc
-  esc = guarded(function() -- <Esc> once blink has taken the item (it does so a moment after <CR>), or after 5 s
-    if not taken and waited_esc < 5000 then
+  -- <Esc> once blink has taken the item - a moment after <CR>; on a busy machine it took over 5 s, and the Esc
+  -- before it dropped the item (as it should) - else after 15 s
+  esc = guarded(function()
+    if not taken and waited_esc < 15000 then
       waited_esc = waited_esc + 50
       return vim.defer_fn(esc, 50)
     end
@@ -789,18 +919,27 @@ local function complete_in(lnum, typed, want, source, opts)
       vim.api.nvim_feedkeys(vim.keycode("<CR>"), "t", false)
       return vim.defer_fn(esc, 50)
     end
-    if n > 20 then return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false) end
+    if n > 40 then -- never selected: what was, for the failure message
+      local sel = cmp.get_selected_item()
+      seen.instead = ("Tab never reached it - selected %s, %d items"):format(sel and tostring(sel.label) or "nothing", #(cmp.get_items() or {}))
+      return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
+    end
     vim.api.nvim_feedkeys(vim.keycode("<Tab>"), "t", false)
     vim.defer_fn(function() pick(n + 1) end, 150)
   end)
+  -- Tab once the menu has settled - the same items twice in a row: the sources answer one after the other (the
+  -- snippets load on first use), and a list still filling up moved the selection away under the Tabs
+  local last_count
   local poll
   poll = guarded(function()
-    if find() or waited >= 20000 then
+    local count = #(cmp.get_items() or {})
+    if (find() and count == last_count) or waited >= 20000 then
       seen.found = find() ~= nil
       seen.items = vim.tbl_map(function(it) return tostring(it.source_id) .. ":" .. tostring(it.label) end, vim.list_slice(cmp.get_items() or {}, 1, 12))
       if seen.found then return pick(0) end
       return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
     end
+    last_count = count
     waited = waited + 100
     vim.defer_fn(poll, 100)
   end)
@@ -1299,9 +1438,14 @@ test("Debug (python): F9 sets a breakpoint, F5 stops there, F10 steps, a variabl
   assert(ok, err)
 end)
 
--- VS Code writes launch.json with comments; people (and VS Code itself, when it edits) leave trailing commas
+-- VS Code writes launch.json with comments; people (and VS Code itself, when it edits) leave trailing commas.
+-- 2026-10-21: also as the first F5 of a session - nvim-dap's own, strict decoder is put back here; overseer's lenient
+-- one came only with the first run, so before it F5 offered none of the file's configurations
 test("Debug: F5 with a VS Code launch.json (comments, trailing commas) - the picked configuration runs with its args and env", function()
   local dbg, dap = require("devsuite.debug"), require("dap")
+  local vscode = require("dap.ext.vscode")
+  local lenient = vscode.json_decode
+  vscode.json_decode = vim.json.decode -- as nvim-dap starts
   local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
   vim.fn.mkdir(root .. "/.vscode", "p")
   vim.fn.writefile({ "import os, sys", 'print("ARGS=" + " ".join(sys.argv[1:]) + " GK=" + os.environ.get("GK_MODE", "-"))' }, root .. "/app.py")
@@ -1352,6 +1496,7 @@ test("Debug: F5 with a VS Code launch.json (comments, trailing commas) - the pic
     wait(10000, function() return dap.session() == nil end)
   end)
   vim.ui.select = select
+  if vscode.json_decode == vim.json.decode then vscode.json_decode = lenient end
   if dap.session() then dap.terminate() end
   vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
@@ -1765,6 +1910,11 @@ local function jdtls_end_to_end()
         if uri and uri:find("Helper.java", 1, true) then return true end
       end
     end), "the definition of Helper.greet() was not found")
+    -- 2026-10-21: completion from jdtls as it is typed - Helper.gr offers greet() (LSP), Tab and Enter take it
+    vim.api.nvim_buf_set_lines(buf, 5, 5, false, { "        String t = " })
+    local lines, seen = complete_in(6, "Helper.gr", "greet", "lsp")
+    assert(seen.found, "no greet() from jdtls in the menu: " .. vim.inspect(seen.items))
+    assert(lines[6]:find("Helper.greet()", 1, true), "after Tab and Enter: " .. lines[6])
   end)
   for _, client in ipairs(vim.lsp.get_clients({ name = "jdtls" })) do client:stop(true) end
   wait(10000, function() return #vim.lsp.get_clients({ name = "jdtls" }) == 0 end)
@@ -1787,10 +1937,12 @@ test("Java without IntelliJ: jdtls starts on a JDK found on the machine, end to 
   if not ok then error(err, 0) end -- a skip stays a skip
 end)
 
--- 2026-10-19: Angular templates get angularls (lua/integrations/web.lua)
-test("Angular: angularls attaches to a template of an Angular workspace", function()
+-- 2026-10-19: Angular templates get angularls (lua/integrations/web.lua). 2026-10-21: in a workspace folder named R&D
+-- - on Windows cmd.exe ran Mason's ngserver.cmd and split the server's probe paths at the & (unquoted: no space)
+test("Angular: angularls attaches to a template of an Angular workspace - one in a folder named R&D too", function()
   if vim.fn.executable("ngserver") == 0 then H.skip("angular-language-server not installed (Mason) - an Angular file installs it") end
-  local root = vim.fs.normalize(vim.fn.tempname())
+  local parent = vim.fs.normalize(vim.fn.tempname())
+  local root = parent .. "/R&D"
   vim.fn.mkdir(root .. "/src/app", "p")
   vim.fn.writefile({ '{ "version": 1, "projects": {} }' }, root .. "/angular.json")
   vim.fn.writefile({ '{ "compilerOptions": { "target": "es2022", "experimentalDecorators": true } }' }, root .. "/tsconfig.json")
@@ -1800,17 +1952,25 @@ test("Angular: angularls attaches to a template of an Angular workspace", functi
     "export class AppComponent { title = 'x'; }",
   }, root .. "/src/app/app.component.ts")
   vim.fn.writefile({ "<h1>{{ title }}</h1>" }, root .. "/src/app/app.component.html")
-  vim.cmd.edit(vim.fn.fnameescape(root .. "/src/app/app.component.html"))
+  for _, client in ipairs(vim.lsp.get_clients({ name = "angularls" })) do client:stop(true) end -- one for this root
+  wait(10000, function() return #vim.lsp.get_clients({ name = "angularls" }) == 0 end)
+  vim.cmd.edit({ args = { root .. "/src/app/app.component.html" }, magic = { file = false } })
   local buf = vim.api.nvim_get_current_buf()
   local ok, err = pcall(function()
     assert(vim.bo[buf].filetype == "htmlangular", "filetype " .. vim.bo[buf].filetype)
     assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "angularls" }) > 0 end), "angularls did not attach")
-    vim.wait(3000)
-    assert(#vim.lsp.get_clients({ bufnr = buf, name = "angularls" }) > 0, "angularls ended right away")
+    -- the server stays: with its probe paths cut at the &, it found no language service and ended
+    local client = vim.lsp.get_clients({ bufnr = buf, name = "angularls" })[1]
+    local answered = wait(30000, function()
+      local res = vim.lsp.buf_request_sync(buf, "textDocument/hover", { textDocument = { uri = vim.uri_from_bufnr(buf) }, position = { line = 0, character = 8 } }, 5000)
+      return res ~= nil and next(res) ~= nil
+    end)
+    assert(answered and not client:is_stopped(), "angularls does not answer, or ended")
   end)
   for _, client in ipairs(vim.lsp.get_clients({ name = "angularls" })) do client:stop(true) end
+  wait(10000, function() return #vim.lsp.get_clients({ name = "angularls" }) == 0 end)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
-  vim.fn.delete(root, "rf")
+  vim.fn.delete(parent, "rf")
   assert(ok, err)
 end)
 

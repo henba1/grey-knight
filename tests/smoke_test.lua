@@ -190,11 +190,27 @@ test("Dashboard bridge only inside the dashboard", function()
   assert((vim.fn.exists(":AidashPreview") == 2) == inside, ":AidashPreview defined outside the dashboard")
 end)
 
--- T13: Keys that once misbehaved (2026-10-19)
-test("Terminal: Ctrl+L goes to the program (clears a shell), Ctrl+h/j/k still move", function()
-  assert(vim.fn.maparg("<C-l>", "t") == "", "<C-l> is mapped in terminal mode: " .. vim.fn.maparg("<C-l>", "t"))
-  for _, k in ipairs({ "<C-h>", "<C-j>", "<C-k>" }) do
-    assert(vim.fn.maparg(k, "t") ~= "", k .. " no longer moves to the next window")
+-- T13: Keys that once misbehaved (2026-10-19). 2026-10-21: Ctrl+L moves from a terminal too (it went to the shell),
+-- Ctrl+arrows resize a terminal; every other key is the program's, so bash's own keys work in a terminal - and only
+-- there: insert and command-line mode stay Vim's (the same keys on any machine)
+test("Keys: in a terminal Ctrl+H/J/K/L go to the next window, Ctrl+arrows resize, bash's keys are the program's; insert mode stays Vim's", function()
+  for _, d in ipairs({ "h", "j", "k", "l" }) do
+    local rhs = vim.fn.maparg("<C-" .. d .. ">", "t")
+    assert(rhs:lower() == ("<c-\\><c-n><c-w>" .. d), ("<C-%s> in terminal mode: %q"):format(d, rhs))
+  end
+  for _, k in ipairs({ "<C-Up>", "<C-Down>", "<C-Left>", "<C-Right>" }) do
+    assert(vim.fn.maparg(k, "t"):find("resize", 1, true), k .. " does not resize from terminal mode: " .. vim.fn.maparg(k, "t"))
+  end
+  for _, k in ipairs({ "<C-a>", "<C-e>", "<C-b>", "<C-f>", "<C-w>", "<C-u>", "<C-r>", "<C-d>", "<C-y>", "<C-p>", "<C-n>", "<M-b>", "<M-f>", "<M-d>", "<M-.>" }) do
+    assert(vim.fn.maparg(k, "t") == "", k .. " is taken in terminal mode (bash's): " .. vim.fn.maparg(k, "t"))
+  end
+  local nvim_default = { ["<C-u>"] = "<C-G>u<C-U>", ["<C-w>"] = "<C-G>u<C-W>" } -- Neovim's own: an undo point first
+  for _, k in ipairs({ "<C-a>", "<C-k>", "<C-u>", "<C-w>", "<C-d>", "<M-b>", "<M-f>" }) do
+    local rhs = vim.fn.maparg(k, "i")
+    assert(rhs == "" or rhs == nvim_default[k], k .. " is mapped in insert mode (Vim's): " .. rhs)
+  end
+  for _, k in ipairs({ "<C-a>", "<C-b>", "<C-f>", "<C-k>", "<M-b>", "<M-f>" }) do
+    assert(vim.fn.maparg(k, "c") == "", k .. " is mapped in command-line mode (Vim's): " .. vim.fn.maparg(k, "c"))
   end
 end)
 
@@ -1701,6 +1717,193 @@ test("Formatting: :w formats a shell script (shfmt); an unfinished one is saved 
   end)
   vim.notify = notify
   vim.cmd("bwipeout!")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: a project's own prettier, as npm puts it there - node_modules/.bin/prettier (Windows: npm's .cmd) and
+-- the package; the stand-in puts spaces around "=" and notes its arguments. On Windows cmd.exe ran the .cmd and cut a
+-- quoted path at its first space: in a folder with a space the project's prettier never ran
+local NPM_CMD = { "@ECHO off", "GOTO start", ":find_dp0", "SET dp0=%~dp0", "EXIT /b", ":start", "SETLOCAL", "CALL :find_dp0", "",
+  'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ") ELSE (", '  SET "_prog=node"',
+  "  SET PATHEXT=%PATHEXT:;.JS;=;%", ")", "",
+  'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\..\\prettier\\bin\\prettier.cjs" %*' }
+local function prettier_project(root)
+  vim.fn.mkdir(root .. "/node_modules/.bin", "p")
+  vim.fn.mkdir(root .. "/node_modules/prettier/bin", "p")
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.writefile({ '{ "name": "demo", "private": true }' }, root .. "/package.json")
+  vim.fn.writefile({ '{ "name": "prettier", "version": "3.0.0", "bin": "./bin/prettier.cjs" }' }, root .. "/node_modules/prettier/package.json")
+  local bin = root .. "/node_modules/prettier/bin/prettier.cjs"
+  vim.fn.writefile({
+    "#!/usr/bin/env node",
+    "const fs = require('fs'), path = require('path');",
+    "fs.appendFileSync(path.join(__dirname, 'args.log'), JSON.stringify(process.argv.slice(2)) + '\\n');",
+    "let input = ''; process.stdin.setEncoding('utf8');",
+    "process.stdin.on('data', d => input += d);",
+    "process.stdin.on('end', () => process.stdout.write(input.replace(/\\s*=\\s*/g, ' = ')));",
+  }, bin)
+  if vim.fn.has("win32") == 1 then
+    vim.fn.writefile(NPM_CMD, root .. "/node_modules/.bin/prettier.cmd")
+  else
+    vim.fn.setfperm(bin, "rwxr-xr-x")
+    assert(vim.uv.fs_symlink("../prettier/bin/prettier.cjs", root .. "/node_modules/.bin/prettier"))
+  end
+  return root .. "/src/a.ts", root .. "/node_modules/prettier/bin/args.log"
+end
+
+test("Formatting: a project's own prettier formats TypeScript on :w and <leader>fm - in folders named with spaces, ä, #, % and &, and R&D", function()
+  if vim.fn.executable("node") == 0 then H.skip("node not installed") end
+  local tmp = vim.fs.normalize(assert(vim.uv.fs_realpath((function() local t = vim.fn.tempname(); vim.fn.mkdir(t, "p"); return t end)())))
+  local ok, err = pcall(function()
+    -- R&D: an & in a path without spaces is not quoted - on Windows cmd.exe (npm's .cmd, Volta's node.exe) split it there
+    for _, name in ipairs({ "plain", "my app ä #1 100% & co", "R&D" }) do
+      local file, args_log = prettier_project(tmp .. "/" .. name)
+      vim.fn.writefile({ "const x={a:1}", "export const y=x" }, file)
+      vim.cmd.edit({ args = { file }, magic = { file = false } })
+      local buf = vim.api.nvim_get_current_buf()
+      vim.cmd("silent write")
+      local want = { "const x = {a:1}", "export const y = x" }
+      assert(vim.deep_equal(vim.api.nvim_buf_get_lines(buf, 0, -1, false), want), name .. ": not formatted on :w - " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+      assert(vim.deep_equal(vim.fn.readfile(file), want), name .. ": not saved formatted")
+      local args = vim.json.decode(vim.fn.readfile(args_log)[1])
+      assert(args[1] == "--stdin-filepath" and vim.fs.normalize(args[2]) == vim.fs.normalize(file), name .. ": prettier was told " .. vim.inspect(args))
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "let z=1" })
+      vim.api.nvim_feedkeys(vim.keycode("<leader>fm"), "x", false)
+      assert(H.wait(5000, function() return vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "let z = 1" end), name .. ": <leader>fm did not format - " .. vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
+      vim.cmd("silent! bwipeout!")
+    end
+  end)
+  vim.cmd("silent! bwipeout!")
+  vim.fn.delete(tmp, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: on Windows ruff is Mason's ruff.cmd, and cmd.exe split the file's path at an & and dropped a ^: a file in
+-- R&D was not formatted
+test("Formatting: ruff formats Python on :w in folders named R&D and a^b", function()
+  if vim.fn.executable("ruff") == 0 then H.skip("ruff not installed (Mason)") end
+  local tmp = vim.fs.normalize(assert(vim.uv.fs_realpath((function() local t = vim.fn.tempname(); vim.fn.mkdir(t, "p"); return t end)())))
+  local ok, err = pcall(function()
+    for _, name in ipairs({ "R&D", "a^b" }) do
+      vim.fn.mkdir(tmp .. "/" .. name, "p")
+      local file = tmp .. "/" .. name .. "/a.py"
+      vim.fn.writefile({ "x=1", "def f( a ):", "  return a" }, file)
+      vim.cmd.edit({ args = { file }, magic = { file = false } })
+      vim.cmd("silent write")
+      local got = vim.fn.readfile(file)
+      assert(vim.deep_equal(got, { "x = 1", "", "", "def f(a):", "    return a" }), name .. ": " .. vim.inspect(got))
+      vim.cmd("silent! bwipeout!")
+    end
+  end)
+  vim.cmd("silent! bwipeout!")
+  vim.fn.delete(tmp, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: Windows - a .cmd shim (npm's, Mason's) runs as what it starts; cmd.exe never sees the arguments
+test("Windows: .cmd shims run as what they start - the program, or node and the script; one with arguments of its own stays", function()
+  local util = require("devsuite.util")
+  local argv = { "some-tool", "--stdin-filepath", "R&D/a b.ts" }
+  if vim.fn.has("win32") == 0 then
+    assert(util.unshim(argv) == argv, "Linux: argv changed")
+    return
+  end
+  local dir = vim.fs.normalize(assert(vim.uv.fs_realpath((function() local t = vim.fn.tempname(); vim.fn.mkdir(t, "p"); return t end)())))
+  local ok, err = pcall(function()
+    vim.fn.mkdir(dir .. "/bin", "p")
+    vim.fn.mkdir(dir .. "/pkg/tool", "p")
+    vim.fn.writefile({ "" }, dir .. "/pkg/tool/tool.exe")
+    vim.fn.writefile({ "" }, dir .. "/pkg/tool/cli") -- a node script without an extension (angular's bin/ngserver)
+    vim.fn.writefile({ "" }, dir .. "/pkg/tool/cli.mjs")
+    local shims = {
+      exe = { "@ECHO off", 'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%dp0%\\..\\pkg\\tool\\tool.exe" %*' },
+      node = vim.list_extend(vim.list_slice(NPM_CMD, 1, #NPM_CMD - 1), { 'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\..\\pkg\\tool\\cli" %*' }),
+      old = { '@IF EXIST "%~dp0\\node.exe" (', '  "%~dp0\\node.exe"  "%~dp0\\..\\pkg\\tool\\cli.mjs" %*', ") ELSE (", "  node  \"%~dp0\\..\\pkg\\tool\\cli.mjs\" %*", ")" },
+      chain = { "@ECHO off", 'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%dp0%\\exe.cmd" %*' },
+      own_args = { "@ECHO off", '"C:/Python/python" -m tool.adapter %*' },
+      unknown = { "@ECHO off", "echo hi" },
+    }
+    for name, lines in pairs(shims) do vim.fn.writefile(lines, dir .. "/bin/" .. name .. ".cmd") end
+    local function run(name) return util.unshim({ dir .. "/bin/" .. name .. ".cmd", "--stdin-filepath", "R&D/a b.ts" }) end
+    local function same(a, b) return vim.fs.normalize(a):lower() == vim.fs.normalize(b):lower() end
+    local function is_node(p) return type(p) == "string" and vim.fn.fnamemodify(p, ":t"):lower() == "node.exe" and vim.uv.fs_stat(p) ~= nil end
+    local r = run("exe")
+    assert(same(r[1], dir .. "/pkg/tool/tool.exe") and r[2] == "--stdin-filepath" and r[3] == "R&D/a b.ts" and #r == 3, "exe: " .. vim.inspect(r))
+    r = run("node")
+    assert(is_node(r[1]) and same(r[2], dir .. "/pkg/tool/cli") and r[4] == "R&D/a b.ts", "node: " .. vim.inspect(r))
+    -- behind Volta's node.exe the real one: Volta's launcher handed the arguments to cmd.exe
+    local path_node = vim.fn.exepath("node")
+    if path_node:lower():find("volta", 1, true) and vim.fn.executable("volta") == 1 then
+      assert(not same(r[1], path_node), "Volta's launcher, not the node behind it: " .. r[1])
+    end
+    r = run("old")
+    assert(is_node(r[1]) and same(r[2], dir .. "/pkg/tool/cli.mjs"), "old npm shim: " .. vim.inspect(r))
+    r = run("chain")
+    assert(same(r[1], dir .. "/pkg/tool/tool.exe") and #r == 3, "a shim of a shim: " .. vim.inspect(r))
+    for _, name in ipairs({ "own_args", "unknown" }) do
+      r = run(name)
+      assert(same(r[1], dir .. "/bin/" .. name .. ".cmd") and #r == 3, name .. " was changed: " .. vim.inspect(r))
+    end
+    assert(util.unshim({ "git", "status" })[1] == "git", "an .exe on the PATH was changed")
+  end)
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: folds come from treesitter - a function, a block, a markdown section; files open unfolded
+test("Folding: zc folds a function's block, a markdown section; files open unfolded, zR opens all", function()
+  local cases = {
+    { "f.py", { "def outer(x):", "    if x:", "        return 1", "    return 2", "", "print(outer(1))" }, 2, { 2, 3 } },
+    { "f.lua", { "local function f(x)", "  if x then", "    return 1", "  end", "  return 2", "end" }, 2, { 2, 4 } },
+    { "f.ts", { "function f(x: number): number {", "  if (x) {", "    return 1;", "  }", "  return 2;", "}" }, 2, { 2, 4 } },
+    { "f.md", { "# One", "", "text one", "", "## Two", "", "text two", "", "# Three", "", "last" }, 2, { 1, 7 } },
+  }
+  local ok, err = pcall(function()
+    for _, c in ipairs(cases) do
+      vim.cmd.edit(vim.fn.fnameescape(H.file(c[1], c[2])))
+      pcall(function() vim.treesitter.get_parser(0):parse(true) end)
+      for l = 1, #c[2] do assert(vim.fn.foldclosed(l) == -1, c[1] .. ": opened with line " .. l .. " folded") end
+      -- treesitter's folds come a moment after the file (computed in the background; the pi: E490 right away)
+      assert(H.wait(5000, function() return vim.fn.foldlevel(c[3]) > 0 end), c[1] .. ": no fold at line " .. c[3])
+      vim.api.nvim_win_set_cursor(0, { c[3], 0 })
+      vim.cmd("normal! zc")
+      assert(vim.fn.foldclosed(c[3]) == c[4][1] and vim.fn.foldclosedend(c[3]) == c[4][2],
+        ("%s: zc on line %d folded %d..%d, not %d..%d"):format(c[1], c[3], vim.fn.foldclosed(c[3]), vim.fn.foldclosedend(c[3]), c[4][1], c[4][2]))
+      vim.cmd("normal! zR")
+      assert(vim.fn.foldclosed(c[3]) == -1, c[1] .. ": zR left a fold closed")
+      vim.cmd("silent! bwipeout!")
+    end
+  end)
+  vim.cmd("silent! bwipeout!")
+  assert(ok, err)
+end)
+
+-- 2026-10-21: gx opens what is under the cursor with the system's handler - the URL of a markdown link (on its text),
+-- a bare URL without the period after it, one in a code comment
+test("gx: opens a markdown link's URL from its text, a bare URL without the period after it, one in a comment", function()
+  local opened, ui_open = {}, vim.ui.open
+  vim.ui.open = function(target) opened[#opened + 1] = target; return nil, nil end
+  local ok, err = pcall(function()
+    local function gx_on(file, lines, lnum, at)
+      vim.cmd.edit(vim.fn.fnameescape(H.file(file, lines)))
+      pcall(function() vim.treesitter.get_parser(0):parse(true) end)
+      opened = {}
+      local col = lines[lnum]:find(at, 1, true)
+      vim.api.nvim_win_set_cursor(0, { lnum, col })
+      vim.api.nvim_feedkeys("gx", "x", false)
+      vim.cmd("silent! bwipeout!")
+      return opened
+    end
+    local md = { "# Docs", "", "see [the docs](https://example.org/a) and https://example.org/bare." }
+    local got = gx_on("t.md", md, 3, "the docs")
+    assert(vim.deep_equal(got, { "https://example.org/a" }), "markdown link text: " .. vim.inspect(got))
+    got = gx_on("t.md", md, 3, "example.org/bare")
+    assert(vim.deep_equal(got, { "https://example.org/bare" }), "bare URL: " .. vim.inspect(got))
+    got = gx_on("t.lua", { "-- see https://example.org/lua-docs." }, 1, "example.org")
+    assert(vim.deep_equal(got, { "https://example.org/lua-docs" }), "in a comment: " .. vim.inspect(got))
+  end)
+  vim.ui.open = ui_open
+  vim.cmd("silent! bwipeout!")
   assert(ok, err)
 end)
 
