@@ -488,10 +488,11 @@ test("Explorer: d keeps the cursor on its item, else on the next one (also for t
 end)
 
 -- 2026-10-21: three searches in the explorer (config/explorer.lua). / files as snacks searched (paths), D folders by
--- name only (no file shown), S only the rows the tree shows (closed folders not looked into); <a-s> in the search
--- box goes on to the next one with the same text, the box's title names the search. <CR> goes back to the tree on
--- the match; the next search starts as a file search again. The real explorer, on alpha/ (open), beta/, zeta/ (closed).
-test("Explorer: / D S search files, folders by name, the current view; <a-s> switches, <CR> back to the tree", function()
+-- name only (no file shown), S only the rows the tree shows (closed folders not looked into) - in the list, and in the
+-- search box when not typing; during a search they switch with the same text, <a-s> does it while typing. The box's
+-- title names the search. <CR> goes back to the tree on the match, <Esc> steps back (box, list, the tree as before the
+-- search, closed); the next search starts as a file search again. The real explorer, on alpha/ (open), beta/, zeta/.
+test("Explorer: / D S search files, folders by name, the current view, switch with the same text; <Esc> steps back", function()
   local tmp = vim.fn.tempname()
   vim.fn.mkdir(tmp, "p")
   local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
@@ -510,12 +511,18 @@ test("Explorer: / D S search files, folders by name, the current view; <a-s> swi
     assert(H.wait(OPEN_MS, picker), "explorer did not open")
     local p = picker()
     assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() >= 7 end), "explorer did not list")
-    for key, action in pairs({ ["/"] = "gk_search_files", D = "gk_search_folders", S = "gk_search_view" }) do
-      local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(key, "n", false, true) end)
-      assert(m.desc == action, key .. " runs " .. tostring(m.desc) .. ", not " .. action)
+    local function key(win, lhs, mode)
+      return vim.api.nvim_buf_call(win.buf, function() return vim.fn.maparg(lhs, mode, false, true) end)
     end
-    local alt = vim.api.nvim_buf_call(p.input.win.buf, function() return vim.fn.maparg("<a-s>", "i", false, true) end)
-    assert(tostring(alt.desc):find("Next search", 1, true), "<a-s> in the search box: " .. tostring(alt.desc))
+    local keys = { ["/"] = "gk_search_files", D = "gk_search_folders", S = "gk_search_view" }
+    for lhs, action in pairs(vim.tbl_extend("force", keys, { ["<Esc>"] = "gk_search_leave" })) do
+      assert(key(p.list.win, lhs, "n").desc == action, "list: " .. lhs .. " runs " .. tostring(key(p.list.win, lhs, "n").desc))
+    end
+    for lhs, action in pairs(vim.tbl_extend("force", keys, { ["<Esc>"] = "gk_search_back" })) do -- not while typing
+      assert(key(p.input.win, lhs, "n").desc == action, "search box: " .. lhs .. " runs " .. tostring(key(p.input.win, lhs, "n").desc))
+    end
+    assert(tostring(key(p.input.win, "<a-s>", "i").desc):find("Next search", 1, true), "<a-s> while typing")
+    assert(vim.tbl_isempty(key(p.input.win, "<Esc>", "i")), "<Esc> while typing is Vim's: typing ends")
     -- what a search found (the folders above a match, only there for context, left out), sorted
     local function found()
       local r = {}
@@ -552,14 +559,22 @@ test("Explorer: / D S search files, folders by name, the current view; <a-s> swi
     expect("Search current view", "") -- gamma is in closed beta
     p:action("gk_search_next")
     expect("Search files", "alpha/beta/gamma/ alpha/beta/gamma/keep.txt") -- the path, as snacks matches it
-    -- from the list: D switches to folders, / only goes back to the search box
-    p.list.win:focus()
+    -- <Esc> in the box (not typing): to the list, the search and its results stay
+    p:action("gk_search_back")
+    assert(vim.api.nvim_get_current_win() == p.list.win.win, "<Esc> in the search box: not in the list")
+    expect("Search files", "alpha/beta/gamma/ alpha/beta/gamma/keep.txt")
+    -- / D S in the list: that search with the same text, typing in the box again
     p:action("gk_search_folders")
     expect("Search folders", "alpha/beta/gamma/")
     assert(in_box(), "D: the search box does not have the cursor")
     p.list.win:focus()
     p:action("gk_search_files")
-    assert(in_box() and p.title == "Search folders", "/ during a folder search: " .. p.title)
+    expect("Search files", "alpha/beta/gamma/ alpha/beta/gamma/keep.txt")
+    assert(in_box(), "/: the search box does not have the cursor")
+    -- the same in the box (after <Esc>, not typing): D switches, the box keeps the cursor
+    p:action("gk_search_folders")
+    expect("Search folders", "alpha/beta/gamma/")
+    assert(in_box(), "D in the search box: it lost the cursor")
     -- <CR>: the tree, the cursor on the match, the explorer's title
     local gamma = root .. "/alpha/beta/gamma"
     assert(H.wait(3000, function() return p:current() and p:current().file == gamma end), "cursor not on gamma")
@@ -571,15 +586,24 @@ test("Explorer: / D S search files, folders by name, the current view; <a-s> swi
     p:action("gk_search_view")
     search_for("needle")
     expect("Search current view", "NeedleDir/ alpha/beta/needle-deep.txt alpha/needle-a.txt needle-root.txt")
-    -- no text left and the cursor out of the box: the search is over, / is a file search again
-    search_for("")
-    p.list.win:focus()
-    assert(H.wait(2000, function() return p.title == "Explorer" end), "after the search: " .. p.title)
+    -- <Esc> <Esc>: the box, the list - and the search is over: the tree, the cursor where it was before it (gamma)
+    p:action("gk_search_back")
+    p:action("gk_search_leave")
+    assert(H.wait(3000, function()
+      return not p:is_active() and p.input.filter:is_empty() and p.title == "Explorer" and p:current() and p:current().file == gamma
+    end), "<Esc> in the list: " .. p.title .. ", on " .. tostring(p:current() and p:current().file))
+    -- the next search is a file search again; out of the box with no text: no search
     p:action("gk_search_files")
     assert(in_box() and p.title == "Search files", "/: " .. p.title)
+    p:action("gk_search_back")
+    assert(H.wait(2000, function() return p.title == "Explorer" end), "no text, out of the box: " .. p.title)
+    -- no search: <Esc> in the list closes the explorer, as snacks' did
     H.wait(3000, function() return not p:is_active() end) -- done with its finds, as before closing it by hand
+    p:action("gk_search_leave")
+    assert(H.wait(3000, function() return #explorers() == 0 end), "<Esc> without a search: the explorer is still open")
   end)
   close_explorers()
+  vim.cmd("stopinsert") -- the box's typing, started for the test's keys, would wait for the end of the script
   vim.fn.chdir(before)
   vim.fn.delete(root, "rf")
   assert(ok, err)
