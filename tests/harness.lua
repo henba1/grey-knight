@@ -54,6 +54,9 @@ function H.test(name, fn)
   -- Let earlier tests finish what they scheduled first: a terminal's scheduled stopinsert ended the next
   -- test's insert mode (2026-10-19, Windows, where the agent tests that used to flush it are skipped)
   vim.wait(20)
+  -- Every test starts in normal mode: an earlier one's startinsert, still pending in a script, began with the next
+  -- keys typed - gsaiw" went into the text as g@iw" (2026-10-21)
+  vim.cmd("stopinsert")
   local ok, err = pcall(fn)
   if ok then
     H.passed = H.passed + 1
