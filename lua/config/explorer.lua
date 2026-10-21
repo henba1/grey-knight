@@ -1,6 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  File explorer (<leader>e, snacks): cd right from the tree,  ║
--- ║  move and copy through the tree, typed paths as typed        ║
+-- ║  move and copy through the tree, typed paths as typed,       ║
+-- ║  search for files, for folders or in the current view        ║
 -- ╚══════════════════════════════════════════════════════════════╝
 -- Snacks' own "." and "<BS>" only move the tree. These keys change Neovim's working directory (pickers,
 -- terminals and runs start there); the explorer follows DirChanged by itself, so tree and :pwd stay the
@@ -10,6 +11,7 @@
 --   m  c        move / copy the marked items into the folder under the cursor; nothing marked: mark this one
 --   r  C  a     rename or move / copy / create at a typed path (absolute paths as typed)
 --   d           delete the marked, else this one - the cursor stays where it was
+--   /  D  S     search files / folders / the current view; <a-s> in the search box: the next of the three
 local M = {}
 
 local WIN = vim.fn.has("win32") == 1
@@ -252,5 +254,186 @@ function M.delete(picker, item)
     end)
   end)
 end
+
+-- ── Searching: files, folders, the current view (2026-10-21) ────────────────
+-- snacks' explorer had one search: / listed every file and folder below the tree's root (fd) and matched the
+-- typed text against their paths. Now there are three, and the search box's title says which one runs:
+--   /   Search files          snacks' own, as before: files and folders, the text matches the path below the root
+--   D   Search folders        only folders (fd --type d), the text matches a folder's name; no file is shown
+--   S   Search current view   only the rows the tree showed when the search started (the open folders'
+--                             contents); the text matches their names, closed folders are not looked into
+-- <a-s> in the search box goes on to the next one and keeps the text. Matches show up under their folders;
+-- <CR> goes back to the tree with the cursor on the match. During a search / goes back to the search box.
+
+local LABEL = { file = "Search files", folder = "Search folders", view = "Search current view" }
+local NEXT = { file = "folder", folder = "view", view = "file" }
+local searches = setmetatable({}, { __mode = "k" }) -- per explorer: { mode, title }
+
+local function search_of(picker)
+  local s = searches[picker]
+  if not s then
+    s = { mode = "file", title = picker.title } -- title: the explorer's own ("Explorer")
+    searches[picker] = s
+  end
+  return s
+end
+
+local function searching(picker) return not picker.input.filter:is_empty() end
+
+-- The search box's title names the search while there is one (or the box has the cursor), else it is the
+-- explorer's own. A search that ended - no text left, the cursor out of the box - leaves file search next.
+local function sync(picker)
+  if picker.closed then return end
+  local s = search_of(picker)
+  local typing = picker.input.win:valid() and vim.api.nvim_get_current_win() == picker.input.win.win
+  local on = typing or searching(picker)
+  if not on then s.mode = "file" end
+  local title = on and LABEL[s.mode] or s.title
+  if picker.title ~= title then
+    picker.title = title
+    picker:update_titles()
+  end
+end
+
+--- The explorer's config: snacks' own, then the searches' - the search box's title follows the search when
+--- snacks switches between the tree and a search, and when the cursor goes in or out of the search box.
+function M.setup(opts)
+  opts = require("snacks.picker.source.explorer").setup(opts)
+  local transform = opts.filter.transform
+  opts.filter.transform = function(picker, filter)
+    local flipped = transform(picker, filter) -- true when it switched between the tree and a search
+    sync(picker)
+    return flipped
+  end
+  local on_show = opts.on_show
+  opts.on_show = function(picker)
+    local ref = picker:ref()
+    local function later() vim.schedule(function() if ref() then sync(ref()) end end) end
+    picker.input.win:on({ "BufEnter", "BufLeave" }, function() later() end, { buf = true })
+    if on_show then on_show(picker) end
+  end
+  return opts
+end
+
+-- Folder search: fd lists only folders (snacks' search, files.lua, lists files too and has no way to leave them
+-- out). The tree is built as snacks' search builds it (picker/source/explorer.lua); the text matches the name.
+local function folders(opts, ctx)
+  local fd = require("snacks.picker.source.files").get_cmd("fd") -- fd or fdfind; says so when there is none
+  if not fd then return function() end end
+  local Tree, cwd = require("snacks.explorer.tree"), ctx.filter.cwd
+  local args = { "--type", "d", "--color", "never", "-E", ".git", "--path-separator", "/" }
+  if opts.hidden then args[#args + 1] = "--hidden" end
+  if opts.ignored then args[#args + 1] = "--no-ignore" end
+  if opts.follow then args[#args + 1] = "-L" end
+  for _, glob in ipairs(opts.exclude or {}) do vim.list_extend(args, { "-E", glob }) end
+  local pattern, extra = Snacks.picker.util.parse(ctx.filter.search) -- live search (<c-g>): fd matches names itself
+  vim.list_extend(args, extra)
+  vim.list_extend(args, { pattern ~= "" and pattern or ".", cwd })
+  local list = require("snacks.picker.source.proc").proc({ cmd = fd, args = args, notify = false }, ctx)
+  return function(cb)
+    local root = { file = cwd, dir = true, open = true, text = "", sort = "" }
+    local items, last = { [cwd] = root }, {}
+    local function add(path)
+      local parent, name = items[vim.fs.dirname(path)] or root, vim.fs.basename(path)
+      local node = Tree:node(path)
+      local item = {
+        file = path, dir = true, open = true, parent = parent,
+        text = name, -- what the typed text matches
+        sort = parent.sort .. "!" .. name .. " ", -- the tree's order, as snacks sorts its search
+        hidden = name:sub(1, 1) == ".",
+        type = node and node.type or "directory",
+        status = opts.git_status_open and node and node.status or nil,
+      }
+      if not last[parent] or last[parent].sort < item.sort then
+        if last[parent] then last[parent].last = false end
+        item.last, last[parent] = true, item
+      end
+      items[path] = item
+      cb(item)
+    end
+    cb(root)
+    list(function(line)
+      local path = line.text:gsub("/$", "") -- fd ends a folder with /
+      if items[path] then return end -- there already, as the parent of an earlier one
+      for dir in Snacks.picker.util.parents(path, cwd) do
+        if not items[dir] then add(dir) end
+      end
+      add(path)
+    end)
+  end
+end
+
+-- Current view: the rows the tree shows, nothing else; the text matches their names. They come from snacks' tree
+-- finder as if nothing was typed: its open folders' contents, as on screen when the search started (a search
+-- opens and closes no folder; after a cd it is the new root's tree). Copies, in the tree's order.
+local KEEP = { "file", "dir", "open", "type", "hidden", "ignored", "status", "dir_status", "severity", "last" }
+local function view(opts, ctx)
+  local untyped = setmetatable({ pattern = "", search = "" }, { __index = ctx.filter })
+  local tree = require("snacks.picker.source.explorer").explorer(opts, setmetatable({ filter = untyped }, { __index = ctx }))
+  local search = vim.trim(ctx.filter.search) -- live search (<c-g>): a plain text here, case as smartcase
+  local lower = search:lower() == search
+  local function hit(name) return (lower and name:lower() or name):find(search, 1, true) ~= nil end
+  return function(cb)
+    local rows, want, copies = {}, {}, {}
+    tree(function(row) rows[#rows + 1] = row end)
+    for _, row in ipairs(rows) do
+      if search == "" or (row.parent and hit(vim.fs.basename(row.file))) then
+        local r = row -- with the folders above it
+        while r and not want[r] do
+          want[r] = true
+          r = r.parent
+        end
+      end
+    end
+    for i, row in ipairs(rows) do
+      if want[row] then
+        local item = { sort = i }
+        for _, key in ipairs(KEEP) do item[key] = row[key] end
+        item.parent = row.parent and copies[row.parent] or nil
+        item.text = item.parent and vim.fs.basename(row.file) or "" -- the root row: only there as the top
+        copies[row] = item
+        cb(item)
+      end
+    end
+  end
+end
+
+--- The explorer's finder: the tree and file search are snacks' own; folder search and the current view are here.
+function M.finder(opts, ctx)
+  local E = require("snacks.picker.source.explorer")
+  local mode = search_of(ctx.picker).mode
+  if mode == "file" or ctx.filter:is_empty() then return E.explorer(opts, ctx) end
+  E.get_state(ctx.picker):setup(ctx) -- as snacks' search starts: the open folders are watched
+  local find = mode == "folder" and folders(opts, ctx) or view(opts, ctx)
+  ctx.picker.matcher.opts.keep_parents = true -- a match shows up under its folders (after snacks' tree finder)
+  ctx.picker.list:set_target()
+  return find
+end
+
+-- Start a search in `mode` (during a search: switch to it, the text stays); the search box gets the cursor
+local function search(picker, mode)
+  local s = search_of(picker)
+  if s.mode ~= mode then
+    s.mode = mode
+    if searching(picker) then picker:find() end -- the same text, found the other way
+  end
+  picker:focus("input", { show = true })
+  sync(picker)
+end
+
+--- / - a file search (snacks' own); during a search: back to the search box, the search as it is
+function M.search_files(picker)
+  if searching(picker) then return picker:focus("input", { show = true }) end
+  search(picker, "file")
+end
+
+--- D - a folder search: only folders, the text matches their names
+function M.search_folders(picker) search(picker, "folder") end
+
+--- S - a search in the current view: only the rows the tree shows, the text matches their names
+function M.search_view(picker) search(picker, "view") end
+
+--- <a-s> in the search box - the next search (files, folders, current view), the text stays
+function M.search_next(picker) search(picker, NEXT[search_of(picker).mode]) end
 
 return M
