@@ -1269,7 +1269,10 @@ test("Git: added, changed and deleted lines get their signs; the explorer's ]g /
     key("<leader>gr").callback()
     assert(H.wait(3000, function() return not vim.tbl_contains(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "four and a half") end),
       "<leader>gr did not undo the added line")
-    key("]c").callback() -- the last change: eight deleted
+    -- the last change: eight deleted (after the undo, gitsigns' hunks are that one alone - it updates them a moment later)
+    assert(H.wait(5000, function() return kinds() == "delete" end), "hunks after <leader>gr: " .. kinds())
+    key("]c").callback()
+    assert(H.wait(3000, function() return line() == 7 end), "]c to the deleted line: line " .. line())
     key("<leader>gp").callback()
     local preview = H.wait(5000, function() return has_float("eight") end)
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -1348,6 +1351,257 @@ test("Git: a git run that cannot start (its folder just gone) does not stop gits
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
   vim.fn.delete(root, "rf")
   assert(got, "no signs after the failed run: gitsigns' lock stayed taken")
+end)
+
+-- ── More of the day (2026-10-21): keys that clash, git views, pickers, Trouble, undo, terminals, big files ─────────
+-- flash's s and mini.surround's sa / sd / sr: typed within timeoutlen (500 ms), s then d deleted a surrounding instead
+-- of jumping to a d. A one-key map that begins longer ones waits for them - and the longer one wins when typed fast.
+test("Keys: a one-key map is not the start of others (flash's s and the surround keys)", function()
+  require("lazy").load({ plugins = { "flash.nvim", "mini.surround", "mini.ai", "oil.nvim" } })
+  local clashes = {}
+  for _, mode in ipairs({ "n", "x", "o" }) do
+    local maps, singles = vim.api.nvim_get_keymap(mode), {}
+    for _, m in ipairs(maps) do
+      if m.lhs:match("^%g$") then singles[m.lhs] = m end
+    end
+    for _, m in ipairs(maps) do
+      local first, single = m.lhs:sub(1, 1), singles[m.lhs:sub(1, 1)]
+      -- mini.ai's a / i and its an / il ... are one family on purpose
+      local family = single and (single.desc or ""):find("textobject") and (m.desc or ""):find("textobject")
+      if #m.lhs > 1 and single and not family then
+        clashes[#clashes + 1] = ("%s %s (%s) begins with %s (%s)"):format(mode, m.lhs, m.desc or "", first, single.desc or "")
+      end
+    end
+  end
+  assert(#clashes == 0, table.concat(clashes, "; "))
+end)
+
+test("Editing: gsaiw\" surrounds a word, gsr\"' changes the quotes, gsd' takes them away (mini.surround on gs)", function()
+  require("lazy").load({ plugins = { "mini.surround" } })
+  vim.cmd("enew!")
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "say hello now" })
+  local function line() return vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] end
+  local ok, err = pcall(function()
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
+    vim.api.nvim_feedkeys('gsaiw"', "x", false)
+    assert(line() == 'say "hello" now', "gsaiw\": " .. line())
+    vim.api.nvim_feedkeys([[gsr"']], "x", false)
+    assert(line() == "say 'hello' now", "gsr\"': " .. line())
+    vim.api.nvim_feedkeys("gsd'", "x", false)
+    assert(line() == "say hello now", "gsd': " .. line())
+  end)
+  vim.cmd("bwipeout!")
+  assert(ok, err)
+end)
+
+-- A temp repository with a committed a.txt changed afterwards; fn(root) runs in it as the working directory
+local function in_repo(fn)
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  local function git(...) vim.fn.system(vim.list_extend({ "git", "-C", root, "-c", "user.name=gk", "-c", "user.email=gk@example.invalid" }, { ... })) end
+  vim.fn.writefile({ "one", "two", "three" }, root .. "/a.txt")
+  git("init", "-q")
+  git("add", ".")
+  git("commit", "-q", "-m", "init")
+  vim.fn.writefile({ "one", "TWO", "three" }, root .. "/a.txt")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg, level, opts)
+    if (level or 0) >= vim.log.levels.ERROR then notes[#notes + 1] = tostring(msg) end
+    return notify(msg, level, opts)
+  end
+  local ok, err = pcall(fn, root, notes)
+  vim.notify = notify
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end
+
+test("Git: <leader>gv shows the changes side by side (Diffview), <leader>gh a file's history - both close again", function()
+  in_repo(function(root, notes)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    local tabs = #vim.api.nvim_list_tabpages()
+    local function has_ft(ft)
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == ft then return true end
+      end
+    end
+    vim.api.nvim_feedkeys(vim.keycode("<leader>gv"), "x", false)
+    assert(H.wait(10000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 and has_ft("DiffviewFiles") end), "<leader>gv: no Diffview tab")
+    vim.cmd("DiffviewClose")
+    assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "Diffview did not close")
+    vim.api.nvim_feedkeys(vim.keycode("<leader>gh"), "x", false)
+    assert(H.wait(10000, function() return has_ft("DiffviewFileHistory") end), "<leader>gh: no file history")
+    vim.cmd("DiffviewClose")
+    assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "the file history did not close")
+    assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
+  end)
+end)
+
+test("Git: <leader>gg opens Lazygit over the editor, q leaves it and closes the window", function()
+  if vim.fn.executable("lazygit") == 0 then H.skip("lazygit not installed") end
+  in_repo(function(root, notes)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    -- a state of its own: a first start greets with a popup (Enter closes it), and yours stays as it is
+    local state = vim.env.XDG_STATE_HOME
+    vim.env.XDG_STATE_HOME = vim.fn.tempname()
+    vim.api.nvim_feedkeys(vim.keycode("<leader>gg"), "x", false)
+    vim.env.XDG_STATE_HOME = state
+    local term
+    local function terminals()
+      local seen = {}
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.bo[b].buftype == "terminal" then seen[#seen + 1] = vim.api.nvim_buf_get_name(b) .. ": " .. H.text(b):gsub("%s+", " "):sub(1, 300) end
+      end
+      return table.concat(seen, " ## ")
+    end
+    assert(H.wait(10000, function()
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.bo[b].buftype == "terminal" and H.text(b):find("Status", 1, true) then term = b; return true end
+      end
+    end), "<leader>gg: no Lazygit - terminals: " .. terminals())
+    local job = vim.b[term].terminal_job_id
+    if H.wait(3000, function() return H.text(term):find("Confirm: <enter>", 1, true) end) then vim.fn.chansend(job, "\r") end
+    assert(H.wait(10000, function() return H.text(term):find("a.txt", 1, true) end), "Lazygit does not list a.txt - terminals: " .. terminals())
+    for _ = 1, 3 do -- q leaves Lazygit (a popup first, if one is up)
+      if vim.fn.jobwait({ job }, 0)[1] ~= -1 then break end
+      vim.fn.chansend(job, "q")
+      H.wait(2000, function() return vim.fn.jobwait({ job }, 0)[1] ~= -1 end)
+    end
+    assert(vim.fn.jobwait({ job }, 0)[1] ~= -1, "Lazygit did not quit on q")
+    assert(H.wait(3000, function() return #vim.fn.win_findbuf(term) == 0 end), "Lazygit's window stayed")
+    assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
+  end)
+end)
+
+test("Pickers: every <leader>f picker and <leader>/ opens, lists and closes without an error", function()
+  vim.cmd.edit(vim.fn.fnameescape(vim.fn.stdpath("config") .. "/README.md")) -- a file open: buffers, grep_buffers
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg, level, opts)
+    if (level or 0) >= vim.log.levels.ERROR then notes[#notes + 1] = tostring(msg) end
+    return notify(msg, level, opts)
+  end
+  local counts = {}
+  local ok, err = pcall(function()
+    for _, lhs in ipairs({ "<leader>ff", "<leader>fg", "<leader>fb", "<leader>fh", "<leader>fr", "<leader>fc", "<leader>fd",
+      "<leader>fk", "<leader>f:", "<leader>/" }) do
+      for _, p in ipairs(Snacks.picker.get()) do p:close() end
+      vim.api.nvim_feedkeys(vim.keycode(lhs), "x", false)
+      H.wait(5000, function() local p = Snacks.picker.get()[1]; return p and not p:is_active() and p.list:count() > 0 end)
+      local p = Snacks.picker.get()[1] -- an empty one (no diagnostics, no history) said "No results" and closed
+      counts[lhs] = p and p.list:count() or 0
+      if p then p:close() end
+      vim.cmd("stopinsert")
+    end
+  end)
+  vim.notify = notify
+  for _, p in ipairs(Snacks.picker.get()) do p:close() end
+  vim.cmd("silent! bwipeout " .. vim.fn.fnameescape(vim.fn.stdpath("config") .. "/README.md"))
+  assert(ok, err)
+  assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
+  for _, lhs in ipairs({ "<leader>ff", "<leader>fb", "<leader>fh", "<leader>fc", "<leader>fk" }) do
+    assert(counts[lhs] > 0, lhs .. " listed nothing: " .. vim.inspect(counts))
+  end
+end)
+
+test("Trouble: <leader>xx lists the diagnostics, <leader>xq the quickfix list - each closes again", function()
+  local file = H.file("trouble.txt", { "one", "two" })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local ns = vim.api.nvim_create_namespace("gk-test-trouble")
+  vim.diagnostic.set(ns, 0, { { lnum = 1, col = 0, message = "gk trouble mark", severity = vim.diagnostic.severity.ERROR } })
+  local function trouble()
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      local b = vim.api.nvim_win_get_buf(win)
+      if vim.bo[b].filetype == "trouble" then return H.text(b) end
+    end
+  end
+  local ok, err = pcall(function()
+    vim.api.nvim_feedkeys(vim.keycode("<leader>xx"), "x", false)
+    assert(H.wait(5000, function() return (trouble() or ""):find("gk trouble mark", 1, true) end), "<leader>xx: " .. tostring(trouble()))
+    vim.api.nvim_feedkeys(vim.keycode("<leader>xx"), "x", false)
+    assert(H.wait(3000, function() return trouble() == nil end), "<leader>xx did not close it")
+    vim.fn.setqflist({ { filename = file, lnum = 2, text = "gk quickfix item" } }, "r")
+    vim.api.nvim_feedkeys(vim.keycode("<leader>xq"), "x", false)
+    assert(H.wait(5000, function() return (trouble() or ""):find("gk quickfix item", 1, true) end), "<leader>xq: " .. tostring(trouble()))
+    vim.api.nvim_feedkeys(vim.keycode("<leader>xq"), "x", false)
+    assert(H.wait(3000, function() return trouble() == nil end), "<leader>xq did not close it")
+  end)
+  vim.diagnostic.reset(ns)
+  vim.fn.setqflist({}, "r")
+  pcall(vim.cmd, "Trouble close")
+  vim.cmd("silent! bwipeout! " .. vim.fn.fnameescape(file))
+  assert(ok, err)
+end)
+
+test("Editing: undo outlives the buffer - :w, wipe it, open the file again, u brings the old text back", function()
+  assert(vim.o.undofile, "'undofile' is off")
+  local file = H.file("undo.txt", { "first" })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "second" })
+  vim.cmd("silent write")
+  vim.cmd("bwipeout")
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  vim.cmd("silent undo")
+  local line = vim.api.nvim_get_current_line()
+  vim.cmd("bwipeout!")
+  assert(line == "first", "after u: " .. line)
+end)
+
+test("Explorer: <C-t> drops a terminal in the folder under the cursor", function()
+  with_explorer({ "proj/sub/x.txt", "other/" }, function(p, root, x)
+    x.on("proj/sub")
+    p:action("terminal")
+    local term
+    assert(H.wait(5000, function()
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.bo[b].filetype == "snacks_terminal" and vim.b[b].terminal_job_id then term = b; return true end
+      end
+    end), "<C-t>: no terminal")
+    local job = vim.b[term].terminal_job_id
+    vim.fn.chansend(job, (vim.fn.has("win32") == 1 and "cd" or "pwd") .. "\r")
+    local want = root .. "/proj/sub"
+    local function shown() return (table.concat(vim.api.nvim_buf_get_lines(term, 0, -1, false), ""):gsub("\\", "/")) end
+    local ok = H.wait(8000, function() return shown():find(want, 1, true) ~= nil end)
+    local text = shown()
+    pcall(vim.fn.jobstop, job)
+    pcall(vim.api.nvim_buf_delete, term, { force = true })
+    assert(ok, "the terminal is not in " .. want .. ": " .. text)
+  end, { open = { "proj" } })
+end)
+
+test("Markdown: a .md file wraps, checks the spelling (English), conceals for render-markdown", function()
+  local file = H.file("notes.md", { "# Title", "", "Some txet with a typo." })
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local ok, err = pcall(function()
+    assert(vim.wo.wrap and vim.wo.spell and vim.bo.spelllang == "en_us" and vim.wo.conceallevel == 2,
+      ("wrap %s spell %s spelllang %s conceallevel %d"):format(vim.wo.wrap, vim.wo.spell, vim.bo.spelllang, vim.wo.conceallevel))
+    assert(vim.fn.spellbadword("txet")[1] == "txet" and vim.fn.spellbadword("text")[1] == "", "the spell check does not work")
+  end)
+  vim.cmd("bwipeout!")
+  assert(ok, err)
+end)
+
+test("Big files: one over 1.5 MB opens as bigfile - no treesitter, no language server", function()
+  local file = vim.fn.tempname() .. ".py"
+  local lines, line = {}, "x = 1  # " .. ("y"):rep(70)
+  for i = 1, 22000 do lines[i] = line end -- about 1.7 MB
+  vim.fn.writefile(lines, file)
+  vim.cmd.edit(vim.fn.fnameescape(file))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    assert(H.wait(3000, function() return vim.bo[buf].filetype == "bigfile" end), "filetype " .. vim.bo[buf].filetype)
+    vim.wait(1000)
+    assert(#vim.lsp.get_clients({ bufnr = buf }) == 0, "a language server attached to the big file")
+    assert(not vim.treesitter.highlighter.active[buf], "treesitter highlights the big file")
+  end)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.fn.delete(file)
+  assert(ok, err)
 end)
 
 test("Session: a file, the explorer, a terminal and help - back are the file and help, no empty window, no new shell", function()

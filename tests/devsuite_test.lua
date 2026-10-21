@@ -453,6 +453,28 @@ test("REPL (" .. flavor .. "): block with blank lines, then input()", function()
 end)
 end
 
+-- 2026-10-21: umlauts and symbols into the REPL and back out (Windows: ConPTY between Neovim and Python). The length
+-- says whether Python got the characters or their bytes.
+test("REPL: umlauts and symbols go in and come out as typed (Grüße äöü ß € ✓)", function()
+  local repl = require("devsuite.repl")
+  local command = repl.command
+  local python = require("devsuite.util").system_python()
+  repl.command = function() return python, repl.python_flavor(python) end
+  local old = require("toggleterm.terminal").get(repl.IDS.python, true)
+  if old then old:shutdown() end
+  scratch("python")
+  local ok, err = pcall(function()
+    repl.send({ 's = "Grüße äöü ß € ✓"', "print(s, len(s))" })
+    local term = require("toggleterm.terminal").get(repl.IDS.python, true)
+    assert(term, "no REPL terminal")
+    assert(wait(20000, function() return text(term.bufnr):find("Grüße äöü ß € ✓ 15", 1, true) end), "the REPL printed: " .. text(term.bufnr))
+  end)
+  local term = require("toggleterm.terminal").get(repl.IDS.python, true)
+  if term then term:shutdown() end
+  repl.command = command
+  assert(ok, err)
+end)
+
 test("Qwen: ask/edit prompts reference the file", function()
   local qwen = require("integrations.agent")
   local p = qwen.prompt("edit", { rel = "src/my file.py", ft = "python", sel = { text = "x = 1", first = 3, last = 3 } }, "rename x to y")
