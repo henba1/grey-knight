@@ -111,23 +111,5 @@ o.diffopt:append("linematch:60")
 o.redrawtime    = 10000
 o.maxmempattern = 20000
 
--- Clipboard: OSC 52 over SSH; the local system clipboard otherwise (Wayland first, then X11)
-if os.getenv("SSH_TTY") then
-  vim.g.clipboard = {
-    name = "OSC 52",
-    copy  = { ["+"] = require("vim.ui.clipboard.osc52").copy("+"), ["*"] = require("vim.ui.clipboard.osc52").copy("*") },
-    paste = { ["+"] = require("vim.ui.clipboard.osc52").paste("+"), ["*"] = require("vim.ui.clipboard.osc52").paste("*") },
-  }
-elseif os.getenv("WAYLAND_DISPLAY") and vim.fn.executable("wl-copy") then
-  vim.g.clipboard = {
-    name = "wl-clipboard",
-    copy  = { ["+"] = "wl-copy", ["*"] = "wl-copy" },
-    paste = { ["+"] = "wl-paste", ["*"] = "wl-paste" },
-  }
-elseif os.getenv("DISPLAY") and vim.fn.executable("xclip") then
-  vim.g.clipboard = {
-    name = "xclip",
-    copy  = { ["+"] = "xclip -selection clipboard", ["*"] = "xclip -selection primary" },
-    paste = { ["+"] = "xclip -selection clipboard -o", ["*"] = "xclip -selection primary -o" },
-  }
-end
+-- Clipboard: over SSH copy with OSC 52 and paste the last copy; locally Neovim picks the tool (config/clipboard.lua)
+vim.g.clipboard = require("config.clipboard").provider()

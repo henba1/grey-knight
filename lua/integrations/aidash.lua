@@ -109,19 +109,8 @@ function M.notify(message, title) return M.call("notify", { message = message, t
 function M.setup()
   if not M.active() then return end
 
-  -- Clipboard: copy over OSC 52 (tmux passes it to the page), paste the last copy from here
-  local osc52 = require("vim.ui.clipboard.osc52")
-  local last = { ["+"] = { { "" }, "v" }, ["*"] = { { "" }, "v" } }
-  local function copy(reg)
-    local send = osc52.copy(reg)
-    return function(lines, regtype) last[reg] = { lines, regtype }; send(lines, regtype) end
-  end
-  local function paste(reg) return function() return last[reg] end end
-  vim.g.clipboard = {
-    name = "OSC 52 (AI Dashboard)",
-    copy = { ["+"] = copy("+"), ["*"] = copy("*") },
-    paste = { ["+"] = paste("+"), ["*"] = paste("*") },
-  }
+  -- Clipboard: copy over OSC 52 (tmux passes it to the page), paste the last copy from here (config/clipboard.lua)
+  vim.g.clipboard = require("config.clipboard").osc52("OSC 52 (AI Dashboard)")
 
   -- URLs (gx, plugins) open in the browser; localhost dev servers become a preview
   local ui_open = vim.ui.open
