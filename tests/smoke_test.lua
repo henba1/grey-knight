@@ -2800,9 +2800,10 @@ test("Git: <leader>gv reviews the changes with codediff (VS Code's diff, colored
     vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
     local tabs = #vim.api.nvim_list_tabpages()
     vim.api.nvim_feedkeys(vim.keycode("<leader>gv"), "x", false)
-    assert(H.wait(10000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 and has_ft("codediff-explorer") end), "<leader>gv: no codediff tab")
+    -- 20 s: on a busy Windows the tab took longer than 10 once (2026-10-23; git status, its file watcher starting)
+    assert(H.wait(20000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 and has_ft("codediff-explorer") end), "<leader>gv: no codediff tab")
     local explorer = has_ft("codediff-explorer")
-    assert(H.wait(5000, function() return H.text(explorer):find("a.txt", 1, true) end), "the explorer: " .. H.text(explorer))
+    assert(H.wait(10000, function() return H.text(explorer):find("a.txt", 1, true) end), "the explorer: " .. H.text(explorer))
     -- the changed file side by side, its changes colored (codediff's highlights)
     local ns = vim.api.nvim_get_namespaces()["codediff-highlight"]
     assert(H.wait(5000, function()
@@ -2817,7 +2818,7 @@ test("Git: <leader>gv reviews the changes with codediff (VS Code's diff, colored
     vim.cmd("tabclose")
     assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "the review did not close")
     vim.api.nvim_feedkeys(vim.keycode("<leader>gh"), "x", false)
-    assert(H.wait(10000, function() return has_ft("codediff-history") end), "<leader>gh: no file history")
+    assert(H.wait(20000, function() return has_ft("codediff-history") end), "<leader>gh: no file history")
     vim.cmd("tabclose")
     assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "the file history did not close")
     assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
@@ -4150,8 +4151,36 @@ end)
 -- T12: The docs stay in step with the config
 local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end
--- G3-DEVELOPMENT.md too: a key it names must exist (2026-10-19)
-local DOCS = read("CHEATSHEET.md") .. "\n" .. read("USAGE.md") .. "\n" .. read("README.md") .. "\n" .. read("G3-DEVELOPMENT.md")
+-- G3-DEVELOPMENT.md too: a key it names must exist (2026-10-19). The guide is a file per topic in docs/ (2026-10-23)
+local GUIDE = vim.fn.glob(ROOT .. "/docs/*.md", false, true)
+local function guide_text()
+  local parts = {}
+  for _, path in ipairs(GUIDE) do parts[#parts + 1] = table.concat(vim.fn.readfile(path), "\n") end
+  return table.concat(parts, "\n")
+end
+local DOCS = read("CHEATSHEET.md") .. "\n" .. guide_text() .. "\n" .. read("README.md") .. "\n" .. read("G3-DEVELOPMENT.md")
+
+-- 2026-10-23: the guide split into a file per topic - none of them out of reach
+test("Docs: the guide's topics - each file in docs/ in its index, in the README and in <leader>gd", function()
+  assert(#GUIDE >= 9, "docs/: " .. vim.inspect(GUIDE))
+  local index, readme = read("docs/README.md"), read("README.md")
+  local select, offered = vim.ui.select, nil
+  vim.ui.select = function(items, _, cb) offered = items; cb(nil) end
+  local ok, err = pcall(vim.api.nvim_feedkeys, " gd", "x", false)
+  vim.ui.select = select
+  assert(ok, err)
+  local missing = {}
+  for _, path in ipairs(GUIDE) do
+    local file = vim.fn.fnamemodify(path, ":t")
+    if file ~= "README.md" then
+      if not index:find("(" .. file .. ")", 1, true) then missing[#missing + 1] = "docs/README.md: " .. file end
+      if not readme:find("(docs/" .. file .. ")", 1, true) then missing[#missing + 1] = "README.md: " .. file end
+    end
+    if not vim.tbl_contains(offered or {}, "docs/" .. file) then missing[#missing + 1] = "<leader>gd: " .. file end
+  end
+  assert(#missing == 0, table.concat(missing, ", "))
+  assert(vim.fn.filereadable(ROOT .. "/USAGE.md") == 0, "USAGE.md is back")
+end)
 
 test("Docs: every key with a description is documented", function()
   local missing, seen = {}, {}
@@ -4206,7 +4235,7 @@ end)
 test("Docs: every link to a heading or file resolves (GitLab anchors)", function()
   local md = require("config.mdlinks")
   local bad = {}
-  for _, doc in ipairs(vim.fn.glob(ROOT .. "/*.md", false, true)) do
+  for _, doc in ipairs(vim.list_extend(vim.fn.glob(ROOT .. "/*.md", false, true), vim.deepcopy(GUIDE))) do
     for _, l in ipairs(md.links(vim.fn.readfile(doc))) do
       if not l.target:match("^%a[%w+.-]*:") then
         local file, anchor = l.target:match("^([^#]*)#?(.*)$")
