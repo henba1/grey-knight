@@ -49,6 +49,28 @@ vim.api.nvim_create_autocmd("BufEnter", {
 require("config.bookmarks").setup()
 require("config.switcher").setup()
 
+-- Files moved or renamed in an oil buffer: bookmarks and harpoon's slots go along, as with the explorer's m and r
+-- (config/explorer.lua). They kept the old path (2026-10-22). Each move that happened - a failed batch did some.
+vim.api.nvim_create_autocmd("User", {
+  pattern = "OilActionsPost",
+  group = vim.api.nvim_create_augroup("greyknight.oil_moves", { clear = true }),
+  callback = function(ev)
+    local ok, util = pcall(require, "oil.util")
+    if not ok then return end
+    local fs = require("oil.fs")
+    for _, action in ipairs(ev.data and ev.data.actions or {}) do
+      if action.type == "move" then
+        local scheme, src = util.parse_url(action.src_url or "")
+        local _, dest = util.parse_url(action.dest_url or "")
+        if scheme == "oil://" and src and dest then
+          src, dest = fs.posix_to_os_path(src), fs.posix_to_os_path(dest)
+          if vim.uv.fs_stat(src) == nil and vim.uv.fs_stat(dest) ~= nil then require("config.explorer").moved(src, dest) end
+        end
+      end
+    end
+  end,
+})
+
 -- Close certain filetypes with q
 vim.api.nvim_create_autocmd("FileType", {
   pattern = { "help", "qf", "man", "notify", "lspinfo", "checkhealth", "oil" },
