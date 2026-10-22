@@ -22,8 +22,12 @@ local function program(argv)
   return argv[1] or ""
 end
 
-local function no_interpreter(what)
-  notify(("Run: nothing runs %s (add a #! line)"):format(what), WARN)
+-- what of filetype ft has nothing to run it - on Windows a #! line does not help (util.interpreter)
+local function no_interpreter(what, ft)
+  if util.WIN and (ft == "sh" or ft == "bash") then
+    return notify("Run: no bash on this machine - Git for Windows brings one (Git Bash)", WARN)
+  end
+  notify(("Run: nothing runs %s%s"):format(what, util.WIN and "" or " (add a #! line)"), WARN)
 end
 
 --- Run the current file (saved first) with its remembered arguments.
@@ -35,7 +39,7 @@ function M.run_file(opts)
   local file = vim.api.nvim_buf_get_name(bufnr)
   if file == "" then return M.run_lines(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "buffer", 1) end
   local argv = util.interpreter(bufnr, file)
-  if not argv then return no_interpreter("'" .. vim.bo[bufnr].filetype .. "' files") end
+  if not argv then return no_interpreter("'" .. vim.bo[bufnr].filetype .. "' files", vim.bo[bufnr].filetype) end
   vim.cmd("silent! update")
   if opts.args then tasks.set_args(file, opts.args) end
   local args = tasks.get_args(file)
@@ -72,7 +76,7 @@ function M.run_lines(lines, label, first, bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local file = vim.api.nvim_buf_get_name(bufnr)
   local argv, kind = util.interpreter(bufnr, file)
-  if not argv then return no_interpreter("'" .. vim.bo[bufnr].filetype .. "' code") end
+  if not argv then return no_interpreter("'" .. vim.bo[bufnr].filetype .. "' code", vim.bo[bufnr].filetype) end
   lines = util.dedent(lines)
   if not vim.iter(lines):any(function(line) return line:find("%S") ~= nil end) then
     return notify("Run: nothing to run", WARN)
@@ -169,7 +173,7 @@ function M.run_script(path, ask_args, root)
     if args then tasks.set_args(path, args) end
     args = tasks.get_args(path)
     local argv = util.file_interpreter(path)
-    if not argv then return no_interpreter(vim.fn.fnamemodify(path, ":t")) end
+    if not argv then return no_interpreter(vim.fn.fnamemodify(path, ":t"), vim.filetype.match({ filename = path })) end
     local rel = path:sub(1, #root + 1) == root .. "/" and path:sub(#root + 2) or path
     local cmd = (#argv > 0 and (quote(argv) .. " ") or "") .. vim.fn.shellescape(path)
     if args ~= "" then cmd = cmd .. " " .. args end

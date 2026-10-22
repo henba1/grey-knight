@@ -151,21 +151,56 @@ local BY_FILETYPE = { javascript = { "node" }, perl = { "perl" }, ruby = { "ruby
 --- Extension of snippet files by filetype (some interpreters look at it).
 M.EXT = { python = ".py", sh = ".sh", bash = ".sh", zsh = ".zsh", lua = ".lua", javascript = ".js", perl = ".pl", ruby = ".rb" }
 
+--- The bash for shell scripts. Windows: Git for Windows' (Git Bash) - the bash.exe on the PATH there is mostly WSL's
+--- launcher (System32, WindowsApps), which takes no Windows paths and needs a Linux distribution installed; nil when
+--- there is none. Elsewhere "bash".
+function M.bash()
+  if not M.WIN then return "bash" end
+  local function git_bash(path)
+    if not path or path == "" or not vim.uv.fs_stat(path) then return nil end
+    local p = vim.fs.normalize(path):lower()
+    if p:find("/windows/system32/", 1, true) or p:find("/windowsapps/", 1, true) then return nil end
+    return path
+  end
+  local found = git_bash(vim.fn.exepath("bash"))
+  if found then return found end
+  local git = vim.fn.exepath("git") -- <Git>\cmd\git.exe, <Git>\bin\git.exe or <Git>\mingw64\bin\git.exe
+  if git ~= "" then
+    local dir = vim.fs.dirname(vim.fs.normalize(git))
+    for _, root in ipairs({ vim.fs.dirname(dir), vim.fs.dirname(vim.fs.dirname(dir)) }) do
+      found = git_bash(root .. "/bin/bash.exe")
+      if found then return found end
+    end
+  end
+  for _, base in ipairs({ vim.env.ProgramFiles, vim.env["ProgramFiles(x86)"], vim.env.LOCALAPPDATA and (vim.env.LOCALAPPDATA .. "/Programs") }) do
+    found = base and git_bash(base .. "/Git/bin/bash.exe")
+    if found then return found end
+  end
+end
+
+-- A shell script's interpreter: bash (zsh: zsh); on Windows Git Bash, none for zsh
+local function shell(ft)
+  if not M.WIN then return { ft == "zsh" and "zsh" or "bash" } end
+  local bash = ft ~= "zsh" and M.bash() or nil
+  return bash and { bash } or nil
+end
+
 --- Interpreter argv for a buffer, and its kind. Python: the project's virtualenv beats the #! line
---- (as in VS Code), then python3; Windows has no /usr/bin/env, so there the #! line of a Python file is
---- ignored. Shell scripts: the #! line, else bash. Others: the #! line.
+--- (as in VS Code), then python3. Shell scripts: the #! line, else bash. Others: the #! line. Windows runs no
+--- #! line - no /usr/bin/env, no /bin/bash there: F6 on a script with #!/bin/bash said "the system cannot find the
+--- path", one without went to WSL's bash.exe (2026-10-22) - shell scripts run with Git Bash there.
 ---@return string[]? argv
 ---@return "python"|"shell"|"other"|nil kind
 function M.interpreter(bufnr, path)
   bufnr = bufnr or 0
   local ft = vim.bo[bufnr].filetype
-  local shebang = M.shebang(bufnr)
+  local shebang = not M.WIN and M.shebang(bufnr) or nil
   if ft == "python" then
     local venv = M.find_venv(path)
     if venv then return { M.venv_python(venv) }, "python" end
-    return (not M.WIN and shebang) or { M.python(path) }, "python"
+    return shebang or { M.python(path) }, "python"
   end
-  if SHELLS[ft] then return shebang or { ft == "zsh" and "zsh" or "bash" }, "shell" end
+  if SHELLS[ft] then return shebang or shell(ft), "shell" end
   if shebang then return shebang, "other" end
   if ft == "lua" then return vim.fn.executable("lua") == 1 and { "lua" } or { "nvim", "-l" }, "other" end
   if BY_FILETYPE[ft] then return BY_FILETYPE[ft], "other" end
@@ -175,16 +210,15 @@ end
 --- {} = run the file directly (an executable without a known interpreter).
 function M.file_interpreter(path)
   local head = vim.fn.readfile(path, "", 5)
-  local shebang = (head[1] or ""):match("^#!%s*(%S.*)$")
+  local shebang = not M.WIN and (head[1] or ""):match("^#!%s*(%S.*)$") or nil -- Windows runs no #! line
   local ft = vim.filetype.match({ filename = path, contents = head }) or ""
   if ft == "python" then
     local venv = M.find_venv(path)
     if venv then return { M.venv_python(venv) } end
-    if M.WIN then return { M.python(path) } end -- no /usr/bin/env for a #! line
   end
   if shebang then return vim.split(vim.trim(shebang), "%s+") end
   if ft == "python" then return { M.python(path) } end
-  if SHELLS[ft] then return { ft == "zsh" and "zsh" or "bash" } end
+  if SHELLS[ft] then return shell(ft) end
   if vim.fn.executable(path) == 1 then return {} end
   return BY_FILETYPE[ft]
 end
