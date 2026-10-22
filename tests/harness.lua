@@ -35,6 +35,9 @@ vim.fn.mkdir(vim.o.undodir, "p")
 -- ... nor Qwen Code's folder: an agent started in a test - a fake one too - gets Neovim's lock file in ~/.qwen/ide
 -- (integrations/agent_link.lua). $QWEN_HOME moves it, as it moves Qwen Code's (2026-10-22)
 vim.env.QWEN_HOME = vim.fn.tempname() .. "-qwen-home"
+-- ... nor snapshots of GreyKnight's own repository: an agent started in a test (in its folder) noted the project for
+-- <leader>ad - a commit object in its .git (integrations/agent_changes.lua). The tests of that turn it on for theirs
+pcall(function() require("integrations.agent_changes").enabled = false end)
 -- gitsigns follows the working directory: each change ran git rev-parse and restarted its watcher on .git/HEAD.
 -- The tests change it hundreds of times - on Windows a thousand git processes in a run, libuv lost the ends of
 -- some, and Neovim hung on quitting (2026-10-21; gitsigns' own note on stop/start of that watcher: #1027). Test

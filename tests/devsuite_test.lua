@@ -1117,6 +1117,11 @@ test("Qwen Code (real): an edit it proposes opens as a diff in Neovim - ga, and 
     return table.concat(vim.list_slice(lines, math.max(1, #lines - 20)), "\n")
   end
   local function why() return ("\nmodel calls: %s\nservers: %s\nscreen:\n%s"):format(table.concat(calls, ", "), vim.inspect(link.clients), shown()) end
+  local notes, notify = {}, vim.notify -- its Stop hook says it is done (agent_link.lua, the hooks in its settings)
+  vim.notify = function(msg, level, opts)
+    notes[#notes + 1] = tostring(msg)
+    return notify(msg, level, opts)
+  end
   local ok, err = pcall(function()
     assert(wait(10000, function() return port end), "the fake model did not start")
     local env = vim.tbl_extend("force", link.env("qwen", proj), { OPENAI_API_KEY = "dummy", OPENAI_MODEL = "fake",
@@ -1150,6 +1155,9 @@ test("Qwen Code (real): an edit it proposes opens as a diff in Neovim - ga, and 
     assert(wait(30000, function() return table.concat(vim.fn.readfile(target, "b"), "\n") == "print('from qwen')\n" end),
       "Qwen Code did not write it: " .. table.concat(vim.fn.readfile(target), "\n") .. why())
     assert(wait(30000, function() return screen:find("Done.", 1, true) end), "no Done." .. why())
+    assert(wait(15000, function()
+      for _, msg in ipairs(notes) do if msg:find("is done", 1, true) then return true end end
+    end), "its Stop hook said nothing: " .. vim.inspect(notes) .. why())
     prompt("gk-step-two: change it again")
     assert(wait(60000, function() return ide.views[target] end), "no second diff" .. why())
     vim.api.nvim_set_current_win(vim.fn.bufwinid(ide.views[target].prop))
@@ -1158,10 +1166,184 @@ test("Qwen Code (real): an edit it proposes opens as a diff in Neovim - ga, and 
     vim.wait(3000)
     assert(table.concat(vim.fn.readfile(target, "b"), "\n") == "print('from qwen')\n", "rejected, yet written: " .. table.concat(vim.fn.readfile(target), "\n"))
   end)
+  vim.notify = notify
   if job then pcall(vim.fn.jobstop, job) end
   pcall(vim.fn.jobstop, model)
   while #vim.api.nvim_list_tabpages() > 1 do vim.cmd("tabclose") end
   link.cleanup()
+  assert(ok, err)
+end)
+
+-- 2026-10-22: what changed since the agent started (integrations/agent_changes.lua) - a git repository of a test's own
+local function changes_repo()
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local function git(...)
+    local out = vim.fn.system(vim.list_extend({ "git", "-C", root, "-c", "user.name=gk", "-c", "user.email=gk@example.invalid" }, { ... }))
+    assert(vim.v.shell_error == 0, "git " .. table.concat({ ... }, " ") .. ": " .. out)
+    return out
+  end
+  local function write(name, lines)
+    vim.fn.mkdir(vim.fs.dirname(root .. "/" .. name), "p")
+    vim.fn.writefile(lines, root .. "/" .. name)
+  end
+  write("a.txt", { "a1" })
+  write("b.txt", { "b1", "same" })
+  write("c.txt", { "c1" })
+  write("gone.txt", { "g" })
+  git("init", "-q")
+  git("add", ".")
+  git("commit", "-q", "-m", "init")
+  -- before the agent: the user's own changes - one staged, one not (a snapshot through the user's index would stage
+  -- it) - and a file of notes (untracked)
+  write("a.txt", { "a2 (the user's, before)" })
+  git("add", "a.txt")
+  write("c.txt", { "c2 (the user's, unstaged)" })
+  write("notes.txt", { "n1" })
+  return root, git, write
+end
+local function noted(root)
+  local changes, start = require("integrations.agent_changes"), nil
+  changes.enabled = true -- off in test runs (tests/harness.lua): here a repository of the test's own
+  changes.start(root, true, function(s) start = s end)
+  changes.enabled = false
+  assert(wait(15000, function() return start end), "the project was not noted")
+  vim.wait(1100) -- an untracked file changed after this is newer than the start (its mtime)
+  return start
+end
+local function agent_edits(write, root) -- what the agent does
+  write("b.txt", { "b2 (the agent's)", "same" })
+  write("new.txt", { "new" })
+  write("src/x.lua", { "return 1" })
+  os.remove(root .. "/gone.txt")
+  write("notes.txt", { "n2" })
+end
+
+test("Agent changes: what changed since the agent started - not before; the user's index, HEAD, refs untouched; taken back", function()
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local changes = require("integrations.agent_changes")
+  local root, git, write = changes_repo()
+  local status, head, refs = git("status", "--porcelain"), git("rev-parse", "HEAD"), git("for-each-ref")
+  noted(root)
+  assert(git("status", "--porcelain") == status and git("rev-parse", "HEAD") == head and git("for-each-ref") == refs,
+    "the index, HEAD or a ref changed")
+  agent_edits(write, root)
+  local got = {}
+  for _, c in ipairs(changes.changes(root)) do got[#got + 1] = c.status .. " " .. c.path .. (c.untracked and " (untracked then)" or "") end
+  assert(table.concat(got, ", ") == "M b.txt, D gone.txt, A new.txt, M notes.txt (untracked then), A src/x.lua", table.concat(got, ", "))
+  local diff = table.concat(changes.diff(root, { status = "M", path = "b.txt" }), "\n")
+  assert(diff:find("-b1", 1, true) and diff:find("+b2 (the agent's)", 1, true), diff)
+  -- taken back: as it was when the agent started - the user's own change before it stays, so does the index
+  assert(changes.revert(root, { status = "M", path = "b.txt" }))
+  assert(changes.revert(root, { status = "D", path = "gone.txt" }))
+  assert(changes.revert(root, { status = "A", path = "new.txt" }))
+  local no, why = changes.revert(root, { status = "M", path = "notes.txt", untracked = true })
+  assert(not no and tostring(why):find("untracked", 1, true), tostring(why))
+  assert(table.concat(vim.fn.readfile(root .. "/b.txt"), "\n") == "b1\nsame" and vim.fn.filereadable(root .. "/gone.txt") == 1
+    and vim.fn.filereadable(root .. "/new.txt") == 0, "not taken back")
+  assert(table.concat(vim.fn.readfile(root .. "/a.txt"), "\n") == "a2 (the user's, before)", "the user's change before the agent went too")
+  assert(git("diff", "--cached", "--name-only") == "a.txt\n", "the index: " .. git("diff", "--cached", "--name-only"))
+  vim.fn.delete(root, "rf")
+end)
+
+test("Agent changes: <leader>ad lists them, the diff in the preview; Enter side by side (old red, new green); Ctrl+x takes one back", function()
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local root, _, write = changes_repo()
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local confirm = Snacks.picker.util.confirm
+  Snacks.picker.util.confirm = function(_, yes) yes() end -- the user says yes
+  local function list()
+    for _, p in ipairs(Snacks.picker.get({ tab = false })) do
+      if p.title == "Changed since the agent started" and not p.closed then return p end
+    end
+  end
+  local tabs = #vim.api.nvim_list_tabpages()
+  local ok, err = pcall(function()
+    noted(root)
+    agent_edits(write, root)
+    vim.api.nvim_feedkeys(vim.keycode("<leader>ad"), "mx", false)
+    assert(wait(5000, function() return list() and list():count() == 5 end), "no list of 5")
+    local p = list()
+    local b
+    for item in p:iter() do if item.change.path == "b.txt" then b = item end end
+    assert(b and b.preview.text:find("+b2 (the agent's)", 1, true), "no diff in the preview")
+    p:action("confirm") -- the first: b.txt (sorted)
+    assert(wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 end), "no side by side")
+    local ide = require("integrations.agent_ide")
+    local wins = vim.tbl_filter(function(w) return vim.api.nvim_win_get_config(w).relative == "" end, vim.api.nvim_tabpage_list_wins(0))
+    local names = vim.tbl_map(function(w) return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(w)) end, wins)
+    assert(#wins == 2 and names[1]:find("agent-before://b.txt", 1, true) and vim.fs.normalize(names[2]) == root .. "/b.txt", vim.inspect(names))
+    assert(vim.wo[wins[1]].winhighlight == ide.WINHL.old and vim.wo[wins[2]].winhighlight == ide.WINHL.new and vim.wo[wins[2]].diff, "colors")
+    vim.cmd("tabclose")
+    vim.api.nvim_feedkeys(vim.keycode("<leader>ad"), "mx", false)
+    assert(wait(5000, function() return list() and list():count() == 5 end), "the list again")
+    p = list()
+    for i = 1, p:count() do
+      if p.list:get(i).change.path == "new.txt" then p.list:view(i) end
+    end
+    assert(p:current().change.path == "new.txt", "not on new.txt")
+    p:action("gk_take_back")
+    assert(wait(5000, function() return vim.fn.filereadable(root .. "/new.txt") == 0 and list() and list():count() == 4 end), "new.txt not taken back")
+    list():close()
+  end)
+  Snacks.picker.util.confirm = confirm
+  for _, p in ipairs(Snacks.picker.get({ tab = false })) do p:close() end
+  while #vim.api.nvim_list_tabpages() > tabs do vim.cmd("tabclose") end
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+test("Agent attention: done / waits for an answer - a word unless its window is the current one; Qwen Code's hooks, OpenCode's plugin", function()
+  local link, T = require("integrations.agent_link"), require("toggleterm.terminal")
+  local notes, notify, get = {}, vim.notify, T.get
+  vim.notify = function(msg, level) notes[#notes + 1] = { msg = tostring(msg), level = level } end
+  local ok, err = pcall(function()
+    local function hook(event, id) -- as Qwen Code runs its hooks: the command, JSON on stdin, the agent's terminal in the env
+      local job = vim.fn.jobstart(link.hook_command(event), { env = { GREYKNIGHT_AGENT_ID = id or "" } })
+      vim.fn.chansend(job, vim.json.encode({ hook_event_name = event == "stop" and "Stop" or "PermissionRequest" }))
+      vim.fn.chanclose(job, "stdin")
+      return job
+    end
+    local n = #notes
+    hook("stop")
+    assert(wait(10000, function() return #notes > n end) and notes[#notes].msg:find("is done", 1, true), "stop: " .. vim.inspect(notes))
+    n = #notes
+    hook("permission")
+    assert(wait(10000, function() return #notes > n end) and notes[#notes].msg:find("waits for your answer", 1, true)
+      and notes[#notes].level == vim.log.levels.WARN, "permission: " .. vim.inspect(notes))
+    -- a hook without stdin (/dev/null, NUL): libuv opening that as a pipe aborted the hook on Linux (2026-10-22)
+    n = #notes
+    vim.fn.jobstart(link.hook_command("stop"), { stdin = "null" })
+    assert(wait(10000, function() return #notes > n end) and notes[#notes].msg:find("is done", 1, true), "stdin /dev/null: " .. vim.inspect(notes))
+    -- its window is the current one: the user sees it - no word
+    T.get = function(id, ...) if id == 77 then return { window = vim.api.nvim_get_current_win(), display_name = "Qwen Code #7" } end return get(id, ...) end
+    n = #notes
+    -- waiting for the hook as events go on: jobwait() takes no RPC request meanwhile - the hook's own (it waited 10 s)
+    local looked = hook("stop", "77")
+    wait(10000, function() return vim.fn.jobwait({ looked }, 0)[1] ~= -1 end)
+    vim.wait(300)
+    assert(#notes == n, "a word while the user looks at it: " .. vim.inspect(notes[#notes]))
+    T.get = get
+    -- Qwen Code's settings carry the hooks; OpenCode gets the plugin (and the terminal's id)
+    local settings = link.qwen_settings()
+    assert(settings.hooks.Stop[#settings.hooks.Stop].hooks[1].command:find("agent_server.lua", 1, true)
+      and settings.hooks.PermissionRequest[1].hooks[1].command:find("permission", 1, true), vim.inspect(settings.hooks))
+    local oc = link.env("opencode", nil, 5)
+    local plugin = (oc.OPENCODE_CONFIG_DIR or "") .. "/plugins/greyknight.js"
+    assert(oc.GREYKNIGHT_AGENT_ID == "5" and vim.fn.filereadable(plugin) == 1, vim.inspect(oc))
+    -- the plugin as OpenCode runs it (node instead of OpenCode's bun): session.idle - done
+    if vim.fn.executable("node") == 1 then
+      local mjs = vim.fn.tempname() .. "-greyknight.mjs"
+      vim.fn.writefile(vim.fn.readfile(plugin), mjs)
+      n = #notes
+      local code = ("const m = await import(%s); const h = await m.GreyKnight({}); await h.event({ event: { type: 'session.idle' } });")
+        :format(vim.json.encode(vim.uri_from_fname(mjs)))
+      vim.fn.jobstart({ "node", "--input-type=module", "-e", code })
+      assert(wait(15000, function() return #notes > n end) and notes[#notes].msg:find("is done", 1, true), "the plugin: " .. vim.inspect(notes))
+    end
+  end)
+  vim.notify, T.get = notify, get
   assert(ok, err)
 end)
 
@@ -1194,6 +1376,33 @@ test("Agent link: an agent's terminal gets it in its environment - not when vim.
   end)
   vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link = saved[1], saved[2], saved[3]
   require("integrations.agent_link").cleanup()
+  assert(ok, err)
+end)
+
+test("Agent changes: a new agent notes the project it starts in - <leader>ad compares with that", function()
+  linux_only("the fake agent (sh)")
+  if vim.fn.executable("git") == 0 then H.skip("git not installed") end
+  local agent, T, changes = require("integrations.agent"), require("toggleterm.terminal"), require("integrations.agent_changes")
+  local root = changes_repo()
+  local fake = vim.fn.tempname() .. "-qwen"
+  vim.fn.writefile({ "#!/bin/sh", "exec cat" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.fn.getcwd() }
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = fake, "qwen"
+  vim.fn.chdir(root)
+  changes.enabled = true
+  changes.starts[root] = nil
+  local ok, err = pcall(function()
+    local old = T.get(agent.AGENTS.agent, true)
+    if old then old:shutdown() end
+    agent.launch("agent", "horizontal")
+    assert(wait(15000, function() return changes.starts[root] end), "the project was not noted when the agent started")
+    T.get(agent.AGENTS.agent, true):shutdown()
+  end)
+  changes.enabled = false
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2]
+  vim.fn.chdir(saved[3])
+  vim.fn.delete(root, "rf")
   assert(ok, err)
 end)
 
