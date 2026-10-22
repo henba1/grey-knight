@@ -1406,6 +1406,191 @@ test("Agent changes: a new agent notes the project it starts in - <leader>ad com
   assert(ok, err)
 end)
 
+-- 2026-10-23: speech to text (integrations/voice.lua). No test records from a microphone: a fake recorder writes a
+-- WAV (Python), a fake whisper.cpp prints what it "heard"; the real whisper.cpp hears its own sample
+local function fake_voice(heard)
+  local voice = require("integrations.voice")
+  local dir = tmpdir()
+  local log = dir .. "/whisper-calls.txt"
+  local whisper
+  if WIN then
+    whisper = dir .. "/whisper-cli.cmd"
+    vim.fn.writefile({ "@echo off", 'echo called>>"' .. log .. '"', "echo  " .. heard .. " [BLANK_AUDIO]" }, whisper)
+  else
+    whisper = dir .. "/whisper-cli"
+    vim.fn.writefile({ "#!/bin/sh", ("echo called >> '%s'"):format(log), ("printf ' %%s [BLANK_AUDIO]\\n' '%s'"):format(heard) }, whisper)
+    vim.fn.setfperm(whisper, "rwx------")
+  end
+  local model = dir .. "/ggml-fake.bin"
+  vim.fn.writefile({ "x" }, model)
+  -- the recorder: a WAV with something after its header at once, done at a line on stdin (as Windows' recorder)
+  local rec = dir .. "/rec.py"
+  vim.fn.writefile({ "import sys", "open(sys.argv[1], 'wb').write(b'RIFF' + b'\\0' * 40 + b'\\1' * 3200)",
+    "print('RECORDING', flush=True)", "sys.stdin.readline()" }, rec)
+  local saved = { voice.recorder, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL, vim.env.GREYKNIGHT_STT_URL, vim.env.SSH_CONNECTION }
+  voice.recorder = function(file) return { require("devsuite.util").system_python(), rec, file }, "stdin" end
+  vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL, vim.env.GREYKNIGHT_STT_URL, vim.env.SSH_CONNECTION = whisper, model, nil, nil
+  return voice, log, function()
+    if voice.current then voice.cancel() end
+    voice.recorder = saved[1]
+    vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL, vim.env.GREYKNIGHT_STT_URL, vim.env.SSH_CONNECTION = saved[2], saved[3], saved[4], saved[5]
+  end
+end
+
+test("Voice: <leader>av records, again stops - the words go to the agent once you saw them; <leader>aV puts them at the cursor", function()
+  local voice, log, restore = fake_voice("Hello, agent.")
+  local agent = require("integrations.agent")
+  local input, send, notify = vim.ui.input, agent.send, vim.notify
+  local asked, sent, notes = nil, nil, {}
+  vim.ui.input = function(opts, cb) asked = opts; cb(opts.default) end
+  agent.send = function(text) sent = text end
+  vim.notify = function(msg) notes[#notes + 1] = tostring(msg) end
+  local ok, err = pcall(function()
+    vim.api.nvim_feedkeys(vim.keycode("<leader>av"), "mx", false)
+    assert(wait(10000, function() return voice.current end), "no recording: " .. vim.inspect(notes))
+    vim.wait(300)
+    vim.api.nvim_feedkeys(vim.keycode("<leader>av"), "mx", false) -- again: stop
+    assert(wait(10000, function() return sent end), "nothing sent: " .. vim.inspect(notes))
+    assert(asked.default == "Hello, agent." and sent == "Hello, agent." and asked.prompt:find("To ", 1, true), vim.inspect({ asked, sent }))
+    -- dictated: at the cursor of the window it started in
+    local buf = scratch("text", { "before  after" })
+    vim.api.nvim_win_set_cursor(0, { 1, 6 })
+    voice.toggle("cursor")
+    assert(wait(10000, function() return voice.current end), "no recording")
+    vim.wait(300)
+    voice.toggle("cursor")
+    assert(wait(10000, function() return text(buf) == "before Hello, agent. after" end), "dictated: " .. text(buf))
+    -- dropped: nothing transcribed
+    local calls = #vim.fn.readfile(log)
+    voice.toggle("cursor")
+    assert(wait(10000, function() return voice.current end), "no recording")
+    vim.cmd("VoiceCancel")
+    assert(wait(10000, function() return not voice.current end), "still recording")
+    vim.wait(500)
+    assert(#vim.fn.readfile(log) == calls and text(buf) == "before Hello, agent. after", "transcribed after :VoiceCancel")
+  end)
+  vim.ui.input, agent.send, vim.notify = input, send, notify
+  restore()
+  assert(ok, err)
+end)
+
+test("Voice: over SSH it says the microphone is on your computer (Win+H there); without whisper.cpp what installs it", function()
+  local voice, _, restore = fake_voice("x")
+  local notify, notes = vim.notify, {}
+  vim.notify = function(msg) notes[#notes + 1] = tostring(msg) end
+  local saved = { vim.env.DISPLAY, vim.env.WAYLAND_DISPLAY }
+  local ok, err = pcall(function()
+    if not WIN then
+      vim.env.SSH_CONNECTION, vim.env.DISPLAY, vim.env.WAYLAND_DISPLAY = "10.0.0.2 50000 10.0.0.1 22", nil, nil
+      voice.toggle("agent")
+      assert(not voice.current and notes[#notes]:find("Win+H", 1, true), vim.inspect(notes))
+      vim.env.SSH_CONNECTION = nil
+    end
+    vim.env.GREYKNIGHT_WHISPER = vim.fn.tempname() .. "-missing"
+    voice.toggle("agent")
+    assert(not voice.current and notes[#notes]:find(":VoiceInstall", 1, true), vim.inspect(notes))
+  end)
+  vim.notify = notify
+  vim.env.DISPLAY, vim.env.WAYLAND_DISPLAY = saved[1], saved[2]
+  restore()
+  assert(ok, err)
+end)
+
+-- an OpenAI-compatible server (Python): 401 unless the key came as the header, else the text
+local FAKE_STT = [[
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class S(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        ok = self.path == "/v1/audio/transcriptions" and self.headers.get("Authorization") == "Bearer s3cret" and b'name="file"' in body
+        self.send_response(200 if ok else 401); self.send_header("Content-Type", "application/json"); self.end_headers()
+        self.wfile.write(json.dumps({"text": " From the server. [BLANK_AUDIO]"} if ok else {"error": "no"}).encode())
+s = HTTPServer(("127.0.0.1", 0), S)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+]]
+
+test("Voice: a server transcribes it when $GREYKNIGHT_STT_URL says so (set by hand) - its key as a header, in no command line", function()
+  if vim.fn.executable("curl") == 0 then H.skip("curl not installed") end
+  local voice = require("integrations.voice")
+  local script = vim.fn.tempname() .. "-stt.py"
+  vim.fn.writefile(vim.split(FAKE_STT, "\n"), script)
+  local port
+  local server = vim.fn.jobstart({ require("devsuite.util").system_python(), script }, { on_stdout = function(_, d) port = port or tonumber(d[1]) end })
+  local saved = { vim.env.GREYKNIGHT_STT_URL, vim.env.GREYKNIGHT_STT_KEY }
+  local ok, err = pcall(function()
+    assert(wait(10000, function() return port end), "the server did not start")
+    local wav = vim.fn.tempname() .. ".wav"
+    vim.fn.writefile({ "RIFF" .. string.rep("x", 100) }, wav)
+    vim.env.GREYKNIGHT_STT_URL, vim.env.GREYKNIGHT_STT_KEY = ("http://127.0.0.1:%d/v1/"):format(port), "s3cret"
+    local got, why
+    voice.transcribe(wav, function(t, e) got, why = t or false, e end)
+    assert(wait(15000, function() return got ~= nil end), "no answer")
+    assert(got == "From the server.", tostring(got) .. " / " .. tostring(why))
+    vim.env.GREYKNIGHT_STT_KEY = "wrong"
+    got = nil
+    voice.transcribe(wav, function(t, e) got, why = t or false, e end)
+    assert(wait(15000, function() return got ~= nil end) and got == false and tostring(why):find("did not transcribe", 1, true), tostring(why))
+  end)
+  vim.env.GREYKNIGHT_STT_URL, vim.env.GREYKNIGHT_STT_KEY = saved[1], saved[2]
+  pcall(vim.fn.jobstop, server)
+  assert(ok, err)
+end)
+
+test("Voice: :VoiceInstall's pins - each package and model has its sha256; whisper.cpp and the model found where it puts them", function()
+  local voice = require("integrations.voice")
+  for name, p in pairs(voice.PACKAGES) do assert(p.file and #p.sha256 == 64, name) end
+  for name, m in pairs(voice.MODELS) do assert(m.file:match("^ggml%-.+%.bin$") and #m.sha256 == 64 and m.mb > 0, name) end
+  assert(#voice.SAMPLE.sha256 == 64 and voice.SAMPLE.url:find("^https://"), "the sample")
+  local saved = { voice.DIR, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL }
+  local ok, err = pcall(function()
+    voice.DIR, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL = tmpdir(), nil, nil
+    local exe = voice.DIR .. "/" .. voice.RELEASE .. "/whisper-bin-x64/" .. (WIN and "whisper-cli.exe" or "whisper-cli")
+    vim.fn.mkdir(vim.fs.dirname(exe), "p")
+    fake_exe(WIN and exe:gsub("%.exe$", "") or exe)
+    if WIN then vim.uv.fs_rename(exe:gsub("%.exe$", "") .. ".cmd", exe) end
+    vim.fn.mkdir(voice.DIR .. "/models", "p")
+    vim.fn.writefile({ "x" }, voice.DIR .. "/models/" .. voice.MODELS.base.file)
+    vim.fn.writefile({ "x" }, voice.DIR .. "/models/" .. voice.MODELS.small.file)
+    assert(voice.whisper() and vim.fs.normalize(voice.whisper()) == vim.fs.normalize(exe), tostring(voice.whisper()))
+    assert(vim.fs.basename(voice.model()) == voice.MODELS.small.file, "the default model first: " .. tostring(voice.model()))
+  end)
+  voice.DIR, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL = saved[1], saved[2], saved[3]
+  assert(ok, err)
+end)
+
+test("Voice (Windows): the recorder is Windows' own - its PowerShell parses (winmm's MCI; nothing records in a test)", function()
+  if not WIN then H.skip("Windows' recorder - Linux records with pw-record, arecord, ...") end
+  local cmd, stop = require("integrations.voice").recorder("C:/Temp/it's here.wav")
+  assert(stop == "stdin" and cmd[1] == "powershell", vim.inspect(cmd))
+  local ps1 = vim.fn.tempname() .. ".ps1"
+  vim.fn.writefile(vim.split(cmd[#cmd], "\n"), ps1)
+  local out = vim.fn.system({ "powershell", "-NoProfile", "-Command",
+    ("$e = $null; $t = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('%s', [ref]$t, [ref]$e); $e.Count"):format(ps1) })
+  assert(vim.trim(out) == "0", "parse errors: " .. out)
+  assert(cmd[#cmd]:find("$path = 'C:/Temp/it''s here.wav'", 1, true), "the path is not quoted for PowerShell")
+end)
+
+test("Voice (real whisper.cpp): its sample heard - 'ask not what your country can do for you'", function()
+  local voice = require("integrations.voice")
+  local sample = voice.DIR .. "/samples/" .. voice.SAMPLE.file
+  local saved = { vim.env.GREYKNIGHT_STT_URL, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL }
+  vim.env.GREYKNIGHT_STT_URL, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL = nil, nil, nil
+  local ok, err = pcall(function()
+    if not (voice.whisper() and voice.model() and vim.fn.filereadable(sample) == 1) then
+      H.skip("whisper.cpp is not installed here (:VoiceInstall)")
+    end
+    local got, why
+    voice.transcribe(sample, function(t, e) got, why = t or false, e end)
+    assert(wait(120000, function() return got ~= nil end), "no transcript in 2 minutes")
+    assert(got and got:lower():find("ask not what your country can do for you", 1, true), tostring(got) .. " / " .. tostring(why))
+  end)
+  vim.env.GREYKNIGHT_STT_URL, vim.env.GREYKNIGHT_WHISPER, vim.env.GREYKNIGHT_WHISPER_MODEL = saved[1], saved[2], saved[3]
+  assert(ok, err)
+end)
+
 -- 2026-10-20: going to a toggleterm window (an agent, the REPL, a shell) means typing there - insert (terminal) mode,
 -- also when <C-h> left it in normal mode, which toggleterm brings back on the way in (persist_mode); not once its
 -- program has exited (a key would close the window). startinsert / stopinsert are recorded here instead of done:
