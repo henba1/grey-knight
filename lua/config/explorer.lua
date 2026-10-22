@@ -103,6 +103,8 @@ local function relocate(from, to)
       if ok then break end
     end
     if not ok then return end
+    -- bookmarks go along - before the buffers at the new path load, so these find theirs
+    pcall(function() require("config.bookmarks").moved(from, to) end)
     for _, buf in ipairs(buffers_of(from)) do
       local new = to .. vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):sub(#from + 1)
       local target = vim.fn.bufadd(new)
