@@ -476,6 +476,7 @@ function M.setup(opts)
     end
     if on_close then on_close(picker) end
   end
+  require("config.slots").add_keys(opts) -- !1 .. !9 and !!: script slots (config/slots.lua)
   return opts
 end
 

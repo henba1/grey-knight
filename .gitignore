@@ -2,3 +2,4 @@ plugin/
 spell/
 lazy-lock.json.bak*
 *.bak.*
+__pycache__/
