@@ -395,10 +395,18 @@ end
 -- one: the tree with the cursor on it. <Esc> steps back: typing -> the search box -> the list (the results stay)
 -- -> the tree (the cursor where it was before the search) -> the explorer closes. snacks' second <Esc> closed
 -- the explorer from the search box, and there was no way back to the tree but <CR> on a match.
+-- Regex (2026-10-22): R searches files by regex, Alt+r in the search box switches the file and folder search between
+-- fuzzy and regex - it stays so until switched back. The text goes to fd then: a Rust regex (\d \w \b (?i) (a|b)
+-- {2,3}; no lookaround, no backreferences) against the name, or - when it has a / - the path below the tree's root;
+-- a text with a * and nothing only a regex has is a glob (*.sh, test_*.py, *.{sh,bash}; with a /: below the root, as
+-- in .gitignore). The title says which: "Search files (regex)", "(glob)", "(regex: unclosed group)".
 
 local LABEL = { file = "Search files", folder = "Search folders", view = "Search current view" }
 local NEXT = { file = "folder", folder = "view", view = "file" }
-local searches = setmetatable({}, { __mode = "k" }) -- per explorer: { mode, title, before }
+local searches = setmetatable({}, { __mode = "k" }) -- per explorer: { mode, title, before, error, checked }
+
+--- Regex (and glob) search for files and folders instead of fuzzy: R turns it on, Alt+r switches; for the session
+M.regex = false
 
 local function search_of(picker)
   local s = searches[picker]
@@ -422,8 +430,15 @@ local function to_tree(picker, target)
   require("snacks.explorer.actions").update(picker, { target = target })
 end
 
+--- A glob, not a regex: a * in it and nothing only a regex has (\ ^ $ ( ) | + .*) - *.sh, test_*.py, *.{sh,bash}.
+--- A ? alone keeps it a regex (colou?r).
+function M.is_glob(text)
+  return text:find("*", 1, true) ~= nil and not text:find("[\\%^%$%(%)|%+]") and not text:find(".*", 1, true)
+end
+
 -- The search box's title names the search while there is one (or the box has the cursor), else it is the
--- explorer's own. A search that ended - no text left, the cursor out of the box - leaves file search next.
+-- explorer's own; a regex or glob search says so, a regex fd cannot read says why. A search that ended - no text
+-- left, the cursor out of the box - leaves file search next.
 local function sync(picker)
   if picker.closed then return end
   local s = search_of(picker)
@@ -431,6 +446,10 @@ local function sync(picker)
   local on = typing or searching(picker)
   if not on then s.mode = "file" end
   local title = on and LABEL[s.mode] or s.title
+  if on and picker.opts.live and s.mode ~= "view" then
+    local glob = M.is_glob(vim.trim(picker.input.filter.search))
+    title = ("%s (%s%s)"):format(title, glob and "glob" or "regex", (not glob and s.error) and (": " .. s.error) or "")
+  end
   if picker.title ~= title then
     picker.title = title
     picker:update_titles()
@@ -609,23 +628,203 @@ local function view(opts, ctx)
   end
 end
 
---- The explorer's finder: the tree and file search are snacks' own; folder search and the current view are here.
+-- ── Regex and glob search (fd) ──
+local function regex_escape(s) return (s:gsub("[\\%.%+%*%?%(%)|%[%]{}%^%$]", "\\%0")) end
+
+-- A / of the text as Windows' paths have it too (fd matches the full path with \ there): [/\\] - in a [...] class
+-- the \ goes in beside it
+local function both_slashes(text)
+  local out, i, class = {}, 1, false
+  while i <= #text do
+    local c, n = text:sub(i, i), text:sub(i + 1, i + 1)
+    if c == "\\" and n ~= "" then
+      out[#out + 1] = n == "/" and (class and "/\\\\" or "[/\\\\]") or (c .. n)
+      i = i + 2
+    else
+      if class and c == "]" then class = false elseif not class and c == "[" then class = true end
+      out[#out + 1] = c == "/" and (class and "/\\\\" or "[/\\\\]") or c
+      i = i + 1
+    end
+  end
+  return table.concat(out)
+end
+
+--- The regex for fd --full-path (an absolute path) from one for the path below root: ^ anchors at the root, else it
+--- matches anywhere in that path. win: separators may be \ too, the root's case does not count.
+function M.regex_below(text, root, win)
+  local sep = win and "[/\\\\]" or "/"
+  local parts = vim.split(vim.fs.normalize(root):gsub("/+$", ""), "/", { plain = true })
+  local prefix = table.concat(vim.tbl_map(regex_escape, parts), sep)
+  if win then prefix = "(?i:" .. prefix .. ")" end
+  local body = win and both_slashes(text) or text
+  if body:sub(1, 1) == "^" then return "^" .. prefix .. sep .. "(?:" .. body:sub(2) .. ")" end
+  return "^" .. prefix .. sep .. ".*?(?:" .. body .. ")"
+end
+
+--- A glob as a regex for a path: **/ any depth, * and ? within a folder, [!x] [^x], {a,b} (?:a|b). fd's own globs do
+--- not match a full path with Windows' \ (2026-10-22: src/*.ts found nothing there).
+function M.glob_to_regex(glob)
+  local out, i, braces = {}, 1, 0
+  while i <= #glob do
+    local c = glob:sub(i, i)
+    if c == "*" and glob:sub(i, i + 2) == "**/" then
+      out[#out + 1], i = "(?:.*/)?", i + 3
+    elseif c == "*" and glob:sub(i + 1, i + 1) == "*" then
+      out[#out + 1], i = ".*", i + 2
+    elseif c == "*" then
+      out[#out + 1], i = "[^/]*", i + 1
+    elseif c == "?" then
+      out[#out + 1], i = "[^/]", i + 1
+    elseif c == "[" and glob:find("]", i + 2, true) then
+      local close = glob:find("]", i + 2, true)
+      local class = glob:sub(i + 1, close - 1):gsub("^!", "^"):gsub("\\", "\\\\")
+      out[#out + 1], i = "[" .. class .. "]", close + 1
+    elseif c == "{" then
+      out[#out + 1], i, braces = "(?:", i + 1, braces + 1
+    elseif c == "}" and braces > 0 then
+      out[#out + 1], i, braces = ")", i + 1, braces - 1
+    elseif c == "," and braces > 0 then
+      out[#out + 1], i = "|", i + 1
+    else
+      out[#out + 1], i = regex_escape(c), i + 1
+    end
+  end
+  return table.concat(out)
+end
+
+--- fd's arguments for a regex or glob search below root: the text against the name, or with a / against the path
+--- below the root. Smart case from the text. o: { type = "f" | "d", hidden, ignored, follow, exclude, win }
+---@return string[] args
+---@return "regex"|"glob" kind
+function M.fd_args(text, root, o)
+  o = o or {}
+  local win = o.win
+  if win == nil then win = WIN end
+  local glob = M.is_glob(text)
+  local args = { "--type", o.type or "f", "--color", "never", "-E", ".git", "--path-separator", "/" }
+  if o.hidden then args[#args + 1] = "--hidden" end
+  if o.ignored then args[#args + 1] = "--no-ignore" end
+  if o.follow then args[#args + 1] = "-L" end
+  for _, g in ipairs(o.exclude or {}) do vim.list_extend(args, { "-E", g }) end
+  args[#args + 1] = text:find("%u") and "--case-sensitive" or "--ignore-case"
+  local pattern, how = text, glob and "--glob" or "--regex"
+  if text:find("/", 1, true) then
+    args[#args + 1] = "--full-path"
+    -- a glob with a / is relative to the root, as in .gitignore - as the regex it is (glob_to_regex)
+    if glob then pattern = "^" .. M.glob_to_regex((text:gsub("^/+", ""))) .. "$" end
+    pattern, how = M.regex_below(pattern, root, win), "--regex"
+  end
+  vim.list_extend(args, { how, "--", pattern, root })
+  return args, glob and "glob" or "regex"
+end
+
+-- Whether fd can read the regex: rg reads the same (both Rust's regex) and says what is wrong - in the title. Later,
+-- for the text then typed only.
+local function validate(picker, text)
+  local s = search_of(picker)
+  if s.checked == text then return end
+  local had = s.error
+  s.checked, s.error = text, nil
+  if had then vim.schedule(function() sync(picker) end) end -- the title without the last text's error
+  local rg = vim.fn.exepath("rg")
+  if M.is_glob(text) or rg == "" then return end
+  vim.system({ rg, "--no-config", "--quiet", "-e", text, "-" }, { stdin = "", text = true }, function(r)
+    vim.schedule(function()
+      if picker.closed or s.checked ~= text then return end
+      if r.code == 2 then -- rg's last line: "error: unclosed group"
+        local last = vim.trim((r.stderr or ""):match("([^\n]*)%s*$") or "")
+        local msg = last:gsub("^error:%s*", "")
+        s.error = msg ~= "" and msg or "not a regex"
+        sync(picker)
+      end
+    end)
+  end)
+end
+
+-- Files (kind "f") or folders ("d") fd finds for the typed regex or glob, under the folders they are in; the matches
+-- carry gk_hit (Ctrl+a marks those), the folders above them are only there for the tree
+local function regex_find(opts, ctx, kind)
+  local fd = require("snacks.picker.source.files").get_cmd("fd") -- fd or fdfind; says so when there is none
+  local text = vim.trim(ctx.filter.search)
+  if not fd or text == "" then return function() end end
+  validate(ctx.picker, text)
+  local Tree, cwd = require("snacks.explorer.tree"), ctx.filter.cwd
+  local args = M.fd_args(text, cwd, { type = kind, hidden = opts.hidden, ignored = opts.ignored, follow = opts.follow, exclude = opts.exclude })
+  local list = require("snacks.picker.source.proc").proc({ cmd = fd, args = args, notify = false }, ctx)
+  return function(cb)
+    local root = { file = cwd, dir = true, open = true, text = "", sort = "" }
+    local items, last = { [cwd] = root }, {}
+    local function add(path, dir, hit)
+      local parent, name = items[vim.fs.dirname(path)] or root, vim.fs.basename(path)
+      local node = Tree:node(path)
+      local item = {
+        file = path, dir = dir, open = dir or nil, parent = parent, text = name, gk_hit = hit,
+        sort = parent.sort .. (dir and "!" or "#") .. name .. " ", -- the tree's order, as snacks sorts its search
+        hidden = name:sub(1, 1) == ".",
+        type = node and node.type or (dir and "directory" or "file"),
+        status = node and (not dir or opts.git_status_open) and node.status or nil,
+      }
+      if not last[parent] or last[parent].sort < item.sort then
+        if last[parent] then last[parent].last = false end
+        item.last, last[parent] = true, item
+      end
+      items[path] = item
+      cb(item)
+    end
+    cb(root)
+    list(function(line)
+      local path = line.text:gsub("/$", "") -- fd ends a folder with /
+      if items[path] then -- there already, as the folder above an earlier match
+        items[path].gk_hit = true
+        return
+      end
+      for dir in Snacks.picker.util.parents(path, cwd) do
+        if not items[dir] then add(dir, true, nil) end
+      end
+      add(path, kind == "d", true)
+    end)
+  end
+end
+
+--- The explorer's finder: the tree and file search are snacks' own; folder search, the current view and the regex
+--- searches (the picker is live then: the text goes to the finder) are here.
 function M.finder(opts, ctx)
   local E = require("snacks.picker.source.explorer")
   local mode = search_of(ctx.picker).mode
-  if mode == "file" or ctx.filter:is_empty() then return E.explorer(opts, ctx) end
+  local regex = ctx.picker.opts.live and mode ~= "view"
+  if ctx.filter:is_empty() or (mode == "file" and not regex) then return E.explorer(opts, ctx) end
   E.get_state(ctx.picker):setup(ctx) -- as snacks' search starts: the open folders are watched
-  local find = mode == "folder" and folders(opts, ctx) or view(opts, ctx)
+  local find
+  if regex then
+    find = regex_find(opts, ctx, mode == "folder" and "d" or "f")
+  else
+    find = mode == "folder" and folders(opts, ctx) or view(opts, ctx)
+  end
   ctx.picker.matcher.opts.keep_parents = true -- a match shows up under its folders (after snacks' tree finder)
   ctx.picker.list:set_target()
   return find
 end
 
--- Start a search in `mode` (during a search: switch to it, the text stays); typing in the search box again
-local function search(picker, mode)
+-- Regex or fuzzy: the picker live (the typed text goes to the finder, snacks' matcher stays out) or not - the text in
+-- the box stays (snacks' toggle_live showed the other one it keeps)
+local function set_live(picker, live)
+  if picker.opts.live == live then return end
+  local f = picker.input.filter
+  local text = picker.opts.live and f.search or f.pattern -- what the box shows (hidden when no search runs)
+  picker.opts.live = live
+  f.pattern, f.search = live and "" or text, live and text or ""
+  if picker.input.win:valid() then picker.input:set(f.pattern, f.search) end
+end
+
+-- Start a search in `mode` (during a search: switch to it, the text stays); typing in the search box again. regex:
+-- true / false switches regex search on / off (R, Alt+r), nil keeps it
+local function search(picker, mode, regex)
   local s = search_of(picker)
-  if s.mode ~= mode then
+  if regex ~= nil then M.regex = regex end
+  local live = M.regex and mode ~= "view"
+  if s.mode ~= mode or picker.opts.live ~= live then
     s.mode = mode
+    set_live(picker, live)
     if searching(picker) then picker:find() end -- the same text, found the other way
   end
   if vim.api.nvim_get_current_win() ~= picker.input.win.win then
@@ -656,6 +855,16 @@ function M.search_back(picker) picker:focus("list", { show = true }) end
 function M.search_leave(picker)
   if not searching(picker) then return require("snacks.picker.actions").cancel(picker) end
   to_tree(picker, search_of(picker).before)
+end
+
+--- R - a file search by regex (a glob too: *.sh); regex search stays on until Alt+r
+function M.search_regex(picker) search(picker, "file", true) end
+
+--- Alt+r in the search box - the file or folder search by regex, or fuzzy again; the text stays. In the current
+--- view (names, plain text): a file search by regex.
+function M.regex_toggle(picker)
+  local mode = search_of(picker).mode
+  search(picker, mode == "view" and "file" or mode, not M.regex)
 end
 
 return M
