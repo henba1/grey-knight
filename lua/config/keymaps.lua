@@ -62,6 +62,17 @@ map({ "n", "t" }, "<C-Up>",    "<cmd>resize +2<cr>",          { desc = "Resize u
 map({ "n", "t" }, "<C-Down>",  "<cmd>resize -2<cr>",          { desc = "Resize down" })
 map({ "n", "t" }, "<C-Left>",  "<cmd>vertical resize -2<cr>", { desc = "Resize left" })
 map({ "n", "t" }, "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Resize right" })
+-- Alt+arrows too, in the editor (2026-10-22): PuTTY's default keys send Ctrl+arrows as plain arrows - Neovim cannot
+-- tell them apart; Alt+arrows come through. Not in a terminal: there they are the shell's.
+map("n", "<M-Up>",    "<cmd>resize +2<cr>",          { desc = "Resize up" })
+map("n", "<M-Down>",  "<cmd>resize -2<cr>",          { desc = "Resize down" })
+map("n", "<M-Left>",  "<cmd>vertical resize -2<cr>", { desc = "Resize left" })
+map("n", "<M-Right>", "<cmd>vertical resize +2<cr>", { desc = "Resize right" })
+
+-- Home / End as PuTTY's default keys send them - the VT220's Find / Select (ESC [1~, ESC [4~): Neovim took them for
+-- keys of their own, and the cursor stayed (2026-10-22). In a terminal they stay the program's (bash reads them).
+map({ "n", "x", "o", "i", "c" }, "<Find>",   "<Home>", { desc = "Home (as PuTTY sends it)" })
+map({ "n", "x", "o", "i", "c" }, "<Select>", "<End>",  { desc = "End (as PuTTY sends it)" })
 
 -- ── Buffer navigation ────────────────────────────────────────
 map("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
@@ -88,8 +99,11 @@ map("n", "<leader>mr", function() bookmarks().name() end,   { desc = "Bookmark: 
 map("n", "<leader>ml", function() bookmarks().pick() end,   { desc = "Bookmarks: list - Enter opens, dd deletes" })
 map("n", "<leader>mn", function() bookmarks().jump(1) end,  { desc = "Bookmark: next" })
 map("n", "<leader>mp", function() bookmarks().jump(-1) end, { desc = "Bookmark: previous" })
-map("n", "<S-F11>",    function() bookmarks().pick() end,   { desc = "Bookmarks: list" })
-map("n", "<C-F11>",    function() bookmarks().name() end,   { desc = "Bookmark with a name" })
+-- Shift / Ctrl with an F-key: most terminals send them as xterm does, and Neovim names them as terminfo does -
+-- Shift+F11 is <F23>, Ctrl+F11 <F35>, Shift+F5 <F17>; only terminals with the kitty keyboard protocol send <S-F11>
+-- itself (2026-10-22: Neovim under TERM=xterm, PuTTY's and xterm's bytes). Both names do it.
+for _, lhs in ipairs({ "<S-F11>", "<F23>" }) do map("n", lhs, function() bookmarks().pick() end, { desc = "Bookmarks: list" }) end
+for _, lhs in ipairs({ "<C-F11>", "<F35>" }) do map("n", lhs, function() bookmarks().name() end, { desc = "Bookmark with a name" }) end
 
 -- ── Move lines (visual) ─────────────────────────────────────
 map("v", "J", ":m '>+1<CR>gv=gv", { silent = true, desc = "Move selection down" })
@@ -177,7 +191,8 @@ map("v", "<leader>ae", function() agent().edit() end,        { desc = "AI: Edit 
 -- Programs get a terminal (DAP console pane): input() and read work while debugging.
 local function dbg() return require("devsuite.debug") end
 map("n", "<F5>",       function() dbg().start_or_continue() end,         { desc = "Debug: Start this file / Continue" })
-map("n", "<S-F5>",     function() require("dap").terminate() end,        { desc = "Debug: Stop" })
+-- Shift+F5: <F17> in most terminals (as Shift+F11 above)
+for _, lhs in ipairs({ "<S-F5>", "<F17>" }) do map("n", lhs, function() require("dap").terminate() end, { desc = "Debug: Stop" }) end
 map("n", "<F9>",       function() require("dap").toggle_breakpoint() end, { desc = "Debug: Breakpoint" })
 map("n", "<F10>",      function() require("dap").step_over() end,         { desc = "Debug: Step over" })
 map("n", "<F11>",      function() require("dap").step_into() end,         { desc = "Debug: Step into" })
