@@ -122,6 +122,43 @@ test("Runner: python input() reads from the terminal (task in a pty)", function(
   assert(task.status == "SUCCESS" and task_out(task):find("hello knight", 1, true), task.status .. ": " .. task_out(task))
 end)
 
+-- 2026-10-22: F6 on a shell script on Windows ran the #! line's /bin/bash ("the system cannot find the path") or,
+-- without one, WSL's bash.exe ("no installed distributions") - Git for Windows' bash runs it
+test("Runner: on Windows a shell script runs with Git Bash - not the #! line's /bin/bash, not WSL's bash.exe", function()
+  if not WIN then H.skip("Windows only - Linux runs the #! line") end
+  local util, runner, tasks = require("devsuite.util"), require("devsuite.runner"), require("devsuite.tasks")
+  local bash = util.bash()
+  if not bash then H.skip("no Git for Windows here") end
+  local low = vim.fs.normalize(bash):lower()
+  assert(not low:find("/system32/", 1, true) and not low:find("/windowsapps/", 1, true), "WSL's launcher: " .. bash)
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  local cases = { { "with.sh", { "#!/bin/bash", 'echo "hello $((1 + 2))"' } }, { "plain.sh", { 'echo "hello $((1 + 2))"' } } }
+  local saved, notes, notify = util.bash, {}, vim.notify
+  local ok, err = pcall(function()
+    for _, case in ipairs(cases) do
+      vim.fn.writefile(case[2], dir .. "/" .. case[1])
+      vim.cmd.edit(vim.fn.fnameescape(dir .. "/" .. case[1]))
+      runner.run_file()
+      local task = tasks.state.last
+      assert(wait(15000, function() return task:is_complete() end), case[1] .. " did not finish: " .. task_out(task))
+      assert(task.status == "SUCCESS" and task_out(task):find("hello 3", 1, true), case[1] .. ": " .. task.status .. ": " .. task_out(task))
+    end
+    -- no Git for Windows: F6 says what is missing (it said "add a #! line")
+    util.bash = function() return nil end
+    vim.notify = function(msg, ...)
+      notes[#notes + 1] = tostring(msg)
+      return notify(msg, ...)
+    end
+    runner.run_file()
+    assert(table.concat(notes, " | "):find("no bash on this machine", 1, true), "without bash: " .. table.concat(notes, " | "))
+  end)
+  util.bash, vim.notify = saved, notify
+  -- the scripts' buffers stay (deleting one closed the code window, and the next tests found only the output)
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
 -- 2026-10-19: tasks carried overseer's display_duration, a deprecated stub that only warned at every start
 -- (GreyKnight measures the duration itself). Every component a task gets must be current in overseer.
 test("Tasks: no deprecated overseer components", function()
@@ -2215,10 +2252,11 @@ test("Dev suite: interpreters from #! lines and filetypes", function()
     md = argv("markdown"),
   }
   vim.env.VIRTUAL_ENV = saved
-  -- Windows ignores the #! line of a Python file (no /usr/bin/env there)
-  local py = WIN and util.system_python() or "/usr/bin/env -S python3 -u"
-  assert(got.py == py and got.sh == "bash" and got.dash == "/bin/sh", vim.inspect(got))
-  assert(got.zsh == "zsh" and got.js == "node" and got.md == nil, vim.inspect(got))
+  -- Windows runs no #! line (no /usr/bin/env, no /bin/sh there): Python by itself, shell scripts with Git Bash, no zsh
+  local py, sh, dash, zsh = "/usr/bin/env -S python3 -u", "bash", "/bin/sh", "zsh"
+  if WIN then py, sh, dash, zsh = util.system_python(), util.bash(), util.bash(), nil end
+  assert(got.py == py and got.sh == sh and got.dash == dash, vim.inspect(got))
+  assert(got.zsh == zsh and got.js == "node" and got.md == nil, vim.inspect(got))
 end)
 
 test("Bash: shellcheck findings appear once, on the right line (bashls or fallback)", function()
