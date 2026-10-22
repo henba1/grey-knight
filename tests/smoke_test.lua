@@ -207,7 +207,7 @@ end)
 -- 2026-10-22: a test run left pyright's and tsserver's temp folders (11 and 4 a run, never removed), grew lsp.log,
 -- dap.log and conform.log, wrote grug-far's history, blink's frecency, the pickers' history, the run arguments and a
 -- Maven settings file for each run's temp project into the user's folders (tests/run.sh, run.ps1, tests/harness.lua)
-test("Tests: a run keeps to folders of its own - temp, state, cache; no picker history, run arguments, Maven settings in the user's", function()
+test("Tests: a run keeps to folders of its own - temp, state, cache, undo; no picker history, run arguments, Maven settings, Qwen lock files in the user's", function()
   local run = vim.env.GK_TEST_RUN_DIR
   if not run or run == "" then H.skip("started without tests/run.sh or run.ps1") end
   local function real(path) -- made if missing: Neovim makes a folder when it first writes there
@@ -221,6 +221,9 @@ test("Tests: a run keeps to folders of its own - temp, state, cache; no picker h
     state = vim.fn.stdpath("state"),
     log = vim.fn.stdpath("log"),
     cache = vim.fn.stdpath("cache"),
+    -- 2026-10-22: undo files went to ~/.vim/undodir; an agent started in a test put a lock file into ~/.qwen/ide
+    ["the undo files"] = vim.o.undodir,
+    ["Qwen Code's folder (the agents' lock file)"] = require("integrations.agent_link").qwen_home(),
   }
   for what, path in pairs(own) do
     assert(vim.startswith(real(path), run .. "/"), ("%s is the user's: %s"):format(what, path))
@@ -996,6 +999,80 @@ test("Explorer: % renames the marked by regex - R, Ctrl+a, % s/\\.sh$/.bash/; an
   end)
   util.confirm, Snacks.input, vim.notify = saved.confirm, saved.input, saved.notify
   x.last_substitution = nil
+  assert(ok, err)
+end)
+
+-- 2026-10-22: the agent shows things in the editor (integrations/agent_tools.lua) - "where is ...?" opens the tree
+-- on it, or runs a search there; the user's own R / Alt+r setting stays
+local function agent_tool(name, args)
+  local got
+  require("integrations.agent_tools").call(name, args, function(r) got = r end)
+  assert(H.wait(15000, function() return got end), name .. ": no answer")
+  return got.content[1].text, got.isError
+end
+
+test("Agent tools: show_in_file_tree - the tree on a file, the cursor on it; a regex search shows its matches; then a path again", function()
+  regex_world(function(w)
+    local p = w.p
+    local text, err = agent_tool("show_in_file_tree", { path = "scripts/sub/d.bash" }) -- relative to the project
+    assert(not err and text:find("scripts/sub/d.bash", 1, true), text)
+    assert(p:current() and p:current().file == w.root .. "/scripts/sub/d.bash", "the cursor: " .. tostring(p:current() and p:current().file))
+    assert(vim.api.nvim_get_current_win() == p.list.win.win, "the tree does not have the cursor")
+    text = agent_tool("show_in_file_tree", { search = ".*\\.sh$", regex = true })
+    assert(text:find("3 file matches", 1, true) and text:find("scripts/c.sh", 1, true) and text:find("X.SH", 1, true)
+      and not text:find("d.bash", 1, true), text)
+    w.expect("Search files (regex)", "X.SH a.sh scripts/c.sh")
+    assert(require("config.explorer").regex == false, "the user's R / Alt+r setting changed")
+    -- a path while that search runs: the search ends - the tree as a session starts, fuzzy (snacks' reveal took the
+    -- text away, the regex mode stayed) - and it shows the path
+    text, err = agent_tool("show_in_file_tree", { path = w.root .. "/src/sub/y.ts" })
+    assert(not err, text)
+    assert(p.input.filter:is_empty() and p:current().file == w.root .. "/src/sub/y.ts", "after the search: " .. tostring(p:current() and p:current().file))
+    assert(not p.opts.live, "the tree stayed in regex (live) mode")
+    text = agent_tool("show_in_file_tree", { search = "scripts", folders = true }) -- fuzzy, folders
+    assert(text:find("folder match", 1, true) and text:find("scripts", 1, true), text)
+    text, err = agent_tool("show_in_file_tree", { path = "nope/missing.txt" })
+    assert(err and text:find("No such file", 1, true), text)
+  end)
+end)
+
+test("Agent tools: open_file shows code at a line in the code window (not the agent's), lit up; show_locations, editor_state, notify", function()
+  local link = require("integrations.agent_link")
+  link.track()
+  local file = H.file("shown.lua", { "local a = 1", "local b = 2", "local c = 3", "local d = 4", "return a" })
+  vim.cmd("only | enew!")
+  local code = vim.api.nvim_get_current_win()
+  vim.cmd("botright vsplit | enew") -- stands in for the agent's terminal: no file in it
+  vim.bo.buftype = "nofile"
+  local agent_win = vim.api.nvim_get_current_win()
+  local saved_notify, notes = vim.notify, {}
+  vim.notify = function(msg, _, opts) notes[#notes + 1] = (opts and opts.title or "") .. ": " .. msg end
+  local ok, err = pcall(function()
+    vim.api.nvim_set_current_win(code) -- the code window was the one used last
+    vim.api.nvim_set_current_win(agent_win)
+    local text, failed = agent_tool("open_file", { path = file, line = 3, end_line = 4 })
+    assert(not failed and text:find("at line 3", 1, true), text)
+    assert(vim.api.nvim_get_current_win() == code, "not in the code window")
+    assert(vim.fs.normalize(vim.api.nvim_buf_get_name(0)) == vim.fs.normalize(file) and vim.api.nvim_win_get_cursor(0)[1] == 3, "not at line 3")
+    local ns = vim.api.nvim_get_namespaces().greyknight_agent_show
+    local lit = vim.api.nvim_buf_get_extmarks(0, ns, 0, -1, { details = true })
+    assert(#lit > 0 and lit[1][2] == 2, "lines 3-4 not lit up: " .. vim.inspect(lit))
+    text = agent_tool("show_locations", { title = "Uses of a", locations = { { path = file, line = 1, text = "a" }, { path = file, line = 5 } } })
+    local qf = vim.fn.getqflist({ title = 1, items = 1, winid = 1 })
+    assert(qf.title == "Uses of a" and #qf.items == 2 and qf.items[2].lnum == 5 and qf.winid ~= 0, vim.inspect(qf))
+    vim.cmd("cclose")
+    vim.api.nvim_set_current_win(code)
+    vim.cmd("normal! 2GVj\27") -- lines 2-3 selected, then the user goes to the agent
+    vim.api.nvim_set_current_win(agent_win)
+    local state = vim.json.decode((agent_tool("editor_state", {})))
+    assert(state.current_file and vim.fs.normalize(state.current_file):find("shown.lua", 1, true), vim.inspect(state))
+    assert(state.selected_text == "local b = 2\nlocal c = 3", "selection: " .. vim.inspect(state.selected_text))
+    assert(state.cursor and state.cursor.line == 3, vim.inspect(state.cursor))
+    agent_tool("notify", { message = "Tests are green" })
+    assert(notes[#notes] and notes[#notes]:find("Tests are green", 1, true), vim.inspect(notes))
+  end)
+  vim.notify = saved_notify
+  vim.cmd("only")
   assert(ok, err)
 end)
 
@@ -2709,25 +2786,133 @@ local function in_repo(fn)
   assert(ok, err)
 end
 
-test("Git: <leader>gv shows the changes side by side (Diffview), <leader>gh a file's history - both close again", function()
+local function has_ft(ft)
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == ft then return vim.api.nvim_win_get_buf(win) end
+  end
+end
+
+-- 2026-10-22: <leader>gv / <leader>gh are codediff's - VS Code's diff (config/gitdiff.lua)
+test("Git: <leader>gv reviews the changes with codediff (VS Code's diff, colored), live as files change; <leader>gh a file's history", function()
+  -- looked at without loading codediff: loading it would download the library (no downloads in a test)
+  if not require("config.gitdiff").library() then H.skip("codediff's library is not downloaded here (:CodeDiff install)") end
   in_repo(function(root, notes)
     vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
     local tabs = #vim.api.nvim_list_tabpages()
-    local function has_ft(ft)
-      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-        if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == ft then return true end
-      end
-    end
     vim.api.nvim_feedkeys(vim.keycode("<leader>gv"), "x", false)
-    assert(H.wait(10000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 and has_ft("DiffviewFiles") end), "<leader>gv: no Diffview tab")
-    vim.cmd("DiffviewClose")
-    assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "Diffview did not close")
+    assert(H.wait(10000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 and has_ft("codediff-explorer") end), "<leader>gv: no codediff tab")
+    local explorer = has_ft("codediff-explorer")
+    assert(H.wait(5000, function() return H.text(explorer):find("a.txt", 1, true) end), "the explorer: " .. H.text(explorer))
+    -- the changed file side by side, its changes colored (codediff's highlights)
+    local ns = vim.api.nvim_get_namespaces()["codediff-highlight"]
+    assert(H.wait(5000, function()
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local buf = vim.api.nvim_win_get_buf(win)
+        if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)) == root .. "/a.txt" and #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}) > 0 then return true end
+      end
+    end), "a.txt is not shown with its changes colored")
+    -- live: a file an agent writes now shows up
+    vim.fn.writefile({ "new" }, root .. "/b.txt")
+    assert(H.wait(10000, function() return H.text(explorer):find("b.txt", 1, true) end), "b.txt did not show up: " .. H.text(explorer))
+    vim.cmd("tabclose")
+    assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "the review did not close")
+    vim.api.nvim_feedkeys(vim.keycode("<leader>gh"), "x", false)
+    assert(H.wait(10000, function() return has_ft("codediff-history") end), "<leader>gh: no file history")
+    vim.cmd("tabclose")
+    assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "the file history did not close")
+    assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
+  end)
+end)
+
+-- 2026-10-22: codediff downloads its library when it loads, and fails with an error when that download does (a 403 on
+-- the work laptop once): <leader>gv tries once a session, quietly, then Diffview
+test("Git: without codediff's library (its download refused) <leader>gv / <leader>gh are Diffview's - one word, no error", function()
+  package.loaded["config.gitdiff"] = nil -- a session that has not tried yet
+  local gitdiff = require("config.gitdiff")
+  gitdiff.library = function() return false end
+  local lazy = require("lazy")
+  local load, tries = lazy.load, 0
+  lazy.load = function(opts) -- loading codediff: its download fails, as codediff and lazy.nvim report it
+    if vim.tbl_contains(opts.plugins or {}, "codediff.nvim") then
+      tries = tries + 1
+      vim.notify("Failed to download library: curl: (22) The requested URL returned error: 403", vim.log.levels.ERROR)
+      error("libvscode-diff not found and automatic installation failed")
+    end
+    return load(opts)
+  end
+  local infos = {}
+  local ok, err = pcall(in_repo, function(root, notes)
+    local notify = vim.notify
+    vim.notify = function(msg, level, opts)
+      if level == vim.log.levels.INFO then infos[#infos + 1] = tostring(msg) end
+      return notify(msg, level, opts)
+    end
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    local tabs = #vim.api.nvim_list_tabpages()
+    for _ = 1, 2 do
+      vim.api.nvim_feedkeys(vim.keycode("<leader>gv"), "x", false)
+      assert(H.wait(10000, function() return #vim.api.nvim_list_tabpages() == tabs + 1 and has_ft("DiffviewFiles") end), "<leader>gv: no Diffview tab")
+      vim.cmd("DiffviewClose")
+      assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "Diffview did not close")
+    end
     vim.api.nvim_feedkeys(vim.keycode("<leader>gh"), "x", false)
     assert(H.wait(10000, function() return has_ft("DiffviewFileHistory") end), "<leader>gh: no file history")
     vim.cmd("DiffviewClose")
     assert(H.wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs end), "the file history did not close")
+    vim.notify = notify
     assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
   end)
+  lazy.load = load
+  package.loaded["config.gitdiff"] = nil
+  assert(ok, err)
+  assert(tries == 1, "download tries: " .. tries)
+  local words = vim.tbl_filter(function(m) return m:find("Diffview instead", 1, true) end, infos)
+  assert(#words == 1, "the word: " .. vim.inspect(infos))
+  assert(require("diffview.config").get_config().enhanced_diff_hl == true, "Diffview's old side is not red")
+end)
+
+-- 2026-10-22: the agent's diff (integrations/agent_ide.lua): the friend's "color coded, state of the art"
+test("Diffs: changed words colored (inline:char), histogram, linematch; the agent's diff - the old side red, the new green, words stronger", function()
+  local o = vim.o.diffopt
+  for _, want in ipairs({ "inline:char", "algorithm:histogram", "linematch:60", "indent-heuristic" }) do
+    assert(o:find(want, 1, true), want .. " missing: " .. o)
+  end
+  assert(not o:find("linematch:40", 1, true), "linematch twice: " .. o)
+  local ide = require("integrations.agent_ide")
+  local file = H.file("colors.py", { "def f(x):", "    return x + 1", "", "print(f(2))" })
+  local tabs = #vim.api.nvim_list_tabpages()
+  local ok, err = pcall(function()
+    -- no agent to tell: a channel that is none (0 would be every channel)
+    ide.call("openDiff", { filePath = file, newContent = "def f(x):\n    return x * 2\n\nprint(f(2))\nprint('more')\n" }, function() end, 999999)
+    local view = assert(ide.views[file], "no diff")
+    local left, right = vim.fn.bufwinid(view.orig), vim.fn.bufwinid(view.prop)
+    assert(vim.wo[left].winhighlight == ide.WINHL.old and vim.wo[right].winhighlight == ide.WINHL.new,
+      "sides: " .. vim.wo[left].winhighlight .. " / " .. vim.wo[right].winhighlight)
+    assert(vim.wo[left].fillchars:find("diff:╱", 1, true), "fillers: " .. vim.wo[left].fillchars)
+    local function rgb(group)
+      local c = vim.api.nvim_get_hl(0, { name = group, link = false }).bg
+      assert(c, group .. " has no background")
+      return math.floor(c / 65536) % 256, math.floor(c / 256) % 256, c % 256
+    end
+    local r1, g1 = rgb("GreyKnightDiffTextOld")
+    local r2, g2 = rgb("GreyKnightDiffTextNew")
+    assert(r1 > g1 and g2 > r2, ("old not red / new not green: %d,%d / %d,%d"):format(r1, g1, r2, g2))
+    local function sum(group) local r, g, b = rgb(group); return r + g + b end
+    assert(sum("GreyKnightDiffTextOld") > sum("GreyKnightDiffChangedOld") and sum("GreyKnightDiffTextNew") > sum("GreyKnightDiffChangedNew"),
+      "the changed words are not stronger than their line")
+    -- Neovim marks the changed word of line 2, not the whole line (inline:char): x * 2 against x + 1
+    vim.api.nvim_win_call(right, function()
+      local line = vim.fn.getline(2)
+      local star = line:find("*", 1, true)
+      local name = function(col) return vim.fn.synIDattr(vim.fn.diff_hlID(2, col), "name") end
+      assert(name(star) == "DiffText" and name(1) == "DiffChange", ("line 2: %s at the *, %s at its start"):format(name(star), name(1)))
+      assert(vim.fn.synIDattr(vim.fn.diff_hlID(5, 1), "name") == "DiffAdd", "line 5 is not an added line")
+    end)
+    ide.reject(view)
+  end)
+  vim.wait(100)
+  while #vim.api.nvim_list_tabpages() > tabs do vim.cmd("tabclose") end
+  assert(ok, err)
 end)
 
 test("Git: <leader>gg opens Lazygit over the editor, q leaves it and closes the window", function()
@@ -3991,8 +4176,8 @@ test("Docs: every documented <leader> key exists", function()
   -- group prefixes in headings, LSP keys (exist once a server attaches), the AI Dashboard bridge (<leader>W*)
   local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>m"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
     ["<leader>x"] = 1, ["<leader>ca"] = 1, ["<leader>rn"] = 1, ["<leader>D"] = 1, ["<leader>t1/t2/t3"] = 1,
-    -- gitsigns' keys: in files of a git repository (the Git test checks them there)
-    ["<leader>gs"] = 1, ["<leader>gr"] = 1, ["<leader>gp"] = 1, ["<leader>gb"] = 1 }
+    -- gitsigns' keys: in files of a git repository (the Git test checks them there); <leader>gu: in a codediff review
+    ["<leader>gs"] = 1, ["<leader>gr"] = 1, ["<leader>gp"] = 1, ["<leader>gb"] = 1, ["<leader>gu"] = 1 }
   local stale, checked = {}, {}
   for key in DOCS:gmatch("<leader>[%w%-%;%/%:%.]+") do
     if not checked[key] and not known[key] and not key:match("^<leader>W") and not key:match("%d%-%d$") then

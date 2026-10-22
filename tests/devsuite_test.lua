@@ -786,6 +786,417 @@ test("Agent: starts by the full path of its binary, not by a name looked up on t
   assert(same(unquoted, fake), got)
 end)
 
+-- 2026-10-22: agents reach into Neovim (integrations/agent_link.lua). The MCP server an agent starts - here as an agent
+-- starts it: a job, JSON-RPC lines on its stdin and stdout. request() waits for the answer; note() for a notification.
+local function same_path(a, b)
+  a, b = vim.fs.normalize(a or ""), vim.fs.normalize(b or "")
+  if WIN then a, b = a:lower(), b:lower() end
+  return a == b
+end
+local function mcp(role)
+  local s = { lines = {}, answers = {}, notes = {}, seen = 0, id = 0, stderr = "" }
+  local partial = ""
+  s.job = vim.fn.jobstart(require("integrations.agent_link").server_command(role), {
+    on_stdout = function(_, data)
+      data[1] = partial .. data[1]
+      partial = table.remove(data)
+      for _, line in ipairs(data) do
+        line = line:gsub("\r$", "")
+        if line ~= "" then
+          s.lines[#s.lines + 1] = line
+          local ok, msg = pcall(vim.json.decode, line)
+          if ok and type(msg) == "table" and msg.method then
+            s.notes[#s.notes + 1] = msg
+          elseif ok and type(msg) == "table" and msg.id ~= nil then
+            s.answers[msg.id] = { msg = msg, raw = line }
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data) s.stderr = s.stderr .. table.concat(data, "\n") end,
+  })
+  assert(s.job > 0, "the server did not start")
+  function s.send(msg)
+    msg.jsonrpc = "2.0"
+    vim.fn.chansend(s.job, vim.json.encode(msg) .. "\n")
+  end
+  function s.request(method, params)
+    s.id = s.id + 1
+    local id = s.id
+    s.send({ id = id, method = method, params = params or vim.empty_dict() })
+    assert(wait(10000, function() return s.answers[id] end),
+      ("%s: no answer (stderr: %s; got: %s)"):format(method, s.stderr, table.concat(s.lines, "\n")))
+    return s.answers[id].msg, s.answers[id].raw
+  end
+  function s.note(method, pred) -- the next notification `method` (that pred() takes)
+    local found
+    wait(10000, function()
+      for i = s.seen + 1, #s.notes do
+        local n = s.notes[i]
+        if n.method == method and (not pred or pred(n.params)) then
+          s.seen, found = i, n
+          return true
+        end
+      end
+    end)
+    return found
+  end
+  function s.initialize()
+    local init = s.request("initialize", { protocolVersion = "2025-06-18", capabilities = vim.empty_dict(), clientInfo = { name = "test", version = "1" } })
+    s.send({ method = "notifications/initialized" })
+    return init
+  end
+  function s.stop()
+    pcall(vim.fn.chanclose, s.job, "stdin")
+    vim.fn.jobwait({ s.job }, 5000)
+  end
+  return s
+end
+
+test("Agent link: the server an agent starts speaks MCP - initialize, tools, a call answered when the tool is done", function()
+  local link = require("integrations.agent_link")
+  local s = mcp("tools")
+  local ok, err = pcall(function()
+    local init = s.initialize().result
+    assert(init and init.serverInfo.name == "greyknight" and init.protocolVersion == "2025-06-18" and init.capabilities.tools, vim.inspect(init))
+    assert(init.instructions:find("show_in_file_tree", 1, true), "instructions: " .. tostring(init.instructions))
+    local list, raw = s.request("tools/list")
+    local names = vim.tbl_map(function(t) return t.name end, list.result.tools)
+    for _, want in ipairs({ "show_in_file_tree", "open_file", "show_locations", "editor_state", "diagnostics", "find_symbol",
+      "goto_definition", "find_references", "notify" }) do
+      assert(vim.tbl_contains(names, want), want .. " missing: " .. table.concat(names, ", "))
+    end
+    -- JSON objects stay objects on the way through Neovim's RPC (MCP clients reject [] for {})
+    assert(raw:find('"inputSchema":{"type":"object"}', 1, true), "editor_state's schema: " .. raw)
+    local _, pong = s.request("ping")
+    assert(pong:find('"result":{}', 1, true), "ping: " .. pong)
+    local bad = s.request("resources/list")
+    assert(bad.error and bad.error.code == -32601, vim.inspect(bad))
+    -- a tool: the editor shows the file at the line, then the answer comes
+    local file = H.file("shown.lua", { "local a = 1", "local b = 2", "local c = 3", "return a" })
+    local res = s.request("tools/call", { name = "open_file", arguments = { path = file, line = 3 } }).result
+    assert(res and not res.isError and res.content[1].text:find("Opened", 1, true), vim.inspect(res))
+    assert(same_path(vim.api.nvim_buf_get_name(0), file) and vim.api.nvim_win_get_cursor(0)[1] == 3, "not at the file's line 3")
+    local unknown = s.request("tools/call", { name = "rm_rf", arguments = vim.empty_dict() }).result
+    assert(unknown.isError and unknown.content[1].text:find("No such tool", 1, true), vim.inspect(unknown))
+    local attached = false
+    for _, c in pairs(link.clients) do attached = attached or c.role == "tools" end
+    assert(attached, "not attached: " .. vim.inspect(link.clients))
+  end)
+  s.stop()
+  assert(ok, err)
+  -- the agent ended (its stdin closed): the server ends too, and is detached
+  assert(vim.fn.jobwait({ s.job }, 0)[1] ~= -1, "the server still runs")
+  assert(wait(5000, function() return #link.attached() == 0 end), "still attached: " .. vim.inspect(link.clients))
+end)
+
+test("Qwen IDE: an edit opens as a diff - the file now | the change; ga accepts (edits too), q rejects, :w accepts; closeDiff", function()
+  local ide = require("integrations.agent_ide")
+  local s = mcp("ide")
+  local file = H.file("calc.py", { "def add(a, b):", "    return a + b", "", "print(add(1, 2))" })
+  local disk = table.concat(vim.fn.readfile(file, "b"), "\n")
+  local proposal = "def add(a, b):\n    return a + b + 0\n\nprint(add(1, 2))\n"
+  local tabs = #vim.api.nvim_list_tabpages()
+  local ok, err = pcall(function()
+    s.initialize()
+    local names = vim.tbl_map(function(t) return t.name end, s.request("tools/list").result.tools)
+    assert(vim.tbl_contains(names, "openDiff") and vim.tbl_contains(names, "closeDiff"), table.concat(names, ", "))
+    local function open(text)
+      local res, raw = s.request("tools/call", { name = "openDiff", arguments = { filePath = file, newContent = text } })
+      assert(res.result and not res.result.isError and raw:find('"content":[]', 1, true), "openDiff: " .. raw)
+      local view = ide.views[file]
+      assert(view and #vim.api.nvim_list_tabpages() == tabs + 1, "no diff tab")
+      return view
+    end
+    local function gone() return wait(5000, function() return #vim.api.nvim_list_tabpages() == tabs and not ide.views[file] end) end
+    -- ga: accepted, with what the user changed in it
+    local view = open(proposal)
+    local wins = vim.tbl_filter(function(w) return vim.api.nvim_win_get_config(w).relative == "" end, -- not the notification
+      vim.api.nvim_tabpage_list_wins(view.tab))
+    assert(#wins == 2 and vim.wo[wins[1]].diff and vim.wo[wins[2]].diff, "not a diff of two windows: " .. #wins)
+    assert(text(view.orig) == table.concat(vim.fn.readfile(file), "\n") and text(view.prop):find("a + b + 0", 1, true), "sides")
+    assert(vim.api.nvim_get_current_buf() == view.prop, "the cursor is not in the change")
+    vim.api.nvim_buf_set_lines(view.prop, 2, 3, false, { "# checked" })
+    vim.api.nvim_feedkeys("ga", "mx", false)
+    local acc = s.note("ide/diffAccepted")
+    assert(acc and acc.params.filePath == file and acc.params.content == "def add(a, b):\n    return a + b + 0\n# checked\nprint(add(1, 2))\n", vim.inspect(acc))
+    assert(gone(), "the diff stayed after ga")
+    assert(table.concat(vim.fn.readfile(file, "b"), "\n") == disk, "Neovim wrote the file - that is the agent's")
+    -- q: rejected
+    open(proposal)
+    vim.api.nvim_feedkeys("q", "mx", false)
+    local rej = s.note("ide/diffRejected")
+    assert(rej and rej.params.filePath == file, vim.inspect(rej))
+    assert(gone(), "the diff stayed after q")
+    -- :w accepts; \r\n and no newline at the end come back as they went
+    view = open("a\r\nb")
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(view.prop))
+    vim.cmd("write")
+    acc = s.note("ide/diffAccepted")
+    assert(acc and acc.params.content == "a\r\nb", vim.inspect(acc))
+    assert(gone(), "the diff stayed after :w")
+    -- closed by the agent (the user answered in its terminal): the content, no notification when it says so
+    open(proposal)
+    local res = s.request("tools/call", { name = "closeDiff", arguments = { filePath = file, suppressNotification = true } }).result
+    assert(vim.json.decode(res.content[1].text).content == proposal, vim.inspect(res))
+    assert(gone(), "the diff stayed after closeDiff")
+    res = s.request("tools/call", { name = "closeDiff", arguments = { filePath = file } }).result
+    assert(res.content[1].text == '{"content":null}', vim.inspect(res))
+    -- closing its tab is a no
+    open(proposal)
+    vim.cmd("tabclose")
+    rej = s.note("ide/diffRejected")
+    assert(rej and rej.params.filePath == file, "tabclose: " .. vim.inspect(rej))
+    for _, n in ipairs(s.notes) do assert(n.method ~= "ide/diffClosed", "a notification after closeDiff said not to") end
+  end)
+  s.stop()
+  while #vim.api.nvim_list_tabpages() > 1 do vim.cmd("tabclose") end
+  assert(ok, err)
+end)
+
+test("Qwen IDE: the files open in Neovim, the cursor and the selection go to Qwen Code as context", function()
+  local s = mcp("ide")
+  local a = H.file("first.lua", { "local x = 1", "local y = 2", "return x + y" })
+  local b = H.file("second.lua", { "return 'two'" })
+  local ok, err = pcall(function()
+    vim.cmd("edit " .. vim.fn.fnameescape(a))
+    s.initialize()
+    local n = s.note("ide/contextUpdate", function(p) return p.workspaceState.openFiles[1] and same_path(p.workspaceState.openFiles[1].path, a) end)
+    assert(n, "no context: " .. vim.inspect(s.notes))
+    assert(n.params.workspaceState.openFiles[1].isActive and n.params.workspaceState.isTrusted == nil, vim.inspect(n.params))
+    vim.cmd("edit " .. vim.fn.fnameescape(b))
+    n = s.note("ide/contextUpdate", function(p)
+      local f = p.workspaceState.openFiles
+      return f[1] and same_path(f[1].path, b) and f[1].isActive and f[2] and same_path(f[2].path, a) and not f[2].isActive
+    end)
+    assert(n, "second.lua not the active one: " .. vim.inspect(s.notes[#s.notes]))
+    vim.cmd("edit " .. vim.fn.fnameescape(a))
+    vim.cmd("normal! 2GVj\27") -- lines 2-3, then (as the user) off to the agent
+    n = s.note("ide/contextUpdate", function(p)
+      local f = p.workspaceState.openFiles[1]
+      return f and f.selectedText == "local y = 2\nreturn x + y" and f.cursor and f.cursor.line == 3
+    end)
+    assert(n, "no selection: " .. vim.inspect(s.notes[#s.notes]))
+  end)
+  s.stop()
+  assert(ok, err)
+end)
+
+test("Agent link: Qwen Code started here finds this Neovim - lock file, settings (IDE mode, the tools); OpenCode its inline config", function()
+  local link = require("integrations.agent_link")
+  local home = vim.env.QWEN_HOME -- the tests' own (harness.lua)
+  local dir = tmpdir()
+  local saved = { vim.env.QWEN_CODE_SYSTEM_DEFAULTS_PATH, vim.env.OPENCODE_CONFIG_CONTENT }
+  local function read(path) return vim.json.decode(table.concat(vim.fn.readfile(path), "\n")) end
+  local ok, err = pcall(function()
+    assert(home and home ~= "" and not vim.startswith(link.qwen_home(), vim.fs.normalize(vim.uv.os_homedir() .. "/.qwen")), "the tests' Qwen home: " .. link.qwen_home())
+    local env = link.env("qwen", dir)
+    local lock_path = link.qwen_home() .. "/ide/" .. env.QWEN_CODE_IDE_SERVER_PORT .. ".lock"
+    local lock = read(lock_path)
+    assert(lock.ideInfo.name == "neovim" and lock.ideInfo.displayName == "Neovim (GreyKnight)" and lock.ppid == vim.uv.os_getpid(), vim.inspect(lock))
+    assert(lock.port == nil and lock.stdio.command == vim.v.progpath and lock.stdio.args[1] == "-l" and lock.stdio.args[3] == "ide"
+      and lock.stdio.args[4] == vim.v.servername and lock.stdio.args[2]:find("agent_server.lua", 1, true), vim.inspect(lock.stdio))
+    local spaces = vim.split(lock.workspacePath, WIN and ";" or ":", { plain = true })
+    local has_dir = false
+    for _, w in ipairs(spaces) do has_dir = has_dir or same_path(w, dir) end
+    assert(has_dir and same_path(spaces[1], vim.fn.getcwd()), lock.workspacePath)
+    local settings = read(env.QWEN_CODE_SYSTEM_DEFAULTS_PATH)
+    assert(settings.ide.enabled == true and settings.mcpServers.greyknight.trust == true and settings.mcpServers.greyknight.args[3] == "tools",
+      vim.inspect(settings))
+    -- the user's own system defaults stay - theirs win
+    local own = vim.fn.tempname() .. ".json"
+    vim.fn.writefile({ '{"ui":{"theme":"Mine"},"ide":{"enabled":false},"mcpServers":{"mine":{"command":"x"}}}' }, own)
+    vim.env.QWEN_CODE_SYSTEM_DEFAULTS_PATH = own
+    settings = read(link.env("qwen").QWEN_CODE_SYSTEM_DEFAULTS_PATH)
+    assert(settings.ui.theme == "Mine" and settings.ide.enabled == false and settings.mcpServers.mine and settings.mcpServers.greyknight,
+      vim.inspect(settings))
+    -- OpenCode: its inline config - nothing of Qwen Code's; the user's own inline config stays
+    local oc = link.env("opencode")
+    assert(oc.QWEN_CODE_IDE_SERVER_PORT == nil and oc.QWEN_CODE_SYSTEM_DEFAULTS_PATH == nil, vim.inspect(oc))
+    local c = vim.json.decode(oc.OPENCODE_CONFIG_CONTENT)
+    assert(c.mcp.greyknight.type == "local" and c.mcp.greyknight.command[1] == vim.v.progpath and c.mcp.greyknight.command[4] == "tools", vim.inspect(c))
+    vim.env.OPENCODE_CONFIG_CONTENT = '{"model":"x/y","mcp":{"mine":{"type":"local","command":["a"]}}}'
+    c = vim.json.decode(link.env("opencode").OPENCODE_CONFIG_CONTENT)
+    assert(c.model == "x/y" and c.mcp.mine and c.mcp.greyknight, vim.inspect(c))
+    -- the lock file goes with Neovim; one of a Neovim that is gone (crashed) goes with the next one made
+    link.cleanup()
+    assert(vim.fn.filereadable(lock_path) == 0, "the lock file stayed")
+    local dead = vim.fn.jobstart(WIN and { "cmd", "/c", "exit" } or { "true" })
+    local pid = vim.fn.jobpid(dead)
+    vim.fn.jobwait({ dead }, 5000)
+    local stale = link.qwen_home() .. "/ide/7.lock"
+    vim.fn.writefile({ vim.json.encode({ ideInfo = link.IDE_INFO, ppid = pid, stdio = { command = "x", args = {} } }) }, stale)
+    local foreign = link.qwen_home() .. "/ide/8.lock" -- VS Code's: not ours to sweep
+    vim.fn.writefile({ vim.json.encode({ ideInfo = { name = "vscode", displayName = "VS Code" }, ppid = pid, port = 1 }) }, foreign)
+    link.env("qwen")
+    assert(vim.fn.filereadable(stale) == 0 and vim.fn.filereadable(foreign) == 1, "stale lock files: " .. vim.inspect(vim.fn.readdir(link.qwen_home() .. "/ide")))
+    os.remove(foreign)
+  end)
+  vim.env.QWEN_CODE_SYSTEM_DEFAULTS_PATH, vim.env.OPENCODE_CONFIG_CONTENT = saved[1], saved[2]
+  link.cleanup()
+  assert(ok, err)
+end)
+
+-- A model for Qwen Code as OpenAI's API serves one (Python, port 0; it prints the port, then a CALL line for each
+-- request): the prompt with gk-step-one - read_file, then write_file NEW; gk-step-two - write_file NEW2; then "Done."
+local FAKE_MODEL = [[
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+target, new, new2 = sys.argv[1], sys.argv[2], sys.argv[3]
+def text_of(m):
+    c = m.get("content")
+    return c if isinstance(c, str) else " ".join(p.get("text", "") for p in (c or []) if isinstance(p, dict))
+class Model(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, body, ctype="application/json"):
+        self.send_response(200); self.send_header("Content-Type", ctype); self.end_headers(); self.wfile.write(body)
+    def do_GET(self): self.reply(json.dumps({"object": "list", "data": [{"id": "fake", "object": "model"}]}).encode())
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        msgs = req.get("messages", [])
+        # markers no path has: Qwen Code sends the files open in Neovim along (a second.lua of another test was one)
+        users = [i for i, m in enumerate(msgs) if m.get("role") == "user" and ("gk-step-one" in text_of(m) or "gk-step-two" in text_of(m))]
+        last = users[-1] if users else 0
+        done = sum(1 for m in msgs[last:] if m.get("role") == "tool")
+        second = users and "gk-step-two" in text_of(msgs[last])
+        steps = [("write_file", {"file_path": target, "content": new2})] if second else \
+            [("read_file", {"file_path": target}), ("write_file", {"file_path": target, "content": new})]
+        print("CALL", done, flush=True)
+        if done < len(steps):
+            name, args = steps[done]
+            delta = {"role": "assistant", "content": None, "tool_calls": [{"index": 0, "id": "c%d" % len(msgs), "type": "function",
+                     "function": {"name": name, "arguments": json.dumps(args)}}]}
+            finish = "tool_calls"
+        else:
+            delta, finish = {"role": "assistant", "content": "Done."}, "stop"
+        chunk = lambda d, f: "data: " + json.dumps({"id": "x", "object": "chat.completion.chunk", "created": 0, "model": "fake",
+            "choices": [{"index": 0, "delta": d, "finish_reason": f}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}) + "\n\n"
+        if req.get("stream"):
+            self.reply((chunk(delta, None) + chunk({}, finish) + "data: [DONE]\n\n").encode(), "text/event-stream")
+        else:
+            self.reply(json.dumps({"id": "x", "object": "chat.completion", "created": 0, "model": "fake",
+                "choices": [{"index": 0, "message": delta, "finish_reason": finish}]}).encode())
+server = HTTPServer(("127.0.0.1", 0), Model)
+print(server.server_address[1], flush=True)
+server.serve_forever()
+]]
+
+test("Qwen Code (real): an edit it proposes opens as a diff in Neovim - ga, and Qwen Code writes it; q, and the file stays", function()
+  linux_only("Qwen Code in a pty")
+  local agent, link, ide = require("integrations.agent"), require("integrations.agent_link"), require("integrations.agent_ide")
+  local qwen = vim.fn.exepath(agent.BACKENDS.qwen.bin())
+  if qwen == "" then H.skip("Qwen Code is not installed") end
+  local proj = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local target = proj .. "/hello.py"
+  vim.fn.writefile({ "print('hi')" }, target)
+  local NEW, NEW2 = "print('from qwen')\n", "print('rejected')\n"
+  local script = vim.fn.tempname() .. "-model.py"
+  vim.fn.writefile(vim.split(FAKE_MODEL, "\n"), script)
+  -- Qwen Code's own folder: the tests' (harness.lua) - a model of its own, edits asked for (its default: auto), and no
+  -- update of the installed Qwen Code ("Attempting to automatically update now" - general.disableAutoUpdate is its old
+  -- name, in "general" it counted for nothing; nothing was updated, 2026-10-22)
+  vim.fn.mkdir(link.qwen_home(), "p")
+  vim.fn.writefile({ vim.json.encode({ security = { auth = { selectedType = "openai" } }, model = { name = "fake" },
+    tools = { approvalMode = "default" }, ui = { hideTips = true }, general = { enableAutoUpdate = false } }) },
+    link.qwen_home() .. "/settings.json")
+  local port, calls = nil, {}
+  local model = vim.fn.jobstart({ require("devsuite.util").system_python(), script, target, NEW, NEW2 }, {
+    on_stdout = function(_, d)
+      for _, line in ipairs(d) do
+        if line:match("^CALL") then calls[#calls + 1] = line elseif tonumber(line) then port = port or tonumber(line) end
+      end
+    end,
+  })
+  local screen, job = "", nil
+  local function shown() -- the screen as text, its last lines
+    local t = screen:gsub("\27%[[%d;?]*[ -/]*[@-~]", ""):gsub("\27%][^\7\27]*\7", ""):gsub("\27[()][%w]", "")
+    local lines = {}
+    for line in t:gmatch("[^\r\n]+") do
+      if vim.trim(line) ~= "" and not line:match("^[%s═║╔╗╚╝█▀▄─│]*$") then lines[#lines + 1] = vim.trim(line) end
+    end
+    return table.concat(vim.list_slice(lines, math.max(1, #lines - 20)), "\n")
+  end
+  local function why() return ("\nmodel calls: %s\nservers: %s\nscreen:\n%s"):format(table.concat(calls, ", "), vim.inspect(link.clients), shown()) end
+  local ok, err = pcall(function()
+    assert(wait(10000, function() return port end), "the fake model did not start")
+    local env = vim.tbl_extend("force", link.env("qwen", proj), { OPENAI_API_KEY = "dummy", OPENAI_MODEL = "fake",
+      OPENAI_BASE_URL = ("http://127.0.0.1:%d/v1"):format(port), TERM = "xterm-256color", QWEN_CODE_SKIP_UPDATE_CHECK_ONCE = "1" })
+    job = vim.fn.jobstart({ qwen }, { pty = true, width = 160, height = 50, cwd = proj, env = env,
+      on_stdout = function(_, d)
+        local s = table.concat(d, "\n")
+        screen = (screen .. s):sub(-200000)
+        if s:find("\27[6n", 1, true) then vim.fn.chansend(job, "\27[1;1R") end -- where the cursor is: a terminal's answer
+      end })
+    assert(wait(90000, function() return screen:find("Type your message", 1, true) end), "Qwen Code did not start" .. why())
+    -- as a user types: once it is ready (on the pi its input came a moment after its prompt showed), key by key, Enter
+    -- once the text is there - again when no model call follows
+    local function prompt(t)
+      vim.wait(2000)
+      for ch in t:gmatch(".") do
+        vim.fn.chansend(job, ch)
+        vim.wait(15)
+      end
+      wait(10000, function() return shown():find(t, 1, true) end)
+      local before = #calls
+      vim.fn.chansend(job, "\r")
+      if not wait(15000, function() return #calls > before end) then vim.fn.chansend(job, "\r") end
+    end
+    prompt("gk-step-one: update hello.py")
+    assert(wait(60000, function() return ide.views[target] end), "no diff in Neovim" .. why())
+    local view = ide.views[target]
+    assert(text(view.prop) == "print('from qwen')" and text(view.orig) == "print('hi')", "sides: " .. text(view.orig) .. " | " .. text(view.prop))
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(view.prop))
+    vim.api.nvim_feedkeys("ga", "mx", false)
+    assert(wait(30000, function() return table.concat(vim.fn.readfile(target, "b"), "\n") == "print('from qwen')\n" end),
+      "Qwen Code did not write it: " .. table.concat(vim.fn.readfile(target), "\n") .. why())
+    assert(wait(30000, function() return screen:find("Done.", 1, true) end), "no Done." .. why())
+    prompt("gk-step-two: change it again")
+    assert(wait(60000, function() return ide.views[target] end), "no second diff" .. why())
+    vim.api.nvim_set_current_win(vim.fn.bufwinid(ide.views[target].prop))
+    vim.api.nvim_feedkeys("q", "mx", false)
+    assert(wait(5000, function() return not ide.views[target] end), "the diff stayed after q")
+    vim.wait(3000)
+    assert(table.concat(vim.fn.readfile(target, "b"), "\n") == "print('from qwen')\n", "rejected, yet written: " .. table.concat(vim.fn.readfile(target), "\n"))
+  end)
+  if job then pcall(vim.fn.jobstop, job) end
+  pcall(vim.fn.jobstop, model)
+  while #vim.api.nvim_list_tabpages() > 1 do vim.cmd("tabclose") end
+  link.cleanup()
+  assert(ok, err)
+end)
+
+test("Agent link: an agent's terminal gets it in its environment - not when vim.g.greyknight_agent_link is false", function()
+  linux_only("the fake agent (sh)")
+  local agent, T = require("integrations.agent"), require("toggleterm.terminal")
+  local fake = vim.fn.tempname() .. "-qwen"
+  vim.fn.writefile({ "#!/bin/sh", 'printf "PORT:%s|DEFAULTS:%s|\\n" "$QWEN_CODE_IDE_SERVER_PORT" "$QWEN_CODE_SYSTEM_DEFAULTS_PATH"', "exec cat" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link }
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = fake, "qwen"
+  local ok, err = pcall(function()
+    for _, on in ipairs({ true, false }) do
+      if on then vim.g.greyknight_agent_link = nil else vim.g.greyknight_agent_link = false end
+      local old = T.get(agent.AGENTS.agent, true)
+      if old then old:shutdown() end
+      agent.launch("agent", "horizontal")
+      local term = T.get(agent.AGENTS.agent, true)
+      assert(wait(10000, function() return text(term.bufnr):find("PORT:", 1, true) end), "no output: " .. text(term.bufnr))
+      local t = text(term.bufnr)
+      if on then
+        local port = t:match("PORT:(%d+)|")
+        assert(port and vim.fn.filereadable(require("integrations.agent_link").qwen_home() .. "/ide/" .. port .. ".lock") == 1, t)
+        assert(t:match("DEFAULTS:([^|]+)|"), t)
+      else
+        assert(t:find("PORT:|DEFAULTS:|", 1, true), "vim.g.greyknight_agent_link = false: " .. t)
+      end
+      term:shutdown()
+    end
+  end)
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link = saved[1], saved[2], saved[3]
+  require("integrations.agent_link").cleanup()
+  assert(ok, err)
+end)
+
 -- 2026-10-20: going to a toggleterm window (an agent, the REPL, a shell) means typing there - insert (terminal) mode,
 -- also when <C-h> left it in normal mode, which toggleterm brings back on the way in (persist_mode); not once its
 -- program has exited (a key would close the window). startinsert / stopinsert are recorded here instead of done:

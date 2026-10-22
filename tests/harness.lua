@@ -29,6 +29,12 @@ pcall(function()
 end)
 pcall(function() require("devsuite.tasks").args_file = vim.fn.tempname() .. "-run-args.json" end)
 pcall(function() require("integrations.jdtls").settings_dir = vim.fn.tempname() end)
+-- ... nor undo files: 'undodir' is ~/.vim/undodir, each file a test saved left one there (2026-10-22)
+vim.o.undodir = vim.fn.tempname() .. "-undo"
+vim.fn.mkdir(vim.o.undodir, "p")
+-- ... nor Qwen Code's folder: an agent started in a test - a fake one too - gets Neovim's lock file in ~/.qwen/ide
+-- (integrations/agent_link.lua). $QWEN_HOME moves it, as it moves Qwen Code's (2026-10-22)
+vim.env.QWEN_HOME = vim.fn.tempname() .. "-qwen-home"
 -- gitsigns follows the working directory: each change ran git rev-parse and restarted its watcher on .git/HEAD.
 -- The tests change it hundreds of times - on Windows a thousand git processes in a run, libuv lost the ends of
 -- some, and Neovim hung on quitting (2026-10-21; gitsigns' own note on stop/start of that watcher: #1027). Test
