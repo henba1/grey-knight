@@ -49,7 +49,7 @@ goes there while it runs and back to the code when it ends. Errors are marked in
 
 | Key | Mode | Action |
 |-----|------|--------|
-| `<F6>` / `<leader>rr` | n | Run file with its remembered args (project `.venv` python, else `#!` / python3 / bash; Windows: python) |
+| `<F6>` / `<leader>rr` | n | Run file with its remembered args (project `.venv` python, else `#!` / python3 / bash; Windows: python, Git Bash) |
 | `<leader>ra` | n | Edit the file's args, then run (shell syntax; remembered across sessions) |
 | `<leader>rR` | n | Run file as root (sudo) |
 | `<leader>rp` / `rP` | n | Project script (./, scripts/, bin/, tools/) / with args |

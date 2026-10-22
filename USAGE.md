@@ -488,9 +488,10 @@ The statusline shows how many tasks are running, done and failed.
 nearest `.venv/` or `venv/` between the file and your home directory), then the `#!` line, then
 `python3` (Windows: `python`, and no `#!` line - there is no `/usr/bin/env`; a virtualenv's python is
 `Scripts\python.exe`). Shell scripts use their `#!` line, else `bash`; other files run when they have a `#!`
-line. A venv directly in your home (`~/venv` with pwntools, ...) is a toolbox, not a project
-environment: activate it before starting nvim to use it everywhere. pyright and the debugger
-pick the same virtualenv.
+line. Windows runs no `#!` line at all (no `/bin/bash` there): shell scripts run with Git for Windows'
+bash (Git Bash) - not with the `bash.exe` of WSL, which takes no Windows paths. A venv directly in your
+home (`~/venv` with pwntools, ...) is a toolbox, not a project environment: activate it before starting
+nvim to use it everywhere. pyright and the debugger pick the same virtualenv.
 
 **Where:** programs run in Neovim's current directory (the project root), like in VS Code.
 Selections and cells run from a temp file; Python snippets can still import the modules that
