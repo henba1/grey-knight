@@ -27,6 +27,10 @@ local function mason_path(...) return vim.fs.joinpath(vim.fn.stdpath("data"), "m
 -- cache directory is the temp directory on Windows
 local function data_path(...) return vim.fs.joinpath(vim.fn.stdpath("data"), ...) end
 
+-- The Maven settings generated for a local repository IntelliJ sets: one file per repository (the tests use their
+-- own folder - each run's temp project was one more file here, 2026-10-22)
+M.settings_dir = data_path("greyknight")
+
 -- ── The JDKs and the Maven of this machine (no IntelliJ needed) ──
 -- 2026-10-19: without IntelliJ jdtls only knew $JAVA_HOME and the java on the PATH - on the work laptop both are
 -- 17, so jdtls (21+) did not start although a JDK 21 sat next to them, and every project compiled against that
@@ -190,8 +194,8 @@ function M.maven_settings(project)
   if not (m and (m.home or m.user_settings or m.local_repository)) then return M.mvn_settings() end
   local global = m.home and (m.home .. "/conf/settings.xml") or nil
   if not m.local_repository then return { user = m.user_settings, global = global } end
-  local file = data_path("greyknight", "maven-local-repository-" .. vim.fn.sha256(m.local_repository):sub(1, 10) .. ".xml")
-  vim.fn.mkdir(vim.fs.dirname(file), "p")
+  local file = vim.fs.joinpath(M.settings_dir, "maven-local-repository-" .. vim.fn.sha256(m.local_repository):sub(1, 10) .. ".xml")
+  vim.fn.mkdir(M.settings_dir, "p")
   local repo = (m.local_repository:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
   vim.fn.writefile({
     '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">',
