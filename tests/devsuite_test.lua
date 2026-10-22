@@ -970,13 +970,17 @@ local function complete_in(lnum, typed, want, source, opts)
   opts = opts or {}
   local cmp = require("blink.cmp")
   local seen, waited = {}, 0
+  -- the steps are over: taken and left, given up, or failed. A snippet ends insert mode by itself (its placeholder
+  -- is selected), so the keys below return before the last step ran - on a busy machine after the 300 ms that were
+  -- waited for it, and "not taken" was read before it was told (2026-10-22)
+  local done = false
   -- an error in a step ends insert mode and is told: unseen, it was a hit-enter prompt that kept the test window
   -- waiting for keys that never came
   local function guarded(fn)
     return function(...)
       local ok, e = pcall(fn, ...)
       if not ok then
-        seen.error = tostring(e)
+        seen.error, done = tostring(e), true
         vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
       end
     end
@@ -1000,11 +1004,15 @@ local function complete_in(lnum, typed, want, source, opts)
       seen.instead = ("line %q, menu %s, selected %s"):format(vim.api.nvim_get_current_line(), tostring(cmp.is_visible()), sel and tostring(sel.label) or "nothing")
     end
     vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
+    done = true
   end)
   local pick
   pick = guarded(function(n) -- <Tab> until the item is the selected one, then <CR>
     if match(cmp.get_selected_item()) then
-      if opts.at_once then return vim.api.nvim_feedkeys(vim.keycode("<CR><Esc>"), "t", false) end
+      if opts.at_once then
+        done = true
+        return vim.api.nvim_feedkeys(vim.keycode("<CR><Esc>"), "t", false)
+      end
       vim.api.nvim_create_autocmd("User", { pattern = "BlinkCmpAccept", once = true, callback = function() taken = true end })
       vim.api.nvim_feedkeys(vim.keycode("<CR>"), "t", false)
       return vim.defer_fn(esc, 50)
@@ -1012,6 +1020,7 @@ local function complete_in(lnum, typed, want, source, opts)
     if n > 40 then -- never selected: what was, for the failure message
       local sel = cmp.get_selected_item()
       seen.instead = ("Tab never reached it - selected %s, %d items"):format(sel and tostring(sel.label) or "nothing", #(cmp.get_items() or {}))
+      done = true
       return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
     end
     vim.api.nvim_feedkeys(vim.keycode("<Tab>"), "t", false)
@@ -1027,6 +1036,7 @@ local function complete_in(lnum, typed, want, source, opts)
       seen.found = find() ~= nil
       seen.items = vim.tbl_map(function(it) return tostring(it.source_id) .. ":" .. tostring(it.label) end, vim.list_slice(cmp.get_items() or {}, 1, 12))
       if seen.found then return pick(0) end
+      done = true
       return vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
     end
     last_count = count
@@ -1040,7 +1050,8 @@ local function complete_in(lnum, typed, want, source, opts)
     vim.api.nvim_feedkeys(typed, "t", false)
     vim.defer_fn(poll, 100)
   end), 50)
-  vim.api.nvim_feedkeys("A", "tx!", false) -- returns when <Esc> ends insert mode
+  vim.api.nvim_feedkeys("A", "tx!", false) -- returns when insert mode ends: our <Esc>, or a snippet's placeholder
+  wait(30000, function() return done end)
   vim.wait(300)
   assert(not seen.error, "a completion step failed: " .. tostring(seen.error))
   return vim.api.nvim_buf_get_lines(0, 0, -1, false), seen
@@ -1088,7 +1099,7 @@ test("Completion: snippets - ifmain becomes the main guard (friendly-snippets), 
   local ok, err = pcall(function()
     local lines, seen = complete_in(1, "ifmai", "ifmain", "snippets")
     assert(seen.found, "no ifmain snippet in the menu: " .. vim.inspect(seen.items))
-    assert(seen.taken, "blink did not take the snippet within 5 s - " .. tostring(seen.instead))
+    assert(seen.taken, "blink did not take the snippet within 15 s - " .. tostring(seen.instead))
     assert(table.concat(lines, "\n"):find('if __name__ == "__main__":', 1, true), "after Enter: " .. vim.inspect(lines))
     assert(seen.mode == "s", "the placeholder is not selected to type over - mode " .. tostring(seen.mode))
   end)
@@ -1502,6 +1513,36 @@ test("Ctrl+Click (IntelliJ): on a name to its declaration (<C-o> back); on the d
   vim.cmd("silent! cclose")
   for _, buf in pairs(bufs) do stop_clients(buf) end
   for _, buf in pairs(bufs) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
+-- angularls and ts_ls in a .ts file both name the declaration: a quickfix list of the same place twice, no jump
+test("Ctrl+Click: two servers naming the same declaration - one jump, not a list of the same place twice", function()
+  local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local decl, use = dir .. "/decl.txt", dir .. "/use.txt"
+  vim.fn.writefile({ "", "def greet(): pass" }, decl)
+  vim.fn.writefile({ "x = greet()" }, use)
+  local answers = {
+    ["textDocument/definition"] = function()
+      return { { uri = vim.uri_from_fname(decl), range = { start = { line = 1, character = 4 }, ["end"] = { line = 1, character = 9 } } } }
+    end,
+  }
+  vim.cmd("silent! only")
+  vim.fn.setqflist({}, "r")
+  vim.cmd.edit(vim.fn.fnameescape(use))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    for _, name in ipairs({ "gk-fake-one", "gk-fake-two" }) do
+      vim.lsp.start({ name = name, cmd = fake_lsp({ definitionProvider = true }, answers), root_dir = dir }, { bufnr = buf })
+    end
+    assert(wait(5000, function() return #vim.lsp.get_clients({ bufnr = buf }) >= 2 end), "the two fake servers did not attach")
+    ctrl_click(0, 1, 6)
+    assert(wait(5000, function() return where() == "decl.txt:2:4" end), "no jump: " .. where() .. ", list: " .. #vim.fn.getqflist())
+    assert(#vim.fn.getqflist() == 0, "a list of the same place twice")
+  end)
+  stop_clients(buf)
+  vim.cmd("silent! %bwipeout!")
   vim.fn.delete(dir, "rf")
   assert(ok, err)
 end)

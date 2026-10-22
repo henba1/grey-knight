@@ -1010,6 +1010,120 @@ test("Bookmarks: each project its own - in another directory the list and the si
   end)
 end)
 
+-- 2026-10-22: a line replaced rather than edited - cut and put back elsewhere (dd, p), the whole text set anew (some
+-- formatters, :%!) - lost its bookmark with the next save; and one that followed its text was written at its old line
+test("Bookmarks: a line moved, cut and put back, or replaced stays bookmarked - the sign goes along, the file says where", function()
+  with_bookmarks({ ["m.txt"] = { "alpha line", "beta line", "gamma line", "delta line" } }, function(root, bm)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/m.txt"))
+    local buf = vim.api.nvim_get_current_buf()
+    -- what Neovim sends once it waits for keys again - a test never does
+    local function changed() vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf }) end
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    bm.toggle()
+    vim.cmd("2move 3") -- moved: the sign goes along by itself
+    changed()
+    assert(vim.deep_equal(bookmark_signs(buf), { 3 }), ":m - the sign: " .. vim.inspect(bookmark_signs(buf)))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    vim.api.nvim_feedkeys(vim.keycode("VJ<Esc>"), "mx", false) -- the selection one line down (keymaps.lua)
+    changed()
+    assert(vim.api.nvim_buf_get_lines(buf, 3, 4, false)[1] == "beta line", "visual J did not move it: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+    assert(vim.deep_equal(bookmark_signs(buf), { 4 }), "visual J - the sign: " .. vim.inspect(bookmark_signs(buf)))
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "alpha line", "gamma line", "beta    line", "delta line" })
+    changed()
+    assert(vim.deep_equal(bookmark_signs(buf), { 3 }), "the text set anew - the sign: " .. vim.inspect(bookmark_signs(buf)))
+    vim.cmd("silent write")
+    assert(vim.deep_equal(bookmarks_kept(bm), { "m.txt:3" }), "saved: " .. vim.inspect(bookmarks_kept(bm)))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 }) -- cut, put back below the last line: the same text at a new line
+    vim.cmd("normal! dd")
+    changed()
+    vim.cmd("normal! Gp")
+    changed()
+    assert(vim.deep_equal(bookmark_signs(buf), { 4 }), "dd, p - the sign: " .. vim.inspect(bookmark_signs(buf)))
+    vim.cmd("silent write")
+    assert(vim.deep_equal(bookmarks_kept(bm), { "m.txt:4" }), "dd, p, saved: " .. vim.inspect(bookmarks_kept(bm)))
+    vim.cmd("normal! dd") -- deleted for real: gone with the save
+    changed()
+    vim.cmd("silent write")
+    assert(#bookmarks_kept(bm) == 0, "its line deleted and saved, still kept: " .. vim.inspect(bookmarks_kept(bm)))
+  end)
+end)
+
+-- 2026-10-22: a renamed or moved file kept its bookmarks at the old path; the list opened an empty file there
+test("Bookmarks: renamed or moved, a file keeps its bookmarks - the explorer's r and m (a file not open, its folder), :file", function()
+  explorer_world(function(ex, w)
+    local bm, p, R = require("config.bookmarks"), w.picker, w.root
+    local saved = bm.file
+    bm.file = w.far .. "/bookmarks.json"
+    bm.reload()
+    local ok, err = pcall(function()
+      vim.fn.writefile({ "one", "two", "three" }, R .. "/open.txt")
+      vim.fn.writefile({ "x", "y", "z" }, R .. "/sub/closed.txt")
+      vim.cmd.edit(vim.fn.fnameescape(R .. "/sub/closed.txt"))
+      vim.api.nvim_win_set_cursor(0, { 3, 0 })
+      bm.toggle()
+      vim.cmd("bwipeout")
+      vim.cmd.edit(vim.fn.fnameescape(R .. "/open.txt"))
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      bm.toggle()
+      w.answer = "renamed.txt"
+      ex.rename(p, w.at(R .. "/open.txt")) -- r on the open one
+      assert(vim.fs.basename(vim.api.nvim_buf_get_name(0)) == "renamed.txt", "r: the buffer " .. vim.api.nvim_buf_get_name(0))
+      assert(vim.deep_equal(bookmark_signs(0), { 2 }), "r: the sign did not go along - " .. vim.inspect(bookmark_signs(0)))
+      ex.move(p, w.at(R .. "/sub")) -- m on its folder, m on the target: the file not open goes with the folder
+      ex.move(p, w.at(R .. "/other"))
+      vim.cmd("file " .. vim.fn.fnameescape(R .. "/named.txt"))
+      vim.cmd("silent write")
+      local paths = vim.tbl_map(function(b) return b.file:sub(#R + 2) .. ":" .. b.line end, bm.list())
+      table.sort(paths)
+      assert(vim.deep_equal(paths, { "named.txt:2", "other/sub/closed.txt:3" }), "the bookmarks: " .. vim.inspect(paths))
+      vim.cmd.edit(vim.fn.fnameescape(R .. "/other/sub/closed.txt"))
+      assert(vim.deep_equal(bookmark_signs(0), { 3 }), "the moved file's sign: " .. vim.inspect(bookmark_signs(0)))
+    end)
+    bm.file = saved
+    bm.reload()
+    assert(ok, err)
+  end)
+end)
+
+test("Bookmarks: one of a deleted file stays, listed as gone - Enter opens nothing, next skips it, <C-x> removes it", function()
+  with_bookmarks({ ["a.txt"] = { "1", "2", "3" }, ["b.txt"] = { "1", "2", "3" } }, function(root, bm)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    bm.toggle()
+    vim.cmd("bwipeout!")
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/b.txt"))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    bm.toggle()
+    vim.fn.delete(root .. "/a.txt")
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    for _, want in ipairs({ "b.txt:3", "b.txt:3" }) do -- round the ends: a.txt's is skipped
+      vim.api.nvim_feedkeys(vim.keycode("<leader>mn"), "mx", false)
+      assert(at() == want, "next: " .. at())
+    end
+    local notes, notify = {}, vim.notify
+    vim.notify = function(msg) notes[#notes + 1] = tostring(msg) end
+    local ok, err = pcall(function()
+      vim.api.nvim_feedkeys(vim.keycode("<leader>ml"), "mx", false)
+      local p
+      assert(H.wait(3000, function() p = Snacks.picker.get({ source = "bookmarks" })[1]; return p and p.list:count() == 2 end), "no list of two")
+      local item = p:items()[1]
+      assert(vim.fs.basename(item.file) == "a.txt" and item.gone and item.comment, "a.txt not listed as gone: " .. vim.inspect(item.comment))
+      p.list:view(1)
+      vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+      assert(table.concat(notes, " | "):find("gone", 1, true), "Enter on it: no word - " .. table.concat(notes, " | "))
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        assert(vim.fs.basename(vim.api.nvim_buf_get_name(b)) ~= "a.txt", "an empty a.txt was opened")
+      end
+      p.list:view(1)
+      vim.api.nvim_feedkeys(vim.keycode("<C-x>"), "x", false)
+      assert(H.wait(3000, function() return p.list:count() == 1 end), "<C-x> did not remove it")
+      assert(vim.deep_equal(bookmarks_kept(bm), { "b.txt:3" }), "kept: " .. vim.inspect(bookmarks_kept(bm)))
+    end)
+    vim.notify = notify
+    assert(ok, err)
+  end)
+end)
+
 -- ── Recent buffers (config/switcher.lua, 2026-10-22): IntelliJ's Ctrl+Tab ──
 
 -- these files opened one after the other (their buffers by name), all within a second
@@ -1452,7 +1566,8 @@ test("Explorer workflow: Enter twice opens a match in the editor, the explorer s
     -- a file opened in the editor some other way: the tree opens its folder and goes to it
     vim.api.nvim_set_current_win(editor)
     vim.cmd.edit(vim.fn.fnameescape(root .. "/notes/todo.txt"))
-    assert(H.wait(3000, function() return p:current() and p:current().file == root .. "/notes/todo.txt" end),
+    -- the folder listed first, as when the explorer opens: 3 s were too few on a busy Windows (2026-10-22, twice)
+    assert(H.wait(OPEN_MS, function() return p:current() and p:current().file == root .. "/notes/todo.txt" end),
       "the tree did not follow: on " .. tostring(p:current() and x.rel(p:current().file)))
   end)
 end)
