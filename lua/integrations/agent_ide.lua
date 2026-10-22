@@ -84,7 +84,8 @@ M.WINHL = {
 }
 
 local colored = false
-local function colors()
+--- The colors made (once; again with each colorscheme) - the changes list's diffs use them too (agent_changes.lua)
+function M.ensure_colors()
   if colored then return end
   colored = true
   M.colors()
@@ -93,6 +94,7 @@ local function colors()
     callback = function() M.colors() end,
   })
 end
+local colors = M.ensure_colors
 
 -- The view's tab goes (scheduled: an autocmd may not change the windows); its buffers with it
 local function close(view)

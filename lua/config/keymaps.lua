@@ -185,6 +185,7 @@ map("n", "<leader>am", function() agent().model_info() end,  { desc = "AI: Model
 map("n", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about file" })
 map("v", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about selection" })
 map("v", "<leader>ae", function() agent().edit() end,        { desc = "AI: Edit selection" })
+map("n", "<leader>ad", function() require("integrations.agent_changes").pick() end, { desc = "AI: What changed since the agent started (diff, take back)" })
 
 -- ── Debug: Python (debugpy) + bash (bashdb) - lua/devsuite/debug.lua ─
 -- F5 debugs the current file (or continues; with .vscode/launch.json it offers those configs).

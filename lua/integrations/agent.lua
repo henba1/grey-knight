@@ -119,6 +119,11 @@ function M.attention(event, id)
   end
 end
 
+-- What the project was like when an agent started: <leader>ad lists what changed since (agent_changes.lua)
+local function note_start(dir)
+  pcall(function() require("integrations.agent_changes").start(dir) end)
+end
+
 local function agent(name, direction, first_prompt)
   local T = require("toggleterm.terminal")
   local backend = M.backend()
@@ -139,6 +144,7 @@ local function agent(name, direction, first_prompt)
     env = M.link_env(id),
   })
   term.gk_agent = true
+  note_start(vim.fn.getcwd())
   return term, true
 end
 
@@ -255,6 +261,7 @@ function M.new_session()
     vim.defer_fn(function()
       if running(term) then vim.fn.chansend(term.job_id, "\r") end
     end, 150)
+    pcall(function() require("integrations.agent_changes").start(vim.fn.getcwd(), true) end) -- what it changes counts from now
   end
 end
 
