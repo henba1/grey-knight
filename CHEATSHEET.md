@@ -41,6 +41,21 @@
 > hidden, so re-opening re-attaches the same session. Going to the agent's window (`Ctrl+l`, a click) puts
 > you in terminal mode, as every terminal window does: type away. `Esc Esc` gives normal mode there (scroll, copy).
 
+**The agent works in the editor** (both agents, started with `<leader>t*`): ask "where is the bookmarks code?" and
+it opens the file tree on it (or a search there), shows code at a line, lists places in the quickfix list, asks the
+language servers (definitions, usages, symbols, diagnostics) - `/mcp` shows `greyknight`. Qwen Code also gets the
+open files, cursor and selection as context (`/ide status`: Neovim) and shows **each edit as a diff** before it
+writes it (when it asks for permission: `/approval-mode default`):
+
+| Key (in the diff) | Action |
+|-----|--------|
+| `ga` / `:w` | Accept the change - Qwen Code writes it (edit the right side first if you like) |
+| `q` | Reject it (closing the tab too) |
+| `do` / `]c` / `[c` | Take one change back / next / previous change |
+
+> Only agents started here are connected (`vim.g.greyknight_agent_link = false`: none); the agents' settings files
+> stay as they are ([USAGE.md → The agent in your editor](USAGE.md#the-agent-in-your-editor)).
+
 ## Run / Tasks / REPL — `<F6>` / `<leader>r` (bash + python)
 
 Every run is a task (overseer.nvim): scripts run side by side, running one again replaces its old
@@ -183,7 +198,7 @@ explorer pane once focused.
 |-----|--------|
 | `<leader>gg` | Lazygit |
 | `<leader>gl` | Git log |
-| `<leader>gv` | Diffview (side-by-side diffs) |
+| `<leader>gv` | Review the changes: VS Code's diff (codediff), live - an agent's edits show up as they land; `t` inline, `-` stage the file, `q` close |
 | `<leader>gh` | File history |
 | `]c` / `[c` | Next / previous change in the file (in diff mode: Vim's) |
 | `<leader>gs` | Stage the change at the cursor (again: unstage); visual: the selected lines |
@@ -191,7 +206,10 @@ explorer pane once focused.
 | `<leader>gp` | Show the change (what it was) |
 | `<leader>gb` | Who changed the line, when, in which commit (blame) |
 
-> The change keys work in files of a git repository; the gutter shows their changes.
+> The change keys work in files of a git repository; the gutter shows their changes. In a codediff review they work on
+> the change at the cursor too (`<leader>gu` unstages it). Diffs color the old side red and the new side green, the
+> changed words within a line stronger; where codediff's library cannot be downloaded, `<leader>gv` / `<leader>gh` are
+> Diffview's (it says so once).
 
 ## Terminal — `<leader>t`
 
@@ -341,6 +359,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── navigate.lua          ← Ctrl+Click: the declaration, on it its usages (IntelliJ's)
 │   ├── switcher.lua          ← recent buffers in the order of use (<leader><Tab>, IntelliJ's Ctrl+Tab)
 │   ├── putty.lua             ← over SSH from PuTTY with its default keys: once a word on the settings
+│   ├── gitdiff.lua           ← git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff), else Diffview
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
@@ -351,6 +370,10 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   └── util.lua              ← venv, #!, cells, dedent
 ├── lua/integrations/
 │   ├── agent.lua             ← coding agent terminals: Qwen Code or OpenCode
+│   ├── agent_link.lua        ← agents reach into this Neovim: their settings, the servers attached, context
+│   ├── agent_server.lua      ← the MCP server agents start (nvim -l): relays to this Neovim
+│   ├── agent_tools.lua       ← the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics
+│   ├── agent_ide.lua         ← Qwen Code's IDE mode: its edits as diffs to accept / reject, the context
 │   ├── aidash.lua            ← AI Dashboard bridge
 │   ├── intellij.lua          ← IntelliJ's settings: JDK, Maven, on save, reformat, remote debug
 │   ├── jdtls.lua             ← Java: jdtls with IntelliJ's settings, else the machine's JDKs and Maven

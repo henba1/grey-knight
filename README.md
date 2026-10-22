@@ -12,6 +12,10 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 ## Features
 
 - **AI-powered coding** — Qwen Code or OpenCode agent (`GREYKNIGHT_AGENT`; agentic mode: read files, edit code, run commands)
+- **The agent works in the editor** — asked where something is, it opens the file tree on it (or a search there);
+  it shows code at a line, lists places in the quickfix list and asks Neovim's language servers. Qwen Code sees
+  the open files and the selection, and each edit it proposes opens as a diff to accept (`ga`) or reject (`q`)
+  before it writes it (USAGE.md → The agent in your editor)
 - **Bash + Python dev suite** — one-key runs as tasks (overseer.nvim): files, project scripts, selections,
   `# %%` cells and pytest, side by side, in a real terminal (`input()`/`read`/`sudo` work); errors marked in
   the code; debugging for Python and bash (F5, breakpoints, inline values); IPython/bash REPL; a failed
@@ -37,7 +41,10 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 - **Hacker tools** — Hex editor, multiple terminals (a shell, the REPL or an agent takes your keys as soon as you
   go to it), send-to-terminal workflow
 - **Session persistence** — Auto-saves per project + git branch
-- **2026 plugin stack** — Flash, Harpoon v2, Oil, mini.surround/ai, grug-far, Trouble v3
+- **Diffs as in a pull request** — codediff (VS Code's diff) reviews the changes live as they land (an agent at
+  work), the old side red and the new side green, the changed words within a line stronger; stage or discard a
+  hunk right there (`<leader>gv`)
+- **2026 plugin stack** — Flash, Harpoon v2, Oil, mini.surround/ai, grug-far, Trouble v3, codediff
 
 ## Quick Install
 
@@ -157,6 +164,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── navigate.lua        Ctrl+Click as in IntelliJ: the declaration, on the declaration its usages
 │   ├── switcher.lua        recent buffers in the order of use, the previous one preselected (<leader><Tab>)
 │   ├── putty.lua           over SSH from PuTTY with its default keys: once a word on the settings that fix them
+│   ├── gitdiff.lua         git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff) where its library is, else Diffview
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
@@ -178,6 +186,11 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   └── util.lua            venv, #!, cells, dedent, pytest node ids
 ├── lua/integrations/
 │   ├── agent.lua           coding agent terminals: Qwen Code or OpenCode (ask/edit prompts, own sessions)
+│   ├── agent_link.lua      agents reach into this Neovim: the settings of the agents started here (Qwen Code's
+│   │                       system defaults and lock file, OpenCode's inline config), the servers attached
+│   ├── agent_server.lua    the MCP server agents start - Neovim runs it (nvim -l): stdio, relays to this Neovim
+│   ├── agent_tools.lua     the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics
+│   ├── agent_ide.lua       Qwen Code's IDE mode: its edits as diffs to accept / reject; open files as context
 │   ├── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
 │   │                       loaded only inside its Dev Environment (USAGE.md → Terminal)
 │   ├── intellij.lua        IntelliJ's settings, read only: JDKs, a project's JDK and Maven, Actions on Save,

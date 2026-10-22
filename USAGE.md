@@ -449,6 +449,54 @@ points to `/models` (OpenCode picks its model itself).
 
 > Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 
+### The agent in your editor
+
+An agent started here (`<leader>tt`, `t1` ... - Qwen Code and OpenCode alike) can **work in Neovim**, not only in
+its terminal. Ask it *"where is the bookmarks code?"* and it finds it and opens the file tree on it, the file
+highlighted; *"show me all shell scripts"* runs a search in the tree (regex `.*\.sh$`). Its tools:
+
+| Tool | What the agent does with it |
+|------|-----------------------------|
+| `show_in_file_tree` | Opens the file tree on a file or folder (the cursor on it), or runs a search there - fuzzy, regex or glob, files or folders - and reads the matches |
+| `open_file` | Shows code in your code window at a line, the lines it talks about lit up for a moment |
+| `show_locations` | Lists places - search hits, usages, errors - in the quickfix list: `Enter`, `]q` / `[q` |
+| `editor_state` | Reads what you have open: the file, cursor, visible lines, the selected text, unsaved changes |
+| `diagnostics` | Reads the errors and warnings of the language servers and linters (one file, or all open ones) |
+| `find_symbol`, `goto_definition`, `find_references` | Asks the language servers running in Neovim - jdtls, pyright, ts_ls ...: precise where a text search is not (overloads, imports, libraries); `show` puts the result in front of you |
+| `notify` | A message in Neovim, e.g. that a long task is done |
+
+They show and read - none changes a file or runs anything; the agent's own tools do that, with its permissions.
+The agent sees them as the MCP server **`greyknight`** (`/mcp` lists it): Neovim itself runs it
+(`nvim -l lua/integrations/agent_server.lua`), no Node or Python needed. Only agents started from this Neovim get it,
+in their terminal's environment - the agents' settings files stay as they are: Qwen Code reads it as its *system
+defaults* (`QWEN_CODE_SYSTEM_DEFAULTS_PATH`, the lowest level: your `~/.qwen/settings.json` wins), OpenCode as inline
+config (`OPENCODE_CONFIG_CONTENT`, merged with your config). A Qwen Code started in a shell outside Neovim stays as it
+is. `vim.g.greyknight_agent_link = false` (in `init.lua`) connects no agent.
+
+**Qwen Code's IDE mode: Neovim is its IDE** (`/ide status`: *Connected to Neovim (GreyKnight)*):
+
+- It gets the **files open** here (the 10 used last), the **cursor** and the **selected text** as context - select
+  lines, go to the agent and ask *"what does this do?"*, no `@path` needed.
+- **Each edit it proposes opens as a diff** in a tab of its own before anything is written: the file as it is now on
+  the left, its change on the right - the changed lines colored, the changed words within them too.
+
+  | Key (in the diff) | Action |
+  |-------------------|--------|
+  | `ga` or `:w` | Accept - Qwen Code writes the file, a buffer of it shows the new text |
+  | `q` | Reject - the file stays (closing the tab is a no as well) |
+  | `]c` / `[c` | Next / previous change |
+  | `do` | Take one change back (that hunk stays as it is now), then accept the rest |
+
+  The right side is a normal buffer: edit it before accepting, Qwen Code writes what you accepted. Answering in
+  the agent's terminal works too, and closes the diff. Qwen Code asks before an edit only in its *Ask permissions*
+  mode - `/approval-mode default`, or `"tools": { "approvalMode": "default" }` in `~/.qwen/settings.json`; in its
+  default mode (`auto`) and `auto-edit` / `yolo` it writes straight away, without a diff.
+- How it finds Neovim: a lock file `~/.qwen/ide/<number>.lock` that names this Neovim's server (no web server -
+  Qwen Code starts `nvim -l ... agent_server.lua ide` and talks to it over stdio); it goes when Neovim quits.
+
+OpenCode has no IDE mode: it writes its edits right away (its own permission prompt asks first when
+`"permission": { "edit": "ask" }`), with the editor tools above.
+
 ---
 
 ## Running Scripts & REPL
@@ -603,8 +651,31 @@ Clipboard: `"+y` lands in the computer's clipboard (OSC 52, as over SSH); paste 
 |-----|--------|
 | `<leader>gg` | Open Lazygit (full git TUI) |
 | `<leader>gl` | Git log |
-| `<leader>gv` | Diffview (side-by-side diffs) |
+| `<leader>gv` | Review the changes - VS Code's diff (codediff), live: what an agent writes shows up as it lands |
 | `<leader>gh` | File history (all commits for current file) |
+
+### Reviewing changes (codediff)
+
+`<leader>gv` opens **codediff** - VS Code's diff in Neovim (its algorithm, in a native library): a tab with the
+changed files on the left (`Changes`, `Staged Changes`) and the selected file side by side, the old side red and the
+new side green, the changed words within a line in a stronger shade - like a pull request on GitHub. It stays in step
+with the disk: let an agent work and watch its changes land.
+
+| Key (in the review) | Action |
+|---------------------|--------|
+| `Enter` (list) | Show that file's diff |
+| `]c` / `[c` · `]f` / `[f` | Next / previous change · file |
+| `t` | Side by side / inline (one window, the old lines above the new) |
+| `-` | Stage / unstage the file |
+| `<leader>gs` / `<leader>gu` / `<leader>gr` | Stage / unstage / discard the change at the cursor (as `<leader>gs` / `<leader>gr` in a file) |
+| `gc` | Fold the unchanged lines (compact) |
+| `g?` | All its keys |
+| `q` | Close it |
+
+`:CodeDiff main` compares with a branch, `:CodeDiff --staged` the staged changes, `:CodeDiff pr 12` a merge request
+(GitLab too, without its CLI), `:CodeDiff history` the commits. The library is downloaded once, on the first use. Where
+that download does not work (a company's download filter refused it on the work laptop) `<leader>gv` / `<leader>gh`
+open **Diffview** instead - it says so once - with the same colors: the old side as deletions (red).
 
 ### Gitsigns (Gutter)
 
@@ -617,7 +688,7 @@ And keys for those changes (in files of a git repository):
 
 | Key | Action |
 |-----|--------|
-| `]c` / `[c` | Next / previous change (in diff mode, Diffview: Vim's next / previous difference) |
+| `]c` / `[c` | Next / previous change (in a diff - codediff, the agent's, Diffview: the next / previous difference) |
 | `<leader>gs` | Stage the change at the cursor - on a staged one: unstage it. Visual: stage the selected lines |
 | `<leader>gr` | Undo the change at the cursor (back to what git has; `u` brings it back). Visual: the selected lines |
 | `<leader>gp` | Show the change in a popup: what the lines were |
