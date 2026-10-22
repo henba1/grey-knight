@@ -241,11 +241,29 @@ map("n", "<leader>du", function() require("dapui").toggle() end,   { desc = "Deb
 map("n", "<leader>gv", function() require("config.gitdiff").review() end,  { desc = "Git: Review the changes (VS Code's diff, live)" })
 map("n", "<leader>gh", function() require("config.gitdiff").history() end, { desc = "Git: File history" })
 
--- ── GreyKnight Docs (read-only telescope picker) ─────────────
+-- ── GreyKnight Docs (read-only picker) ───────────────────────
+-- The guide is a file per topic (docs/, 2026-10-23): its index first, the topics in the order one reads them, any
+-- other file in docs/ after them
+local GUIDE = { "README", "start", "agent", "files", "windows", "find", "code", "run-debug", "git", "ssh" }
 map("n", "<leader>gd", function()
   local config_dir = vim.fn.stdpath("config")
+  local names = { "README.md", "CHEATSHEET.md" }
+  local seen = {}
+  for _, topic in ipairs(GUIDE) do
+    names[#names + 1] = "docs/" .. topic .. ".md"
+    seen[topic .. ".md"] = true
+  end
+  local more = {} -- not glob(): a [ ] in the config's path would be a pattern
+  pcall(function()
+    for file, kind in vim.fs.dir(config_dir .. "/docs") do
+      if kind == "file" and file:match("%.md$") and not seen[file] then more[#more + 1] = "docs/" .. file end
+    end
+  end)
+  table.sort(more)
+  vim.list_extend(names, more)
+  names[#names + 1] = "G3-DEVELOPMENT.md"
   local docs = {}
-  for _, name in ipairs({ "README.md", "CHEATSHEET.md", "USAGE.md", "G3-DEVELOPMENT.md" }) do
+  for _, name in ipairs(names) do
     local path = config_dir .. "/" .. name
     if vim.fn.filereadable(path) == 1 then
       table.insert(docs, { name = name, path = path })

@@ -5,7 +5,7 @@
 -- PuTTY's default keyboard settings (2026-10-22, PuTTY 0.85, its bytes fed to Neovim under TERM=xterm): Ctrl+arrows
 -- come as plain arrows - nothing on this side can tell them apart; Shift+F11 and Ctrl+F11 as F11 (the debugger's
 -- step into); Home / End as the VT220's Find / Select (keymaps.lua maps those). With xterm-style keys every one
--- arrives as itself. USAGE.md: "Over SSH (PuTTY)".
+-- arrives as itself. docs/ssh.md: "Over SSH (PuTTY)".
 local M = {}
 
 -- once on a machine: the state folder (a test run has its own)
@@ -17,7 +17,7 @@ M.TEXT = table.concat({
   "  Terminal > Keyboard: Shift/Ctrl/Alt with the arrow keys = xterm-style bitmap",
   "  Terminal > Keyboard: The Function keys and keypad = Xterm 216+",
   "  Connection > Data: Terminal-type string = xterm-256color",
-  "Until then Alt+arrows resize, <leader>ml lists the bookmarks. USAGE.md: Over SSH (PuTTY).",
+  "Until then Alt+arrows resize, <leader>ml lists the bookmarks. docs/ssh.md: Over SSH (PuTTY).",
 }, "\n")
 
 --- A session that looks like PuTTY's defaults: over SSH, the terminal type "xterm" - PuTTY's default; Windows

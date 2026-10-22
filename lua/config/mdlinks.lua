@@ -3,7 +3,7 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 -- gd / Enter on a link in a markdown buffer (keys: after/ftplugin/markdown.lua):
 --   [text](#heading)          the heading in this file (tables of contents work)
---   [text](USAGE.md#heading)  that file at that heading (read-only when you came from a read-only doc)
+--   [text](agent.md#heading)  that file at that heading (read-only when you came from a read-only doc)
 --   [text](https://...)       the browser
 -- Ctrl+o jumps back. Anchors are built like GitLab does: lowercase, punctuation dropped, spaces -> "-",
 -- runs of "-" folded into one, a repeated heading gets "-1", "-2", ... GitHub's form (no folding) works too.
