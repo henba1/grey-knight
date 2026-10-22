@@ -66,6 +66,11 @@ map({ "n", "t" }, "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Resize r
 -- ── Buffer navigation ────────────────────────────────────────
 map("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
 map("n", "<S-l>", "<cmd>bnext<cr>",     { desc = "Next buffer" })
+-- IntelliJ's Ctrl+Tab: the buffers in the order you used them, starting on the one before this one - Enter goes back,
+-- Tab further (lua/config/switcher.lua). Ctrl+Tab itself reaches Neovim in a few terminals only (Windows Terminal and
+-- kitty switch their tabs with it)
+map("n", "<leader><Tab>", function() require("config.switcher").pick() end, { desc = "Recent buffers (Tab: further back)" })
+map("n", "<C-Tab>",       function() require("config.switcher").pick() end, { desc = "Recent buffers (Tab: further back)" })
 
 -- ── Ctrl+Click: IntelliJ's - the declaration of a name, on the declaration its usages (lua/config/navigate.lua) ──
 -- A second Ctrl+Click on the same spot soon after is a double click to Neovim (<C-2-LeftMouse>) - after a jump to a

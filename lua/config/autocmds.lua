@@ -44,8 +44,10 @@ vim.api.nvim_create_autocmd("BufEnter", {
   end,
 })
 
--- Bookmarks: their signs, and their lines kept as you edit (lua/config/bookmarks.lua)
+-- Bookmarks: their signs, and their lines kept as you edit (lua/config/bookmarks.lua); the order buffers were used in,
+-- for <leader><Tab> (lua/config/switcher.lua)
 require("config.bookmarks").setup()
+require("config.switcher").setup()
 
 -- Close certain filetypes with q
 vim.api.nvim_create_autocmd("FileType", {
