@@ -12,12 +12,19 @@ M.WIN = vim.fn.has("win32") == 1
 --- outside any project share one client, bashls marked nothing more after one (2026-10-22). folder: a file outside
 --- any project gets its folder as the workspace (lua_ls marks nothing without one). Read before vim.lsp.config(name)
 --- gets this function, else it would find itself.
+--- Also not for a buffer named by a URL (scp://, diffview://, ...): servers started for those with the working
+--- directory as their root. A file is what nvim-lspconfig's old setup took for one (util.bufname_valid): an absolute
+--- path, or a file in a zip or tar archive.
+local function a_file(name)
+  return name:match("^/") or name:match("^%a:") or name:match("^zipfile://") or name:match("^tarfile:")
+end
+
 function M.lsp_root(name, folder)
   local cfg = vim.lsp.config[name] or {}
   local own, markers = cfg.root_dir, cfg.root_markers
   return function(buf, on_dir)
     local file = vim.api.nvim_buf_get_name(buf)
-    if file == "" then return end
+    if not a_file(file) then return end
     if type(own) == "function" then return own(buf, on_dir) end
     if type(own) == "string" then return on_dir(own) end
     on_dir((markers and vim.fs.root(buf, markers)) or (folder and vim.fs.dirname(file)) or nil)
