@@ -18,6 +18,20 @@ local function at_cursor(item, buf, row, col)
   return col >= from and col < to
 end
 
+--- Each place once: two servers of a file (angularls and ts_ls in a .ts file) both name the same declaration - one
+--- place, a jump, not a list of two
+local function unique(items)
+  local seen, out = {}, {}
+  for _, item in ipairs(items or {}) do
+    local id = ("%s:%d:%d"):format(item.filename and key(item.filename) or tostring(item.bufnr), item.lnum or 0, item.col or 0)
+    if not seen[id] then
+      seen[id] = true
+      out[#out + 1] = item
+    end
+  end
+  return out
+end
+
 --- To one place as gd does: the jump list (<C-o> comes back) and the tag stack (<C-t>)
 local function jump(item)
   local win = vim.api.nvim_get_current_win()
@@ -44,7 +58,7 @@ function M.usages()
   local name = vim.fn.expand("<cword>")
   vim.lsp.buf.references({ includeDeclaration = false }, {
     on_list = function(list)
-      local items = list.items or {}
+      local items = unique(list.items)
       if #items == 0 then return notify("No usages of " .. name) end
       if #items == 1 then return jump(items[1]) end
       show(list, items)
@@ -64,7 +78,7 @@ function M.declaration_or_usages()
   local row, col = unpack(vim.api.nvim_win_get_cursor(0))
   vim.lsp.buf.definition({
     on_list = function(list)
-      local items = list.items or {}
+      local items = unique(list.items)
       if #items == 0 then return notify("No declaration found for " .. vim.fn.expand("<cword>")) end
       local here = true
       for _, item in ipairs(items) do here = here and at_cursor(item, buf, row, col) end
