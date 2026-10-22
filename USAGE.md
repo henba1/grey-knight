@@ -183,6 +183,68 @@ open empty; the first time a message says why. The rest of the tree works as bef
 > so `d` is recoverable on most desktops. Without a trash backend it falls back to a
 > permanent `:delete` — check with `:checkhealth snacks` before deleting anything precious.
 
+### Script slots
+
+In the explorer `!1` … `!9` run a script of yours on what the tree shows - the item under the cursor and the
+marked items (`<Tab>`). `!!` lists the slots with their descriptions and runs the one you pick. The output shows
+in the run window below the code (as for `<leader>rr`: exit status, `<leader>rl` again); the cursor stays in the
+tree, and the tree is read again when the script ends.
+
+A slot is a file named `<n>-<name>.<ext>` (n = 1 … 9) in one of two folders:
+
+| Folder | |
+|--------|---|
+| `slots/` in this config (`~/.config/nvim/slots`, Windows `%LOCALAPPDATA%\nvim\slots`) | in git: on every machine. `1-info.py` is slot 1 |
+| `~/.local/share/nvim/slots` (Windows `%LOCALAPPDATA%\nvim-data\slots`) | yours, not in git - it wins a number both have |
+
+`.py` runs everywhere, `.sh` on Linux, `.ps1` on Windows (PowerShell), an executable file on Linux. No shell
+runs in between: names with spaces, `&`, `%`, `^` or `[ ]` reach the script whole. The script's first comment line
+is its description in `!!`. Slot 1, `1-info.py`, prints path, type, size, date and permissions of the marked items
+(of the one under the cursor when nothing is marked) - on Windows the attributes instead of the owner.
+
+**What a script gets** - both, the cursor's item and the marked ones; the script takes what it needs:
+
+| | |
+|---|---|
+| arguments | the marked items, in the order you marked them |
+| `GK_MARKED` | a file with the marked items, one per line (empty when nothing is marked) |
+| `GK_CURSOR` | the item under the cursor |
+| `GK_DIR` / `GK_ROOT` | the folder the cursor is in (its item, on a folder) / the tree's root - the working directory |
+| `GK_SLOT` / `GK_LIB` | its number / the helpers' folder (`gk.py` - already on `PYTHONPATH` -, `gk.sh`, `gk.ps1`) |
+
+**Asking you** - the script prints a request line and reads the answer as a line from its input; the helpers do
+both. A script that deletes or overwrites asks first, the way it wants to:
+
+| Request (a line the script prints) | In Neovim | Answer (a line the script reads) |
+|---|---|---|
+| `::gk::confirm::<question>` | a Yes / No dialog | `y` or `n` |
+| `::gk::input::<prompt>` - a `::gk::default::<text>` line before it fills the box | a text box | the text |
+| `::gk::select::<prompt>` - the `::gk::option::<text>` lines before it are the choices | a choice | the option |
+| `::gk::notify::<message>` (`::gk::warn::`, `::gk::error::`) | a notification | - |
+| `::gk::open::<path>` or `::gk::open::<path>:<line>` | the file in the code window | - |
+| `::gk::refresh::` | the tree read again now | - |
+
+A dialog closed without an answer answers an empty line (`n` for Yes / No). One line per request: the terminal
+between script and Neovim turns tabs into cursor moves on Windows, so nothing is split within a line.
+
+Python - `gk.cursor()`, `gk.marked()`, `gk.folder()`, `gk.root()`, `gk.confirm()`, `gk.ask()`, `gk.choose()`,
+`gk.notify()`, `gk.open()`, `gk.refresh()`:
+
+```python
+# Delete the marked files (the one under the cursor when none is marked) - after a yes
+import os
+import gk
+
+files = gk.marked() or [gk.cursor()]
+if gk.confirm(f"Delete {len(files)} files?"):
+    for f in files:
+        os.remove(f)
+```
+
+bash - `source "$GK_LIB/gk.sh"`: `gk_marked` (one per line), `gk_confirm` (its exit status), `gk_ask`,
+`gk_choose`, `gk_notify`, `gk_open`, `gk_refresh`. PowerShell - `. (Join-Path $env:GK_LIB 'gk.ps1')`:
+`Get-GkMarked`, `Confirm-Gk`, `Read-Gk`, `Select-Gk`, `Send-GkNotify`, `Open-Gk`, `Update-GkTree`.
+
 ---
 
 ## Editing

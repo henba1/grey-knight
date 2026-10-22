@@ -26,6 +26,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts,
   keeps the cursor in place on delete and searches files (`/`), folders by name (`D`) or only what the tree
   shows (`S`); input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
+- **Script slots in the explorer** — `!1` … `!9` run your scripts (Python everywhere, bash on Linux, PowerShell
+  on Windows) on the item under the cursor and the marked items; a script asks through Neovim's dialogs
+  (Yes / No, a text, a choice) with one printed line ([USAGE.md](USAGE.md#script-slots))
 - **Hacker tools** — Hex editor, multiple terminals (a shell, the REPL or an agent takes your keys as soon as you
   go to it), send-to-terminal workflow
 - **Session persistence** — Auto-saves per project + git branch
@@ -139,11 +142,12 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── clipboard.lua       over SSH: copy with OSC 52, paste the last copy; locally Neovim's own choice
 │   ├── lazy.lua            lazy.nvim bootstrap
 │   ├── keymaps.lua         all global keymaps + which-key groups
-│   ├── autocmds.lua        yank highlight, cursor restore
+│   ├── autocmds.lua        yank highlight, cursor restore, terminal mode on the way into a terminal
 │   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -), move / copy through the
 │   │                       tree (m, c), typed paths as typed (r, C, a), search files / folders /
 │   │                       the current view (/, D, S)
 │   ├── mdlinks.lua         markdown links: gd / Enter follow them (#heading, file, URL)
+│   ├── slots.lua           explorer script slots: !1 … !9 and !!, the context, the scripts' dialogs
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
@@ -178,6 +182,9 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   └── markdown.lua        wrap + spellcheck
 ├── resources/
 │   └── intellij-java-format.xml   jdtls formatter profile close to IntelliJ's default Java code style
+├── slots/                  explorer script slots (USAGE.md → Script slots)
+│   ├── 1-info.py           slot 1: path, type, size, date, permissions of the marked items
+│   └── lib/                helpers for the scripts: gk.py, gk.sh, gk.ps1
 ├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
 ├── G3-DEVELOPMENT.md       G3 work with or without IntelliJ: Java, ngx-his, html5 clients
 └── tests/

@@ -99,6 +99,11 @@ explorer pane once focused.
 | `Z` | Collapse all folders |
 | `u` | Refresh tree |
 | `]g`/`[g` | Next / prev git-changed |
+| `!1` … `!9` | Script slot 1 … 9 on the cursor's item and the marked ones (`!1`: path, size, permissions) |
+| `!!` | The script slots: pick one to run |
+
+> Script slots: files `<n>-<name>.py` (`.sh` Linux, `.ps1` Windows) in `slots/` here or in
+> `~/.local/share/nvim/slots`; a script can ask you through dialogs - see USAGE.md, [Script slots](USAGE.md#script-slots).
 
 > The tree shows Neovim's working directory: `.`, `<BS>` and `-` change both (a message shows the new one).
 > Move by the tree: `m` on the file, then `m` on the target folder (`c` there: copy). On a file the target is its
@@ -296,6 +301,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── explorer.lua          ← explorer keys: cd here (.), cd .. (<BS>, -), m / c through the tree, typed paths,
 │   │                            search files / folders / the current view (/, D, S)
 │   ├── mdlinks.lua           ← markdown links: gd / Enter follow them
+│   ├── slots.lua             ← explorer script slots: !1 … !9, !!, the scripts' dialogs
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
@@ -322,6 +328,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── lsp.lua               ← LSP, Mason, Treesitter, conform
 │   ├── session.lua           ← persisted.nvim
 │   └── snacks.lua            ← picker, explorer, dashboard, notify
+├── slots/                    ← explorer script slots: 1-info.py; lib/ the helpers gk.py, gk.sh, gk.ps1
 └── tests/                    ← tests/run.sh runs them all (Windows: tests\run.ps1)
     ├── run.sh
     ├── run.ps1
