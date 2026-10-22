@@ -300,6 +300,29 @@ function M.delete(picker, item)
   local what = #paths == 1 and show(paths[1]) or (#paths .. " items")
   Snacks.picker.util.confirm("Delete " .. what .. "?", function()
     local actions, Tree = require("snacks.explorer.actions"), require("snacks.explorer.tree")
+    local function gone(path) -- its buffers - for a folder those of the files in it (snacks closed only one named
+      local bufs = {}         -- like the path itself)
+      for _, buf in ipairs(buffers_of(path)) do bufs[buf] = true end
+      if next(bufs) then Snacks.bufdelete({ filter = function(buf) return bufs[buf] end, force = true }) end
+    end
+    local function finish() -- the cursor on its item, or the next one still there below it, else above
+      picker.list:set_selected()
+      local stay
+      for i = at, #order do
+        if vim.uv.fs_lstat(order[i]) then stay = order[i]; break end
+      end
+      for i = at - 1, 1, -1 do
+        if stay then break end
+        if vim.uv.fs_lstat(order[i]) then stay = order[i] end
+      end
+      -- scheduled twice: after the explorer followed a buffer change (an open file was deleted), which it schedules
+      vim.schedule(function()
+        vim.schedule(function()
+          if not picker.closed then actions.update(picker, { target = stay }) end
+        end)
+      end)
+    end
+    local refused = {}
     for _, path in ipairs(paths) do
       unwatch(path)
       local ok, err = actions.trash(path)
@@ -308,30 +331,23 @@ function M.delete(picker, item)
         ok, err = actions.trash(path)
         if ok then break end
       end
-      if ok then
-        -- its buffers - for a folder those of the files in it (snacks closed only one named like the path itself)
-        local gone = {}
-        for _, buf in ipairs(buffers_of(path)) do gone[buf] = true end
-        if next(gone) then Snacks.bufdelete({ filter = function(buf) return gone[buf] end, force = true }) end
-      else
-        Snacks.notify.error("Failed to delete `" .. path .. "`:\n" .. err)
-      end
+      if ok then gone(path) else refused[#refused + 1] = { path = path, err = tostring(err) } end
       Tree:refresh(vim.fs.dirname(path))
     end
-    picker.list:set_selected()
-    local stay
-    for i = at, #order do
-      if vim.uv.fs_stat(order[i]) then stay = order[i]; break end
-    end
-    for i = at - 1, 1, -1 do
-      if stay then break end
-      if vim.uv.fs_stat(order[i]) then stay = order[i] end
-    end
-    -- scheduled twice: after the explorer followed a buffer change (an open file was deleted), which it schedules
-    vim.schedule(function()
-      vim.schedule(function()
-        if not picker.closed then actions.update(picker, { target = stay }) end
-      end)
+    finish()
+    if #refused == 0 then return end
+    -- The trash refused - gio does on /tmp ("Trashing on system internal mounts is not supported"), and d deleted
+    -- nothing there but said so as an error (2026-10-22): for good then, after asking. delete() takes a link itself,
+    -- never what it points to.
+    local reason = vim.trim(refused[1].err:match("([^:\n]+)%s*$") or refused[1].err)
+    local which = #refused == 1 and show(refused[1].path) or (#refused .. " items")
+    Snacks.picker.util.confirm(("%s cannot go to the trash here (%s) - delete for good?"):format(which, reason), function()
+      for _, r in ipairs(refused) do
+        unwatch(r.path)
+        if vim.fn.delete(r.path, "rf") == 0 then gone(r.path) else Snacks.notify.error("Failed to delete `" .. r.path .. "`") end
+        Tree:refresh(vim.fs.dirname(r.path))
+      end
+      finish()
     end)
   end)
 end
