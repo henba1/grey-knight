@@ -11,13 +11,6 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
--- Suppress lspconfig deprecation (harmless until v3)
-local orig_deprecate = vim.deprecate
-vim.deprecate = function(old, new, version, plugin, ...)
-  if plugin and plugin:find("lspconfig") then return end
-  return orig_deprecate(old, new, version, plugin, ...)
-end
-
 require("lazy").setup("plugins", {
   rocks = { enabled = false },
   change_detection = { notify = false },

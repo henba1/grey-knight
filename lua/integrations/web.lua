@@ -64,16 +64,25 @@ end
 
 local ready = {}
 
+-- Neovim's own server configuration over nvim-lspconfig's defaults (lsp/<name>.lua), as plugins/lsp.lua does
 local function setup(name, capabilities)
   if ready[name] then return end
   ready[name] = true
-  local opts = { capabilities = capabilities }
+  -- the project as nvim-lspconfig finds it, only for buffers of files (devsuite/util.lua)
+  local opts = { capabilities = capabilities, root_dir = require("devsuite.util").lsp_root(name) }
   if name == "angularls" then
-    opts.root_dir = function(fname) return M.angular_root(fname) end
-    opts.cmd = angular_cmd()
-    opts.on_new_config = function(config, root) config.cmd = angular_cmd(root) end
+    -- only in an Angular workspace, and started for it: its command depends on the workspace's node_modules
+    opts.root_dir = function(buf, on_dir)
+      local file = vim.api.nvim_buf_get_name(buf)
+      local root = file ~= "" and M.angular_root(file)
+      if root then on_dir(root) end
+    end
+    opts.cmd = function(dispatchers, config)
+      return vim.lsp.rpc.start(angular_cmd(config.root_dir), dispatchers, { cwd = config.cmd_cwd, env = config.cmd_env })
+    end
   end
-  require("lspconfig")[name].setup(opts)
+  vim.lsp.config(name, opts)
+  vim.lsp.enable(name)
 end
 
 --- Sets up the installed servers (lspconfig attaches them); the others are installed and started with the first
@@ -99,9 +108,10 @@ function M.setup(capabilities)
         for _, name in ipairs(missing) do
           if vim.fn.executable(M.SERVERS[name].cmd) == 1 then
             setup(name, capabilities)
-            -- this buffer's FileType has passed: start the server for it now
+            -- this buffer's FileType has passed: vim.lsp.enable() attaches the open buffers only once Neovim has
+            -- started up (VimEnter) - attach this one now, through enable's own FileType handler
             if vim.api.nvim_buf_is_valid(ev.buf) then
-              vim.api.nvim_buf_call(ev.buf, function() pcall(vim.cmd, "LspStart " .. name) end)
+              pcall(vim.api.nvim_exec_autocmds, "FileType", { group = "nvim.lsp.enable", buffer = ev.buf, modeline = false })
             end
           end
         end

@@ -151,22 +151,32 @@ return {
         })
       end
 
-      local lspconfig = require("lspconfig")
+      -- Each server through Neovim's own configuration (vim.lsp.config, vim.lsp.enable), over nvim-lspconfig's
+      -- defaults for it (its lsp/<server>.lua). require("lspconfig")[server].setup() is deprecated - said nowhere,
+      -- config/lazy.lua kept it quiet - and goes with nvim-lspconfig v3: an update would have left every server
+      -- off (2026-10-22).
+      -- A file outside any project (no root marker above it): lua_ls marks nothing without a workspace, not even an
+      -- undefined global - its folder is the workspace then, as the old setup had it (2026-10-22). Not for pyright:
+      -- on Windows it marked nothing with one (in the temp folder); without one it does, as ruff does.
+      local folder_when_no_root = { lua_ls = true }
+      local root_dir = require("devsuite.util").lsp_root
       for server, settings in pairs(lsp_servers) do
-        local opts = { capabilities = capabilities, settings = settings }
+        -- the project as nvim-lspconfig finds it, only for buffers of files (devsuite/util.lua)
+        local opts = { capabilities = capabilities, settings = settings, root_dir = root_dir(server, folder_when_no_root[server]) }
         if server == "pyright" then
           -- Resolve imports against the project's virtualenv ($VIRTUAL_ENV, else the nearest .venv/ or venv/);
           -- pyright alone only sees the python on the PATH
-          opts.on_new_config = function(config, root_dir)
+          opts.before_init = function(_, config)
             local util = require("devsuite.util")
-            local venv = util.find_venv(root_dir)
+            local venv = config.root_dir and util.find_venv(config.root_dir)
             if venv then
               config.settings = config.settings or {}
               config.settings.python = vim.tbl_extend("force", config.settings.python or {}, { pythonPath = util.venv_python(venv) })
             end
           end
         end
-        lspconfig[server].setup(opts)
+        vim.lsp.config(server, opts)
+        vim.lsp.enable(server)
       end
 
       -- Angular / AngularJS: angularls, eslint, html, css - installed with the first file that needs them

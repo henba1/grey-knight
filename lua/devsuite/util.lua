@@ -6,6 +6,24 @@ local M = {}
 
 M.WIN = vim.fn.has("win32") == 1
 
+--- root_dir for vim.lsp.config(name, ...): nvim-lspconfig's own way to the project (its root_dir function, else its
+--- root_markers) - but never for a buffer without a file. vim.lsp.enable() starts servers for every buffer of their
+--- filetype, a scratch buffer (:enew, filetype set) too, which nvim-lspconfig's old setup never did; and as files
+--- outside any project share one client, bashls marked nothing more after one (2026-10-22). folder: a file outside
+--- any project gets its folder as the workspace (lua_ls marks nothing without one). Read before vim.lsp.config(name)
+--- gets this function, else it would find itself.
+function M.lsp_root(name, folder)
+  local cfg = vim.lsp.config[name] or {}
+  local own, markers = cfg.root_dir, cfg.root_markers
+  return function(buf, on_dir)
+    local file = vim.api.nvim_buf_get_name(buf)
+    if file == "" then return end
+    if type(own) == "function" then return own(buf, on_dir) end
+    if type(own) == "string" then return on_dir(own) end
+    on_dir((markers and vim.fs.root(buf, markers)) or (folder and vim.fs.dirname(file)) or nil)
+  end
+end
+
 --- A program in a virtualenv: bin/<name> (Linux), Scripts\<name>.exe (Windows).
 function M.venv_bin(venv, name)
   return M.WIN and (venv .. "/Scripts/" .. name .. ".exe") or (venv .. "/bin/" .. name)
