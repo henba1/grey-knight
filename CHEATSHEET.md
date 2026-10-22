@@ -30,6 +30,8 @@
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
 | `<leader>ad` | n | What changed since the agent started: the files, their diffs; `Enter` side by side, `Ctrl+x` / `dd` take one back |
+| `<leader>av` | n | Speak a prompt to the agent - again stops; you see it before it is sent (`:VoiceCancel` drops it) |
+| `<leader>aV` | n | Dictate at the cursor - again stops (in a terminal: typed in) |
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
 
 > **Which agent:** Qwen Code by default; the environment variable `GREYKNIGHT_AGENT=opencode` switches to OpenCode.
@@ -57,6 +59,10 @@ writes it (when it asks for permission: `/approval-mode default`):
 > Only agents started here are connected (`vim.g.greyknight_agent_link = false`: none); the agents' settings files
 > stay as they are ([USAGE.md → The agent in your editor](USAGE.md#the-agent-in-your-editor)). An agent you are not
 > looking at says when it is **done** or **waits for your answer** (a notification).
+>
+> **Speech to text** on this machine: `:VoiceInstall` downloads whisper.cpp and a model once (checked by sha256);
+> `$GREYKNIGHT_STT_URL` - set by hand - transcribes on a server instead. Over SSH the microphone is on your computer:
+> `Win+H` (Windows' voice typing) types into PuTTY.
 
 ## Run / Tasks / REPL — `<F6>` / `<leader>r` (bash + python)
 
@@ -377,6 +383,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── agent_tools.lua       ← the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics
 │   ├── agent_ide.lua         ← Qwen Code's IDE mode: its edits as diffs to accept / reject, the context
 │   ├── agent_changes.lua     ← what changed since the agent started (<leader>ad): diffs, take a file back
+│   ├── voice.lua             ← speech to text (<leader>av, <leader>aV): record here, whisper.cpp (:VoiceInstall)
 │   ├── aidash.lua            ← AI Dashboard bridge
 │   ├── intellij.lua          ← IntelliJ's settings: JDK, Maven, on save, reformat, remote debug
 │   ├── jdtls.lua             ← Java: jdtls with IntelliJ's settings, else the machine's JDKs and Maven

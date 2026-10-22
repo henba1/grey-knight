@@ -510,6 +510,20 @@ file changed since (yours too), the diff in the preview:
 A file that was untracked when the agent started has no snapshot: it is listed (*untracked then*), not taken back.
 Git repositories only. For the whole picture as it lands, `<leader>gv` (codediff).
 
+**Speak instead of typing.** `<leader>av` records what you say to the agent; press it again to stop. whisper.cpp writes
+it down, you see it in a box first - right what it heard wrong - and `Enter` sends it, like *"where are the bookmarks
+saved?"*. `<leader>aV` dictates at the cursor instead (in a terminal - the agent's prompt, a shell - it is typed in).
+`:VoiceCancel` drops a recording. It records on the machine Neovim runs on: `pw-record`, `parecord`, `arecord`,
+`ffmpeg` or `sox` on Linux, Windows' own recorder (winmm) on Windows - nothing to install. Over SSH the microphone is on
+your computer, not on the server: there Windows' voice typing (`Win+H`) types into PuTTY or the terminal.
+
+| Command / variable | What |
+|--------------------|------|
+| `:VoiceInstall [small\|base\|turbo]` | Downloads whisper.cpp and a model into Neovim's data folder (`whisper/`), each checked by its sha256, and transcribes whisper.cpp's sample once to check it. `small` (190 MB, the default) understands German and English well and is quick on a CPU; `base` (60 MB) is quicker; `turbo` (large-v3-turbo, 574 MB) the best, slower |
+| `GREYKNIGHT_STT_LANG` | The language, e.g. `de` (default: whisper finds it out) |
+| `GREYKNIGHT_STT_URL` | Transcribe on a server instead - any OpenAI-compatible one (`.../v1`), e.g. speaches on the rig. Set it by hand in your shell's profile, on the machine that may talk to that server; it is in no file of GreyKnight's. `GREYKNIGHT_STT_KEY` (sent as a header, in no command line) and `GREYKNIGHT_STT_MODEL` if it needs them |
+| `GREYKNIGHT_WHISPER`, `GREYKNIGHT_WHISPER_MODEL` | A whisper.cpp (`whisper-cli`) and model of your own |
+
 **Done, or waiting for you.** An agent you are not looking at says so: *"Qwen Code is done"* when it finished
 answering, *"... waits for your answer"* (a warning) when it asks permission - not while its window is the current
 one, nor while you look at the diff it asks about. Qwen Code tells it through two hooks (`Stop`, `PermissionRequest`)

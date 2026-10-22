@@ -17,6 +17,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   the open files and the selection, and each edit it proposes opens as a diff to accept (`ga`) or reject (`q`)
   before it writes it. `<leader>ad` lists what changed since the agent started, a file taken back with a key; an
   agent you are not looking at says when it is done or waits for you (USAGE.md → The agent in your editor)
+- **Speech to text** — `<leader>av` speaks a prompt to the agent, `<leader>aV` dictates at the cursor: recorded on
+  the machine Neovim runs on, written down by whisper.cpp there (`:VoiceInstall`, a few hundred MB) - or by a server
+  you name yourself (`$GREYKNIGHT_STT_URL`)
 - **Bash + Python dev suite** — one-key runs as tasks (overseer.nvim): files, project scripts, selections,
   `# %%` cells and pytest, side by side, in a real terminal (`input()`/`read`/`sudo` work); errors marked in
   the code; debugging for Python and bash (F5, breakpoints, inline values); IPython/bash REPL; a failed
@@ -194,6 +197,8 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── agent_ide.lua       Qwen Code's IDE mode: its edits as diffs to accept / reject; open files as context
 │   ├── agent_changes.lua   what changed since the agent started (<leader>ad): a git snapshot then, the files
 │   │                       changed since with their diffs, a file taken back - the user's index untouched
+│   ├── voice.lua           speech to text (<leader>av to the agent, <leader>aV at the cursor): recorded on this
+│   │                       machine, whisper.cpp here (:VoiceInstall, pinned and checked) or $GREYKNIGHT_STT_URL
 │   ├── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
 │   │                       loaded only inside its Dev Environment (USAGE.md → Terminal)
 │   ├── intellij.lua        IntelliJ's settings, read only: JDKs, a project's JDK and Maven, Actions on Save,
