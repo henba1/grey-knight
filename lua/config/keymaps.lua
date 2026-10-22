@@ -226,6 +226,11 @@ end, { desc = "Debug: Log point" })
 map("n", "<leader>dr", function() require("dap").repl.open() end,  { desc = "Debug: REPL" })
 map("n", "<leader>du", function() require("dapui").toggle() end,   { desc = "Debug: Toggle UI" })
 
+-- ── Git diffs: codediff (VS Code's diff), else Diffview (lua/config/gitdiff.lua) ─
+-- <leader>gv: <leader>gd is the docs picker below
+map("n", "<leader>gv", function() require("config.gitdiff").review() end,  { desc = "Git: Review the changes (VS Code's diff, live)" })
+map("n", "<leader>gh", function() require("config.gitdiff").history() end, { desc = "Git: File history" })
+
 -- ── GreyKnight Docs (read-only telescope picker) ─────────────
 map("n", "<leader>gd", function()
   local config_dir = vim.fn.stdpath("config")

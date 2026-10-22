@@ -263,16 +263,25 @@ return {
     },
   },
 
-  -- Diffview — side-by-side git diffs
+  -- codediff — VS Code's diff for git: its algorithm (a native library, downloaded once on first use), the lines and
+  -- the words within them colored, side by side or inline (t). <leader>gv: the changes of the working tree, also as
+  -- they land while an agent works; stage / unstage / discard a file (-) or a hunk right there. And branches, staged
+  -- changes, a file's history, merge conflicts (:CodeDiff ...)
+  -- Where codediff cannot get its library (a download that failed), Diffview takes over (config/gitdiff.lua). The keys
+  -- (<leader>gv, <leader>gh) are in config/keymaps.lua: as lazy.nvim keys they would load codediff first - and loading
+  -- it without its library is its download, an error when that fails
   {
-    "sindrets/diffview.nvim",
-    cmd = { "DiffviewOpen", "DiffviewFileHistory" },
-    keys = {
-      -- <leader>gv: <leader>gd is the GreyKnight docs picker (lua/config/keymaps.lua)
-      { "<leader>gv", "<cmd>DiffviewOpen<cr>",          desc = "Git: Diffview (side-by-side diff)" },
-      { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>",  desc = "Git: File history" },
+    "esmuellert/codediff.nvim",
+    cmd = "CodeDiff",
+    opts = {
+      -- a hunk as gitsigns' keys do it in a file: <leader>gs stages, <leader>gr discards; <leader>gu unstages
+      keymaps = { view = { stage_hunk = "<leader>gs", unstage_hunk = "<leader>gu", discard_hunk = "<leader>gr" } },
     },
   },
+
+  -- Diffview: where codediff has no library; its commands stay (:DiffviewOpen, :DiffviewFileHistory). The old side's
+  -- changes red as deletions, as codediff and VS Code show them
+  { "sindrets/diffview.nvim", cmd = { "DiffviewOpen", "DiffviewFileHistory" }, opts = { enhanced_diff_hl = true } },
 
   -- render-markdown — beautiful markdown in-buffer
   {
