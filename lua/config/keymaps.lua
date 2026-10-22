@@ -66,6 +66,14 @@ map({ "n", "t" }, "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Resize r
 map("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
 map("n", "<S-l>", "<cmd>bnext<cr>",     { desc = "Next buffer" })
 
+-- ── Ctrl+Click: IntelliJ's - the declaration of a name, on the declaration its usages (lua/config/navigate.lua) ──
+-- A second Ctrl+Click on the same spot soon after is a double click to Neovim (<C-2-LeftMouse>) - after a jump to a
+-- declaration the next click (its usages) often is: the same for those
+for _, lhs in ipairs({ "<C-LeftMouse>", "<C-2-LeftMouse>", "<C-3-LeftMouse>", "<C-4-LeftMouse>" }) do
+  map("n", lhs, function() require("config.navigate").ctrl_click() end, { desc = "Go to declaration / usages" })
+end
+map("i", "<C-LeftMouse>", "<Esc><C-LeftMouse>", { remap = true, desc = "Go to declaration / usages" })
+
 -- ── Move lines (visual) ─────────────────────────────────────
 map("v", "J", ":m '>+1<CR>gv=gv", { silent = true, desc = "Move selection down" })
 map("v", "K", ":m '<-2<CR>gv=gv", { silent = true, desc = "Move selection up" })
