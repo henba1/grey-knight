@@ -249,13 +249,27 @@ return {
     event = "BufWritePre",
     opts = {
       formatters_by_ft = formatters,
+      -- stylua for a project that formats with it: one with a stylua.toml (its style; stylua's own is tabs)
+      formatters = {
+        stylua = {
+          condition = function(_, ctx)
+            return vim.fs.find({ "stylua.toml", ".stylua.toml" }, { path = ctx.dirname, upward = true })[1] ~= nil
+          end,
+        },
+      },
       -- Saving never pops up an error (quiet): a formatter that fails - mostly on a file that does not parse yet, an
       -- unfinished script ("Formatter failed" 4 times in the Kali error log, 2026-10-21) - leaves the text as it is,
       -- and it is saved as it is. :ConformInfo has the details; <leader>fm still says when it fails.
       format_on_save = function(buf)
         local intellij = require("integrations.intellij")
         local actions = intellij.save_actions(buf)
-        if actions == nil then return { timeout_ms = 2000, lsp_fallback = true, quiet = true } end
+        if actions == nil then
+          -- Lua is saved as written, unless the project formats it with stylua: lua_ls' own style, the fallback while
+          -- stylua is not installed, rewrote this config's hand-aligned files on every save - 74 lines of keymaps.lua
+          -- for one (2026-10-22). <leader>fm still formats it.
+          if vim.bo[buf].filetype == "lua" then return { timeout_ms = 2000, lsp_format = "never", quiet = true } end
+          return { timeout_ms = 2000, lsp_fallback = true, quiet = true }
+        end
         if not actions.format then return nil end
         local opts = actions.prettier and { timeout_ms = 3000, formatters = { "prettier" }, lsp_format = "never", quiet = true }
           or { timeout_ms = 3000, lsp_format = "prefer", quiet = true }
