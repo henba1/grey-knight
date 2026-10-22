@@ -1032,6 +1032,67 @@ local function match(picker, item)
   return (item.score or 0) > 0 and not item.child_match_only and (item.dir == true) == (mode == "folder")
 end
 
+--- The paths a search shows as matches (not the folders above them) - what Ctrl+a marks
+function M.matches(picker)
+  local list = {}
+  for item in picker:iter() do
+    if match(picker, item) then list[#list + 1] = item.file end
+  end
+  return list
+end
+
+--- A search started for the agent (integrations/agent_tools.lua, show_in_file_tree): files or folders, fuzzy or regex
+--- (the user's R / Alt+r stays as it was), the text in the box - shown, the cursor stays in the list.
+--- Done when it found: on_done(picker).
+function M.search_for(picker, text, opts, on_done)
+  opts = opts or {}
+  local function run()
+    local s = search_of(picker)
+    if not searching(picker) then
+      local item = picker:current()
+      s.before = item and item.file -- <Esc> goes back there
+    end
+    s.mode = opts.folders and "folder" or "file"
+    set_live(picker, opts.regex == true)
+    local f = picker.input.filter
+    if picker.opts.live then f.pattern, f.search = "", text else f.pattern, f.search = text, "" end
+    picker.input:set(f.pattern, f.search)
+    picker:find()
+    sync(picker)
+    local started = vim.uv.now()
+    local function wait()
+      if picker.closed then return end
+      if vim.uv.now() - started < 150 or picker:is_active() then return vim.defer_fn(wait, 50) end
+      if on_done then on_done(picker) end
+    end
+    vim.defer_fn(wait, 50)
+  end
+  if picker.input.win:valid() then return run() end
+  picker:toggle("input", { enable = true, focus = "list" }) -- the box is hidden while no search runs
+  local tries = 0
+  local function shown()
+    tries = tries + 1
+    if picker.input.win:valid() then return run() end
+    if tries < 100 then vim.defer_fn(shown, 20) end
+  end
+  vim.defer_fn(shown, 20)
+end
+
+--- For the agent too: the tree with the cursor on `path` - a search running ends first (snacks' reveal opens the
+--- explorer when it is not, and widens its root when the path is outside). Returns the explorer.
+function M.show(path)
+  local picker = Snacks.picker.get({ source = "explorer" })[1]
+  if picker and not picker.closed and searching(picker) then
+    set_live(picker, false)
+    picker.input.filter.pattern, picker.input.filter.search = "", ""
+    if picker.input.win:valid() then picker.input:set("", "") end
+    search_of(picker).mode = "file"
+  end
+  picker = Snacks.explorer.reveal({ file = path })
+  if picker then reveals[picker] = path end -- a refresh in between does not leave the cursor elsewhere (to_tree)
+  return picker
+end
+
 --- Ctrl+a - in a search: marks its matches, the files of a file search, the folders of a folder search; not the
 --- folders above them - snacks' select_all marked those too, and d deleted them whole. Again: unmarks them. Marks
 --- of before stay. Outside a search: snacks' own (every row).
