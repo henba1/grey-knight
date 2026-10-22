@@ -763,6 +763,299 @@ local function with_explorer(paths, fn, opts)
   assert(ok, err)
 end
 
+-- ── Script slots (config/slots.lua, 2026-10-22): !1 .. !9 run a script on the cursor's item and the marked ones ──
+
+local function real_tmp()
+  local t = vim.fn.tempname()
+  vim.fn.mkdir(t, "p")
+  return vim.fs.normalize(assert(vim.uv.fs_realpath(t)))
+end
+local function native(path) return vim.fn.has("win32") == 1 and (path:gsub("/", "\\")) or path end
+
+-- the slots of a test: its own folder of scripts (the repo's helpers, slots/lib, with them)
+local function with_slots(scripts, fn)
+  local slots = require("config.slots")
+  local dir = real_tmp()
+  for name, lines in pairs(scripts) do vim.fn.writefile(lines, dir .. "/" .. name) end
+  local dirs = slots.dirs
+  slots.dirs = function() return { dir } end
+  local ok, err = pcall(fn, dir)
+  slots.dirs = dirs
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end
+
+-- a slot run as !n starts it; done, its output (the program's lines, as it printed them: the window wraps them)
+local function run_slot(p, n)
+  local tasks = require("devsuite.tasks")
+  local before = tasks.state.last
+  p:action("gk_slot_" .. n)
+  local task = tasks.state.last
+  assert(task and task ~= before and task.name:find("slot " .. n, 1, true), "slot " .. n .. " did not run")
+  assert(H.wait(20000, function() return task:is_complete() end), "slot " .. n .. " did not end: " .. H.task_out(task))
+  vim.wait(300)
+  local run = tasks.state.runs[task.id]
+  return task, table.concat(require("devsuite.errors").lines(run and run.lines or {}), "\n")
+end
+
+test("Slots: files named 1-<name> .. 9-<name> are slots 1-9 - yours before the config's; backups, folders, others are not", function()
+  local slots = require("config.slots")
+  local mine, shared = real_tmp(), real_tmp()
+  vim.fn.writefile({ "# mine" }, mine .. "/1-mine.py")
+  vim.fn.writefile({ "echo three" }, mine .. "/3.sh")
+  vim.fn.writefile({ "# shared one" }, shared .. "/1-shared.py")
+  vim.fn.writefile({ "#!/usr/bin/env python3", "", "# Prints the two" }, shared .. "/2-two.py")
+  vim.fn.writefile({ "x" }, shared .. "/2-two.py~")
+  vim.fn.writefile({ "x" }, shared .. "/10-ten.py")
+  vim.fn.writefile({ "x" }, shared .. "/x-1.py")
+  vim.fn.mkdir(shared .. "/4-folder", "p")
+  vim.fn.mkdir(shared .. "/lib", "p")
+  local dirs = slots.dirs
+  slots.dirs = function() return { mine, shared } end
+  local ok, err = pcall(function()
+    local l = slots.list()
+    assert(l[1] and l[1].name == "1-mine.py", "slot 1: yours wins - " .. vim.inspect(l[1]))
+    assert(l[2] and l[2].name == "2-two.py" and l[2].desc == "Prints the two", "slot 2: " .. vim.inspect(l[2]))
+    assert(l[3] and l[3].name == "3.sh", "slot 3 (a name without one): " .. vim.inspect(l[3]))
+    assert(l[4] == nil and l[10] == nil, "a folder or 10 is a slot: " .. vim.inspect(l))
+    local n = 0
+    for _ in pairs(l) do n = n + 1 end
+    assert(n == 3, "slots: " .. vim.inspect(vim.tbl_keys(l)))
+  end)
+  slots.dirs = dirs
+  vim.fn.delete(mine, "rf")
+  vim.fn.delete(shared, "rf")
+  assert(ok, err)
+end)
+
+test("Slots: a run gets the marked items as arguments and in $GK_MARKED, the cursor's in $GK_CURSOR, runs in the root - names with spaces, ä, & and [ ]", function()
+  local slots = require("config.slots")
+  local WIN = vim.fn.has("win32") == 1
+  local root = "/work/R&D ä [x]"
+  local ctx = { cursor = root .. "/a b.txt", marked = { root .. "/c & d.txt", root .. "/[e] ä.txt" }, dir = root, root = root }
+  local spec, list = slots.spec({ slot = 2, path = "/s/2-x.py", name = "2-x.py" }, ctx)
+  assert(spec, list)
+  assert(spec.cmd[2] == "/s/2-x.py" and spec.cmd[3] == native(ctx.marked[1]) and spec.cmd[4] == native(ctx.marked[2]) and #spec.cmd == 4,
+    "argv: " .. vim.inspect(spec.cmd))
+  assert(spec.cmd[1] == require("devsuite.util").system_python(), "python: " .. spec.cmd[1])
+  assert(vim.deep_equal(vim.fn.readfile(list), { native(ctx.marked[1]), native(ctx.marked[2]) }), "GK_MARKED: " .. vim.inspect(vim.fn.readfile(list)))
+  local env = spec.env
+  assert(env.GK_MARKED == native(list) and env.GK_CURSOR == native(ctx.cursor) and env.GK_ROOT == native(root) and env.GK_DIR == native(root)
+    and env.GK_SLOT == "2", "env: " .. vim.inspect(env))
+  assert(env.PYTHONPATH:find(native(slots.lib()), 1, true) == 1 and env.GK_LIB == native(slots.lib()), "helpers: " .. vim.inspect(env))
+  assert(env.PYTHONDONTWRITEBYTECODE == "1", "gk.py's bytecode would go into the config (slots/lib/__pycache__)")
+  assert(spec.cwd == root and spec.focus == false and spec.key == "slot:2", vim.inspect(spec))
+  vim.fn.delete(list)
+  -- nothing marked: no arguments, an empty list
+  spec, list = slots.spec({ slot = 1, path = "/s/1-x.py", name = "1-x.py" }, { cursor = root, marked = {}, dir = root, root = root })
+  assert(#spec.cmd == 2 and vim.deep_equal(vim.fn.readfile(list), {}), "nothing marked: " .. vim.inspect(spec.cmd))
+  vim.fn.delete(list)
+  -- how each kind runs here
+  local sh, why = slots.argv("/s/3-x.sh")
+  if WIN then assert(not sh and why:find("Linux", 1, true), "a .sh on Windows: " .. vim.inspect(sh)) else assert(sh and sh[1] == "bash", vim.inspect(sh)) end
+  local ps = slots.argv("C:/s/4-x.ps1")
+  if WIN then assert(ps and ps[1] == "powershell" and ps[#ps] == "C:/s/4-x.ps1", vim.inspect(ps)) end
+  local none, because = slots.argv("/s/5-x.txt")
+  assert(not none and because:find(".py", 1, true), "a .txt: " .. vim.inspect(none))
+end)
+
+test("Slots: !1 runs slot 1 (info) on the marked items - their paths, sizes and permissions; on the cursor's item when none is marked", function()
+  local slots = require("config.slots")
+  local dirs = slots.dirs
+  slots.dirs = function() return { vim.fn.stdpath("config") .. "/slots" } end -- the repo's slot 1, not yours
+  local ok, err = pcall(with_explorer, { "docs/a b ä & [x].txt", "docs/plain.txt", "src/" }, function(p, root, x)
+    for _, n in ipairs({ "1", "2", "9", "!" }) do
+      local m = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg("!" .. n, "n", false, true) end)
+      local want = n == "!" and "gk_slots" or ("gk_slot_" .. n)
+      assert(m.desc == want, "!" .. n .. " runs " .. tostring(m.desc) .. ", not " .. want)
+    end
+    p.list:select(x.item("docs/plain.txt")) -- marked in this order
+    p.list:select(x.item("docs/a b ä & [x].txt"))
+    local task, out = run_slot(p, 1)
+    assert(task.status == "SUCCESS", "slot 1: " .. task.status .. "\n" .. out)
+    local lines = vim.split(out, "\n", { trimempty = true })
+    local mode = vim.fn.has("win32") == 1 and "-rw-rw-rw-" or "-rw-"
+    local seen = {}
+    for _, rel in ipairs({ "docs/plain.txt", "docs/a b ä & [x].txt" }) do
+      local path = native(root .. "/" .. rel)
+      for i, line in ipairs(lines) do
+        if vim.endswith(line, path) then
+          seen[#seen + 1] = i
+          assert(line:find(mode, 1, true) == 1 and line:find(" " .. (#rel + 1) .. " ", 1, true) and line:find(" file ", 1, true),
+            "the line of " .. rel .. ": " .. line)
+        end
+      end
+    end
+    assert(#seen == 2 and seen[1] < seen[2], "both marked items, in their order: " .. out)
+    p.list:set_selected() -- nothing marked: the item under the cursor
+    x.on("src")
+    task, out = run_slot(p, 1)
+    local folder
+    for _, line in ipairs(vim.split(out, "\n", { trimempty = true })) do
+      if vim.endswith(line, " dir  " .. native(root .. "/src")) then folder = line end
+    end
+    assert(folder and folder:sub(1, 1) == "d", "the cursor's folder: " .. out)
+  end, { open = { "docs" } })
+  slots.dirs = dirs
+  assert(ok, err)
+end)
+
+test("Slots: a script asks - Yes/No, a text with its default, a choice - Neovim's dialogs answer it; it notifies and opens a file", function()
+  local script = {
+    "import gk",
+    'print("CONFIRM", gk.confirm("Delete 2 files in R&D?"))',
+    'print("ASK", gk.ask("New name:", default="notes.md"))',
+    'print("CHOOSE", gk.choose("Color:", ["red", "green::dark"]))',
+    'gk.notify("done & dusted")',
+    'gk.open("docs/plain.txt", 1)',
+  }
+  local select, input, notify = vim.ui.select, vim.ui.input, vim.notify
+  local asked, notes, answer = {}, {}, true
+  vim.ui.select = function(items, opts, cb)
+    asked[#asked + 1] = opts.prompt
+    if not answer then return cb(nil, nil) end -- closed without an answer
+    if items[2] == "Yes" then return cb("Yes", 2) end
+    return cb(items[#items], #items)
+  end
+  vim.ui.input = function(opts, cb)
+    asked[#asked + 1] = opts.prompt
+    cb(answer and (opts.default .. "!") or nil)
+  end
+  vim.notify = function(msg, level, o) notes[#notes + 1] = tostring(msg); return notify(msg, level, o) end
+  local ok, err = pcall(with_slots, { ["1-ask.py"] = script }, function()
+    with_explorer({ "docs/plain.txt" }, function(p, root, x)
+      local task, out = run_slot(p, 1)
+      assert(task.status == "SUCCESS", task.status .. "\n" .. out)
+      assert(vim.deep_equal(asked, { "Delete 2 files in R&D?", "New name:", "Color:" }), "asked: " .. vim.inspect(asked))
+      for _, want in ipairs({ "CONFIRM True", "ASK notes.md!", "CHOOSE green::dark" }) do
+        assert(out:find(want, 1, true), want .. " - the script printed:\n" .. out)
+      end
+      assert(H.wait(3000, function() return vim.tbl_contains(notes, "done & dusted") end), "no notification: " .. vim.inspect(notes))
+      assert(H.wait(3000, function() return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) == root .. "/docs/plain.txt" end),
+        "not opened: " .. vim.api.nvim_buf_get_name(0))
+      -- the dialogs closed without an answer
+      answer, asked = false, {}
+      task, out = run_slot(p, 1)
+      for _, want in ipairs({ "CONFIRM False", "ASK None", "CHOOSE None" }) do
+        assert(out:find(want, 1, true), want .. " - the script printed:\n" .. out)
+      end
+    end)
+  end)
+  vim.ui.select, vim.ui.input, vim.notify = select, input, notify
+  assert(ok, err)
+end)
+
+test("Slots: the real Yes/No dialog (snacks) pops up over the tree, and its Yes reaches the script", function()
+  -- as in a session: snacks puts its select in at VimEnter, after a test script has started (until then it is
+  -- Neovim's own, a numbered list on the command line)
+  local select = vim.ui.select
+  vim.ui.select = Snacks.picker.select
+  local ok, err = pcall(with_slots, { ["1-go.py"] = { "import gk", 'print("CONFIRM", gk.confirm("Go on?"))' } }, function()
+    with_explorer({ "a.txt" }, function(p)
+      local tasks = require("devsuite.tasks")
+      p:action("gk_slot_1")
+      local task = tasks.state.last
+      local dialog
+      assert(H.wait(15000, function()
+        dialog = Snacks.picker.get({ source = "select" })[1]
+        return dialog and not dialog:is_active() and dialog.list:count() == 2
+      end), "no Yes/No dialog")
+      assert(dialog.title:find("Go on?", 1, true) or (dialog.opts.prompt or ""):find("Go on?", 1, true), "the dialog asks " .. tostring(dialog.title))
+      dialog.list:view(2) -- Yes (No is first: Enter alone says no)
+      assert(dialog:current().item == "Yes", "on " .. tostring(dialog:current().text))
+      dialog:action("confirm")
+      assert(H.wait(15000, function() return task:is_complete() end), "the script did not end: " .. H.task_out(task))
+      local run = tasks.state.runs[task.id]
+      local out = table.concat(require("devsuite.errors").lines(run and run.lines or {}), "\n")
+      assert(out:find("CONFIRM True", 1, true), "the script printed:\n" .. out)
+    end)
+  end)
+  vim.ui.select = select
+  for _, picker in ipairs(Snacks.picker.get({ source = "select" })) do picker:close() end
+  vim.cmd("stopinsert")
+  assert(ok, err)
+end)
+
+test("Slots: !! lists the slots and runs the one picked; a missing slot says where to put one; a failure shows its exit; the tree shows what a run made", function()
+  local scripts = {
+    ["2-make.py"] = { "# Makes made.txt in the cursor's folder", "import os", 'open(os.path.join(os.environ["GK_DIR"], "made.txt"), "w").close()' },
+    ["3-fail.py"] = { "import sys", 'print("boom")', "sys.exit(3)" },
+  }
+  local select, notify = vim.ui.select, vim.notify
+  local offered, notes = nil, {}
+  vim.ui.select = function(items, opts, cb)
+    offered = vim.tbl_map(opts.format_item, items)
+    for _, item in ipairs(items) do
+      if item.slot == 2 then return cb(item) end
+    end
+    cb(nil)
+  end
+  vim.notify = function(msg, level, o) notes[#notes + 1] = tostring(msg); return notify(msg, level, o) end
+  local ok, err = pcall(with_slots, scripts, function()
+    with_explorer({ "docs/plain.txt" }, function(p, root, x)
+      local tasks = require("devsuite.tasks")
+      local before = tasks.state.last
+      x.on("docs/plain.txt")
+      p:action("gk_slots") -- !!
+      assert(vim.deep_equal(offered, { "!2  2-make.py  - Makes made.txt in the cursor's folder", "!3  3-fail.py" }), "!! offered: " .. vim.inspect(offered))
+      local task = tasks.state.last
+      assert(task ~= before and task.name:find("slot 2", 1, true), "!! did not run slot 2")
+      assert(H.wait(20000, function() return task:is_complete() end), "slot 2 did not end")
+      assert(H.wait(5000, function() return pcall(x.item, "docs/made.txt") end), "the tree does not show made.txt: " .. x.found())
+      p:action("gk_slot_5")
+      assert(H.wait(2000, function()
+        for _, n in ipairs(notes) do if n:find("No script in slot 5", 1, true) then return true end end
+      end), "a missing slot: " .. vim.inspect(notes))
+      local failed, out = run_slot(p, 3)
+      assert(failed.status == "FAILURE" and failed.exit_code == 3 and out:find("boom", 1, true), failed.status .. " " .. tostring(failed.exit_code) .. ": " .. out)
+    end, { open = { "docs" } })
+  end)
+  vim.ui.select, vim.notify = select, notify
+  assert(ok, err)
+end)
+
+test("Slots: the bash helper (gk.sh) on Linux, the PowerShell one (gk.ps1) on Windows - the context and the dialogs", function()
+  local WIN = vim.fn.has("win32") == 1
+  local name, script
+  if WIN then
+    name, script = "1-ask.ps1", {
+      ". (Join-Path $env:GK_LIB 'gk.ps1')",
+      "$files = Get-GkMarked",
+      "'MARKED ' + $files.Count + ' ' + ($files -join '|')",
+      "'CURSOR ' + $env:GK_CURSOR",
+      "'CONFIRM ' + (Confirm-Gk 'Go on?')",
+      "'ASK ' + (Read-Gk 'Name:' 'x.md')",
+      "'CHOOSE ' + (Select-Gk 'Pick:' @('a', 'b & c'))",
+    }
+  else
+    name, script = "1-ask.sh", {
+      'source "$GK_LIB/gk.sh"',
+      "mapfile -t files < <(gk_marked)",
+      'echo "MARKED ${#files[@]} $(IFS="|"; echo "${files[*]}")"',
+      'echo "CURSOR $GK_CURSOR"',
+      'if gk_confirm "Go on?"; then echo "CONFIRM True"; else echo "CONFIRM False"; fi',
+      'echo "ASK $(gk_ask "Name:" "x.md")"',
+      'echo "CHOOSE $(gk_choose "Pick:" a "b & c")"',
+    }
+  end
+  local select, input = vim.ui.select, vim.ui.input
+  vim.ui.select = function(items, _, cb) cb(items[#items], #items) end -- Yes; the last option
+  vim.ui.input = function(opts, cb) cb(opts.default .. "!") end
+  local ok, err = pcall(with_slots, { [name] = script }, function()
+    with_explorer({ "a b.txt", "c & d.txt" }, function(p, root, x)
+      p.list:select(x.item("c & d.txt"))
+      x.on("a b.txt")
+      local task, out = run_slot(p, 1)
+      assert(task.status == "SUCCESS", task.status .. "\n" .. out)
+      for _, want in ipairs({ "MARKED 1 " .. native(root .. "/c & d.txt"), "CURSOR " .. native(root .. "/a b.txt"), "CONFIRM True", "ASK x.md!", "CHOOSE b & c" }) do
+        assert(out:find(want, 1, true), want .. " - the script printed:\n" .. out)
+      end
+    end)
+  end)
+  vim.ui.select, vim.ui.input = select, input
+  assert(ok, err)
+end)
+
 test("Explorer workflow: D finds a folder, Enter and . root the tree there, / searches in it, <BS> widens, <Esc> leaves", function()
   with_explorer({ "apps/web/src/main.ts", "apps/web/package.json", "apps/api/src/main.go", "docs/web-guide.md" }, function(p, root, x)
     p:action("gk_search_folders")
