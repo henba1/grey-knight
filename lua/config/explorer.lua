@@ -87,7 +87,8 @@ local function unwatch(path)
   end
 end
 
--- harpoon's slots of the moved: their new path, as harpoon writes one (relative to the working directory, plenary's)
+-- harpoon's slots of the moved: their new path, as harpoon writes one (relative to the working directory: the
+-- config's create_list_item, plugins/editor.lua)
 local function harpoon_moved(from, to)
   local ok, harpoon = pcall(require, "harpoon")
   if not ok then return end
@@ -98,7 +99,7 @@ local function harpoon_moved(from, to)
       local path = vim.fs.normalize(vim.fn.fnamemodify(item.value, ":p"))
       local new = eq(path, from) and to or (inside(path, from) and to .. path:sub(#vim.fs.normalize(from) + 1)) or nil
       if new then
-        item.value = require("plenary.path"):new(vim.fs.normalize(new)):make_relative(vim.uv.cwd())
+        item.value = list.config.create_list_item(list.config, vim.fs.normalize(new)).value
         changed = true
       end
     end

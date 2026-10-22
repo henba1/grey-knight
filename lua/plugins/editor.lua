@@ -57,12 +57,33 @@ return {
         local Extensions = require("harpoon.extensions")
         Extensions.extensions:emit(Extensions.event_names.NAVIGATE, { buffer = buf })
       end
+      -- A slot keeps its file relative to the working directory, worked out from normalized names (2026-10-22):
+      -- harpoon's own (plenary's make_relative) compares the names as they are - on Windows a buffer named with "/"
+      -- (snacks opens files as C:/...) kept its whole path, and the same file pinned from a buffer named with "\" was
+      -- a second slot. Two slots are the same file by key() - the ones written before as well.
+      local function relative(name)
+        local file = vim.fs.normalize(vim.fn.fnamemodify(name, ":p"))
+        local root = vim.fs.normalize(vim.uv.cwd())
+        if root:sub(-1) ~= "/" then root = root .. "/" end
+        if (win and file:lower() or file):sub(1, #root) == (win and root:lower() or root) then return file:sub(#root + 1) end
+        return file
+      end
+      local function create_list_item(_, name)
+        name = relative(name or vim.api.nvim_buf_get_name(0))
+        local pos = { 1, 0 } -- the cursor, when the file is the one in this window
+        if key(vim.api.nvim_buf_get_name(0)) == key(name) then pos = vim.api.nvim_win_get_cursor(0) end
+        return { value = name, context = { row = pos[1], col = pos[2] } }
+      end
+      local function equals(a, b)
+        if a == nil or b == nil then return a == b end
+        return key(a.value) == key(b.value)
+      end
       harpoon:setup({
         settings = {
           save_on_toggle = true,   -- closing the menu with q / Esc keeps your edits (default: drops them)
           sync_on_ui_close = true, -- and writes them to disk right away, not only when Neovim exits
         },
-        default = { select = select },
+        default = { select = select, create_list_item = create_list_item, equals = equals },
       })
       -- Pin the current file, save the list at once, and say which slot it got
       vim.keymap.set("n", "<leader>ha", function()
@@ -74,7 +95,7 @@ return {
         pcall(harpoon.sync, harpoon)
         local value = list.config.create_list_item(list.config).value
         for i = 1, list:length() do
-          if list.items[i] and list.items[i].value == value then
+          if list.items[i] and key(list.items[i].value) == key(value) then
             local key = i <= 4 and ("<leader>" .. i) or "the menu (<leader>hh)"
             return vim.notify(("%s is slot %d: %s"):format(value, i, key), vim.log.levels.INFO, { title = "Harpoon" })
           end
