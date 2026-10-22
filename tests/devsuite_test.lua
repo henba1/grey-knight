@@ -1561,6 +1561,66 @@ test("Voice: :VoiceInstall's pins - each package and model has its sha256; whisp
   assert(ok, err)
 end)
 
+-- a download server (Python): /flaky refuses every other request (403), /never always, /count says how often /never was
+-- asked; it prints its port and the sha256 of what it serves
+local FAKE_DL = [[
+import hashlib
+from http.server import BaseHTTPRequestHandler, HTTPServer
+BODY = b"greyknight\n"
+seen = {}
+class S(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        name = self.path.strip("/")
+        seen[name] = seen.get(name, 0) + 1
+        if name == "count":
+            body = str(seen.get("never", 0)).encode()
+        elif name == "never" or (name == "flaky" and seen[name] % 2 == 1):
+            self.send_response(403); self.end_headers(); return
+        else:
+            body = BODY
+        self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+s = HTTPServer(("127.0.0.1", 0), S)
+print(s.server_address[1], hashlib.sha256(BODY).hexdigest(), flush=True)
+s.serve_forever()
+]]
+
+-- 2026-10-23: GitHub refused :VoiceInstall's first download on the work laptop (403); the next try worked
+test("Voice: :VoiceInstall's downloads - a refused one tried again (403, then 200); a file not as pinned is refused", function()
+  if vim.fn.executable("curl") == 0 then H.skip("curl not installed") end
+  local voice = require("integrations.voice")
+  local script = vim.fn.tempname() .. "-dl.py"
+  vim.fn.writefile(vim.split(FAKE_DL, "\n"), script)
+  local port, sum
+  local server = vim.fn.jobstart({ require("devsuite.util").system_python(), script }, { on_stdout = function(_, d)
+    local p, s = (d[1] or ""):match("^(%d+) (%x+)")
+    if p then port, sum = tonumber(p), s end
+  end })
+  local saved = voice.RETRY_MS
+  voice.RETRY_MS = 100
+  local ok, err = pcall(function()
+    assert(wait(10000, function() return port end), "the server did not start")
+    local dir, res = tmpdir(), nil
+    local function fetch(path, dest, s)
+      res = nil
+      voice.fetch(("http://127.0.0.1:%d/%s"):format(port, path), dest, s, function(good, why) res = { good, why } end)
+      assert(wait(20000, function() return res end), "no answer for " .. path)
+      return res[1], tostring(res[2])
+    end
+    local good, why = fetch("flaky", dir .. "/a.bin", sum)
+    assert(good and table.concat(vim.fn.readfile(dir .. "/a.bin"), "\n") == "greyknight", "refused once: " .. why)
+    good, why = fetch("flaky", dir .. "/b.bin", string.rep("0", 64))
+    assert(not good and why:find("is not the file it should be", 1, true) and vim.fn.filereadable(dir .. "/b.bin") == 0, why)
+    good, why = fetch("never", dir .. "/c.bin", sum)
+    assert(not good and why:find("download failed", 1, true), why)
+    local count = vim.fn.system({ "curl", "-s", ("http://127.0.0.1:%d/count"):format(port) })
+    assert(vim.trim(count) == "3", "tries of a refused download: " .. count)
+  end)
+  voice.RETRY_MS = saved
+  pcall(vim.fn.jobstop, server)
+  assert(ok, err)
+end)
+
 test("Voice (Windows): the recorder is Windows' own - its PowerShell parses (winmm's MCI; nothing records in a test)", function()
   if not WIN then H.skip("Windows' recorder - Linux records with pw-record, arecord, ...") end
   local cmd, stop = require("integrations.voice").recorder("C:/Temp/it's here.wav")
