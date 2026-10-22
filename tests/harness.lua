@@ -19,6 +19,16 @@ vim.o.shadafile = "NONE"
 for _, win in ipairs(vim.api.nvim_list_wins()) do vim.api.nvim_win_call(win, function() vim.cmd("clearjumps") end) end
 vim.v.oldfiles = {}
 vim.cmd("delmarks A-Z0-9")
+-- ... nor what goes to Neovim's data folder: the pickers' and inputs' history (snacks saves it on exit), the run
+-- arguments, the Maven settings generated for a test project's local repository - one more file each run
+-- (2026-10-22). Temp, state and cache - pyright's and tsserver's temp folders, the logs, grug-far's history, blink's
+-- frecency: the runners give each run folders of its own (tests/run.sh, run.ps1)
+pcall(function()
+  require("snacks.picker.util.history") -- loaded now, so its autocmd exists
+  vim.api.nvim_clear_autocmds({ group = "snacks_history" })
+end)
+pcall(function() require("devsuite.tasks").args_file = vim.fn.tempname() .. "-run-args.json" end)
+pcall(function() require("integrations.jdtls").settings_dir = vim.fn.tempname() end)
 -- gitsigns follows the working directory: each change ran git rev-parse and restarted its watcher on .git/HEAD.
 -- The tests change it hundreds of times - on Windows a thousand git processes in a run, libuv lost the ends of
 -- some, and Neovim hung on quitting (2026-10-21; gitsigns' own note on stop/start of that watcher: #1027). Test

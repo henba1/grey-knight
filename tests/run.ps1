@@ -25,22 +25,45 @@ try {
     $lastTest = { if (Test-Path $trace) { "  the last test that started: " + (Get-Content -Encoding UTF8 $trace -Tail 1) } }
     # -i NONE: the user's ShaDa (history, recent files) neither read nor written (tests/harness.lua)
     $nvimArgs = "-i NONE -c `"luafile tests/${suite}_test.lua`" -c `"cquit 2`""
-    $p = Start-Process -FilePath $nvim -ArgumentList $nvimArgs -WorkingDirectory $root -WindowStyle Minimized -PassThru
-    $null = $p.Handle # keeps the exit code readable after the process ended
-    # The harness writes the report just before quitting: wait for it (at most 15 minutes), then for the exit
-    $deadline = (Get-Date).AddMinutes(15)
-    while (-not $p.HasExited -and -not (Test-Path $report) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-    if (-not $p.WaitForExit(30000)) {
-      # The whole tree: the window's Neovim and the --embed server it started (Kill() left those, 2026-10-21)
-      & taskkill /T /F /PID $p.Id | Out-Null
-      if (Test-Path $report) { Get-Content -Encoding UTF8 $report; Write-Output "${suite}: Neovim did not quit after its report" }
-      else { Write-Output "${suite}: stopped after 15 minutes"; & $lastTest }
-      $status = 1
-      continue
+    # temp, state and cache folders of the run's own, deleted after it: what language servers and plugins leave
+    # there - pyright's and tsserver's temp folders, lsp.log, dap.log, histories - is not the user's (2026-10-22).
+    # Set for Neovim only: the report and the trace stay in the real temp folder.
+    $run = Join-Path ([IO.Path]::GetTempPath()) ('greyknight-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 12))
+    foreach ($d in 'tmp', 'state', 'cache') { $null = New-Item -ItemType Directory -Force -Path (Join-Path $run $d) }
+    $runEnv = @{ GK_TEST_RUN_DIR = $run; TEMP = "$run\tmp"; TMP = "$run\tmp"; XDG_STATE_HOME = "$run\state"; XDG_CACHE_HOME = "$run\cache" }
+    $saved = @{}
+    foreach ($k in $runEnv.Keys) {
+      $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process')
+      [Environment]::SetEnvironmentVariable($k, $runEnv[$k], 'Process')
     }
-    if (Test-Path $report) { Get-Content -Encoding UTF8 $report }
-    else { Write-Output "${suite}: no report (the suite crashed, exit $($p.ExitCode))"; & $lastTest }
-    if ($p.ExitCode -ne 0) { $status = 1 }
+    try {
+      $p = Start-Process -FilePath $nvim -ArgumentList $nvimArgs -WorkingDirectory $root -WindowStyle Minimized -PassThru
+    } finally {
+      foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k], 'Process') }
+    }
+    try {
+      $null = $p.Handle # keeps the exit code readable after the process ended
+      # The harness writes the report just before quitting: wait for it (at most 15 minutes), then for the exit
+      $deadline = (Get-Date).AddMinutes(15)
+      while (-not $p.HasExited -and -not (Test-Path $report) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+      if (-not $p.WaitForExit(30000)) {
+        # The whole tree: the window's Neovim and the --embed server it started (Kill() left those, 2026-10-21)
+        & taskkill /T /F /PID $p.Id | Out-Null
+        if (Test-Path $report) { Get-Content -Encoding UTF8 $report; Write-Output "${suite}: Neovim did not quit after its report" }
+        else { Write-Output "${suite}: stopped after 15 minutes"; & $lastTest }
+        $status = 1
+        continue
+      }
+      if (Test-Path $report) { Get-Content -Encoding UTF8 $report }
+      else { Write-Output "${suite}: no report (the suite crashed, exit $($p.ExitCode))"; & $lastTest }
+      if ($p.ExitCode -ne 0) { $status = 1 }
+    } finally {
+      # a server just ended may hold a file a moment longer
+      for ($i = 0; $i -lt 10 -and (Test-Path -LiteralPath $run); $i++) {
+        Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $run) { Start-Sleep -Milliseconds 500 }
+      }
+    }
   }
 } finally {
   Remove-Item Env:GK_TEST_REPORT, Env:GK_TEST_TRACE -ErrorAction SilentlyContinue
