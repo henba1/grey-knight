@@ -182,6 +182,30 @@ return {
       -- Angular / AngularJS: angularls, eslint, html, css - installed with the first file that needs them
       if lang.angular then require("integrations.web").setup(capabilities) end
 
+      -- :LspInfo, :LspLog, :LspStart, :LspStop, :LspRestart - nvim-lspconfig leaves them to Neovim 0.12's own :lsp
+      -- (enable, disable, restart, stop) and defines none: the docs named :LspInfo and :LspLog, and there were none
+      -- (2026-10-22). The familiar names, over :lsp and :checkhealth vim.lsp - where nothing else defines them.
+      local function command(name, fn, opts)
+        if vim.fn.exists(":" .. name) ~= 2 then vim.api.nvim_create_user_command(name, fn, opts) end
+      end
+      local function clients(arg)
+        return vim.tbl_filter(function(n) return vim.startswith(n, arg) end, vim.tbl_map(function(c) return c.name end, vim.lsp.get_clients()))
+      end
+      local function configs(arg)
+        return vim.tbl_filter(function(n) return vim.startswith(n, arg) end, vim.tbl_keys(lsp_servers))
+      end
+      command("LspInfo", "checkhealth vim.lsp", { desc = "LSP: what runs where (:checkhealth vim.lsp)" })
+      command("LspLog", function() vim.cmd.tabnew(vim.fn.fnameescape(vim.lsp.log.get_filename())) end, { desc = "LSP: its log" })
+      command("LspRestart", function(info) vim.cmd("lsp restart " .. table.concat(info.fargs, " ")) end,
+        { nargs = "*", complete = clients, desc = "LSP: restart these servers (none named: this buffer's)" })
+      command("LspStop", function(info) vim.cmd("lsp stop " .. table.concat(info.fargs, " ")) end,
+        { nargs = "*", complete = clients, desc = "LSP: stop these servers (none named: this buffer's)" })
+      command("LspStart", function(info)
+        if #info.fargs > 0 then vim.lsp.enable(info.fargs) end
+        -- this buffer at once: enable() attaches the open buffers only once Neovim has started up (VimEnter)
+        pcall(vim.api.nvim_exec_autocmds, "FileType", { group = "nvim.lsp.enable", buffer = 0, modeline = false })
+      end, { nargs = "*", complete = configs, desc = "LSP: start these servers here (none named: all of this filetype)" })
+
       -- LSP keymaps, each for a server that can do it: gd with only ruff, html or eslint attached said "method
       -- textDocument/definition is not supported by any server" - now it stays Vim's gd there (2026-10-21, error log)
       vim.api.nvim_create_autocmd("LspAttach", {
