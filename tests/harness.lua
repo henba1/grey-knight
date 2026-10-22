@@ -10,6 +10,15 @@ pcall(function() require("harpoon").sync = function() end end)
 -- ... nor sessions: persisted saved the test's leftover windows as the session of the folder the tests ran in (the
 -- config's own, over the real one) and of temp folders (2026-10-21)
 pcall(function() require("persisted").stop() end)
+-- ... nor the ShaDa file: test runs read the jumplist, marks and recent files the user's sessions left, and wrote
+-- theirs back - test files among the recent files (jdt:// buffers) and in <C-o>'s history; an a.txt remembered from
+-- an earlier run became a buffer when <C-o> loaded the jumplist, the next test found "a.txt" open (2026-10-22).
+-- tests/run.sh and run.ps1 start Neovim with -i NONE; started some other way, nothing is written and what was read
+-- goes.
+vim.o.shadafile = "NONE"
+for _, win in ipairs(vim.api.nvim_list_wins()) do vim.api.nvim_win_call(win, function() vim.cmd("clearjumps") end) end
+vim.v.oldfiles = {}
+vim.cmd("delmarks A-Z0-9")
 -- gitsigns follows the working directory: each change ran git rev-parse and restarted its watcher on .git/HEAD.
 -- The tests change it hundreds of times - on Windows a thousand git processes in a run, libuv lost the ends of
 -- some, and Neovim hung on quitting (2026-10-21; gitsigns' own note on stop/start of that watcher: #1027). Test

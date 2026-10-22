@@ -23,7 +23,8 @@ try {
     Remove-Item $trace -ErrorAction SilentlyContinue
     $env:GK_TEST_TRACE = $trace
     $lastTest = { if (Test-Path $trace) { "  the last test that started: " + (Get-Content -Encoding UTF8 $trace -Tail 1) } }
-    $nvimArgs = "-c `"luafile tests/${suite}_test.lua`" -c `"cquit 2`""
+    # -i NONE: the user's ShaDa (history, recent files) neither read nor written (tests/harness.lua)
+    $nvimArgs = "-i NONE -c `"luafile tests/${suite}_test.lua`" -c `"cquit 2`""
     $p = Start-Process -FilePath $nvim -ArgumentList $nvimArgs -WorkingDirectory $root -WindowStyle Minimized -PassThru
     $null = $p.Handle # keeps the exit code readable after the process ended
     # The harness writes the report just before quitting: wait for it (at most 15 minutes), then for the exit

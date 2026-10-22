@@ -12,8 +12,9 @@ suites=(tests/smoke_test.lua tests/devsuite_test.lua)
 status=0
 for suite in "${suites[@]}"; do
   trace=$(mktemp) # each test's name as it starts: after a crash the last one is where it happened
-  # report() exits; "cquit 2" only runs when the suite crashed before it (a crash is not a pass)
-  GK_TEST_TRACE="$trace" timeout 900 nvim --headless -c "luafile $suite" -c 'cquit 2'
+  # report() exits; "cquit 2" only runs when the suite crashed before it (a crash is not a pass).
+  # -i NONE: the user's ShaDa (history, recent files) neither read nor written (tests/harness.lua)
+  GK_TEST_TRACE="$trace" timeout 900 nvim -i NONE --headless -c "luafile $suite" -c 'cquit 2'
   rc=$?
   if [ $rc -ne 0 ]; then
     status=1
