@@ -17,9 +17,24 @@ local session_started = false
 M.HARMLESS = {
   { title = "Big File", text = "Big file detected" },
 }
+-- ... and what Neovim says while it quits: it stops the language servers without waiting for them (their
+-- exit_timeout is false - lua_ls, still loading its library, did not end within 10 s of being asked), and on Windows
+-- a server ended that way reports exit code 1: "Client lua_ls quit with exit code 1 and signal 15" at most quits,
+-- 15 of 32 sessions in a Windows log (2026-10-22). A server that ends while Neovim runs is still logged.
+M.HARMLESS_ON_EXIT = { "^Client %S+ quit with exit code" }
+
+--- True once Neovim quits (v:exiting is set before VimLeavePre); the tests replace it.
+function M.exiting() return vim.v.exiting ~= vim.NIL end
+
 local function harmless(title, msg)
+  msg = tostring(msg)
   for _, h in ipairs(M.HARMLESS) do
-    if title == h.title and tostring(msg):find(h.text, 1, true) then return true end
+    if title == h.title and msg:find(h.text, 1, true) then return true end
+  end
+  if M.exiting() then
+    for _, pattern in ipairs(M.HARMLESS_ON_EXIT) do
+      if msg:match(pattern) then return true end
+    end
   end
   return false
 end
