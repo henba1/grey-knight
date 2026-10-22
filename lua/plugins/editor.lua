@@ -38,6 +38,10 @@ return {
           if vim.api.nvim_buf_get_name(b) ~= "" and key(vim.api.nvim_buf_get_name(b)) == key(item.value) then buf = b end
         end
         local fresh = buf == nil
+        -- a file that is gone (deleted, moved outside Neovim): its slot made an empty new file there (2026-10-22)
+        if fresh and vim.uv.fs_stat(vim.fn.fnamemodify(item.value, ":p")) == nil then
+          return vim.notify(("%s is gone - <leader>hh: the list, dd there removes it"):format(item.value), vim.log.levels.WARN, { title = "Harpoon" })
+        end
         if fresh then buf = vim.fn.bufadd(vim.fn.fnamemodify(item.value, ":p")) end
         if not vim.api.nvim_buf_is_loaded(buf) then
           vim.fn.bufload(buf)

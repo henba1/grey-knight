@@ -87,6 +87,33 @@ local function unwatch(path)
   end
 end
 
+-- harpoon's slots of the moved: their new path, as harpoon writes one (relative to the working directory, plenary's)
+local function harpoon_moved(from, to)
+  local ok, harpoon = pcall(require, "harpoon")
+  if not ok then return end
+  local list, changed = harpoon:list(), false
+  for i = 1, list:length() do
+    local item = list.items[i]
+    if item and type(item.value) == "string" and item.value ~= "" then
+      local path = vim.fs.normalize(vim.fn.fnamemodify(item.value, ":p"))
+      local new = eq(path, from) and to or (inside(path, from) and to .. path:sub(#vim.fs.normalize(from) + 1)) or nil
+      if new then
+        item.value = require("plenary.path"):new(vim.fs.normalize(new)):make_relative(vim.uv.cwd())
+        changed = true
+      end
+    end
+  end
+  if changed then pcall(harpoon.sync, harpoon) end
+end
+
+--- A file or folder moved or renamed - by the explorer (m, r) or in an oil buffer (autocmds.lua): what points to it
+--- follows - bookmarks, also of files not open, and harpoon's slots. They kept the old path: a slot opened an empty
+--- new file there (2026-10-22).
+function M.moved(from, to)
+  pcall(function() require("config.bookmarks").moved(from, to) end)
+  pcall(harpoon_moved, from, to)
+end
+
 -- Move a file or folder; its open buffers go along, in the same windows, the cursor where it was; language servers
 -- hear of it (snacks). snacks' own move (rename.lua) did that for the buffer bufnr() found: for a folder a file in it,
 -- which a buffer of the folder replaced. And it threw away a buffer with unsaved changes - callers check unsaved()
@@ -103,8 +130,8 @@ local function relocate(from, to)
       if ok then break end
     end
     if not ok then return end
-    -- bookmarks go along - before the buffers at the new path load, so these find theirs
-    pcall(function() require("config.bookmarks").moved(from, to) end)
+    -- bookmarks and harpoon's slots go along - before the buffers at the new path load, so these find theirs
+    M.moved(from, to)
     for _, buf in ipairs(buffers_of(from)) do
       local new = to .. vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):sub(#from + 1)
       local target = vim.fn.bufadd(new)
