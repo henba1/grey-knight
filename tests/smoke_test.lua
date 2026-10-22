@@ -763,13 +763,321 @@ local function with_explorer(paths, fn, opts)
   assert(ok, err)
 end
 
--- ── Script slots (config/slots.lua, 2026-10-22): !1 .. !9 run a script on the cursor's item and the marked ones ──
+-- 2026-10-22: Neovim 0.12's errors as :messages has them (taken from a real session). A callback's error, "vim.schedule
+-- callback: ...", was not logged at all; an autocommand's kept only its header - the Kali log had
+-- 'Error in BufEnter Autocommands for "<buffer=25>":' and nothing of the error itself
+test("Error log: Neovim 0.12's errors are logged whole - a scheduled callback's, an autocommand's with its Lua error and traceback", function()
+  local el = require("config.errorlog")
+  local autocmd = { 'Error in User Autocommands for "GkBoom":', "Lua callback: /tmp/gk-err.lua:1: attempt to index local 't' (a nil value)",
+    "stack traceback:", "\t/tmp/gk-err.lua:1: in function </tmp/gk-err.lua:1>" }
+  local scheduled = { "vim.schedule callback: /tmp/gk-err.lua:6: boom in a scheduled callback", "stack traceback:",
+    "\t[C]: in function 'error'", "\t/tmp/gk-err.lua:6: in function </tmp/gk-err.lua:6>" }
+  local sourced = { "Error detected while processing /tmp/x.vim:", "line    3:", "E492: Not an editor command: foo" }
+  local plain = { "E21: Cannot make changes, 'modifiable' is off" }
+  local output = table.concat(vim.iter({ { "some info message" }, autocmd, scheduled, sourced, plain, { "written" } }):flatten():totable(), "\n")
+  local blocks = el.parse_messages(output)
+  local want = vim.tbl_map(function(b) return table.concat(b, "\n") end, { autocmd, scheduled, sourced, plain })
+  assert(vim.deep_equal(blocks, want), "parsed: " .. vim.inspect(blocks))
+  -- and into the log, the lines after the first indented below it
+  local saved_path, exec2 = el.path, vim.api.nvim_exec2
+  el.path = vim.fn.tempname()
+  vim.api.nvim_exec2 = function(cmd, opts)
+    if cmd == "messages" then return { output = output } end
+    return exec2(cmd, opts)
+  end
+  local ok, err = pcall(function()
+    el.log_messages()
+    local log = table.concat(vim.fn.readfile(el.path), "\n")
+    for _, want_line in ipairs({ "[messages] Error in User Autocommands", "      Lua callback: /tmp/gk-err.lua:1: attempt to index local 't'",
+      "[messages] vim.schedule callback: /tmp/gk-err.lua:6: boom", "      E492: Not an editor command: foo" }) do
+      assert(log:find(want_line, 1, true), want_line .. " - the log:\n" .. log)
+    end
+  end)
+  vim.api.nvim_exec2 = exec2
+  vim.fn.delete(el.path)
+  el.path = saved_path
+  assert(ok, err)
+end)
+
+-- 2026-10-22: <C-space> grows the selection node by node; <BS> went to a node's first child instead of back -
+-- from foo(bar, baz) to foo, not to (bar, baz)
+test("Editing: <C-space> grows the selection node by node, <BS> takes it back the same way", function()
+  vim.cmd.edit(vim.fn.fnameescape(H.file("sel.lua", { "local function f()", "  local x = foo(bar, baz)", "  return x", "end" })))
+  pcall(function() vim.treesitter.get_parser(0):parse(true) end)
+  vim.api.nvim_win_set_cursor(0, { 2, 17 }) -- on bar
+  local function selected()
+    return table.concat(vim.fn.getregion(vim.fn.getpos("v"), vim.fn.getpos("."), { type = vim.fn.mode() }), "\n")
+  end
+  local seen = {}
+  local ok, err = pcall(function()
+    for _, k in ipairs({ "<C-space>", "<C-space>", "<C-space>", "<C-space>", "<BS>", "<BS>", "<BS>" }) do
+      vim.api.nvim_feedkeys(vim.keycode(k), "x", false)
+      seen[#seen + 1] = selected()
+    end
+  end)
+  vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "x", false)
+  vim.cmd("silent! bwipeout!")
+  assert(ok, err)
+  local want = { "bar", "(bar, baz)", "foo(bar, baz)", "x = foo(bar, baz)", "foo(bar, baz)", "(bar, baz)", "bar" }
+  assert(vim.deep_equal(seen, want), "selections: " .. vim.inspect(seen))
+end)
 
 local function real_tmp()
   local t = vim.fn.tempname()
   vim.fn.mkdir(t, "p")
   return vim.fs.normalize(assert(vim.uv.fs_realpath(t)))
 end
+
+-- ── Bookmarks (config/bookmarks.lua, 2026-10-22): lines to come back to, per project - IntelliJ's F11 / Shift+F11 ──
+
+local BOOKMARK_NS = vim.api.nvim_create_namespace("greyknight.bookmarks")
+
+-- a project of its own (Neovim's directory) with these files, and a bookmarks file of its own
+local function with_bookmarks(files, fn)
+  local bm = require("config.bookmarks")
+  local root, before, saved = real_tmp(), vim.fn.getcwd(), bm.file
+  for name, lines in pairs(files) do vim.fn.writefile(lines, root .. "/" .. name) end
+  bm.file = root .. "/.bookmarks.json"
+  vim.fn.chdir(root)
+  bm.reload()
+  local ok, err = pcall(fn, root, bm)
+  for _, p in ipairs(Snacks.picker.get({ source = "bookmarks", tab = false })) do pcall(p.close, p) end
+  vim.cmd("silent! only")
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fs.normalize(vim.api.nvim_buf_get_name(buf)):find(root .. "/", 1, true) == 1 then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  end
+  vim.fn.chdir(before)
+  bm.file = saved
+  bm.reload()
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end
+
+-- the lines of buf with a bookmark's sign
+local function bookmark_signs(buf)
+  local rows = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, BOOKMARK_NS, 0, -1, { details = true })) do
+    if not m[4].invalid then rows[#rows + 1] = m[2] + 1 end
+  end
+  table.sort(rows)
+  return rows
+end
+
+-- what the bookmarks file keeps: "file:line[:name]" of every project in it
+local function bookmarks_kept(bm)
+  local ok, data = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(bm.file), "\n")) end)
+  local out = {}
+  for _, list in pairs(ok and type(data) == "table" and type(data.projects) == "table" and data.projects or {}) do
+    for _, b in ipairs(list) do out[#out + 1] = vim.fs.basename(b.file) .. ":" .. b.line .. (b.name and (":" .. b.name) or "") end
+  end
+  table.sort(out)
+  return out
+end
+
+local function at() return vim.fs.basename(vim.api.nvim_buf_get_name(0)) .. ":" .. vim.api.nvim_win_get_cursor(0)[1] end
+-- a file by its name as it is: Windows' fnameescape() leaves [ ] alone, :edit took "[draft]" as a pattern
+local function edit(path) vim.cmd.edit({ args = { path }, magic = { file = false } }) end
+
+test("Bookmarks: <leader>mm puts a ⚑ on the line and keeps it for the project - read again next time; again takes it away", function()
+  with_bookmarks({ ["notes.txt"] = { "one", "two", "three", "four" } }, function(root, bm)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/notes.txt"))
+    local buf = vim.api.nvim_get_current_buf()
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    vim.api.nvim_feedkeys(vim.keycode("<leader>mm"), "mx", false)
+    assert(vim.deep_equal(bookmark_signs(buf), { 3 }), "signs: " .. vim.inspect(bookmark_signs(buf)))
+    local mark = vim.api.nvim_buf_get_extmarks(buf, BOOKMARK_NS, 0, -1, { details = true })[1]
+    assert(vim.trim(mark[4].sign_text) == bm.SIGN, "the sign: " .. tostring(mark[4].sign_text))
+    assert(vim.deep_equal(bookmarks_kept(bm), { "notes.txt:3" }), "kept: " .. vim.inspect(bookmarks_kept(bm)))
+    local data = vim.json.decode(table.concat(vim.fn.readfile(bm.file), "\n"))
+    local project = next(data.projects)
+    assert(vim.fs.normalize(project):lower() == root:lower(), "kept for " .. tostring(project) .. ", not " .. root)
+    -- the next session: read again, the file opened again - the sign is back
+    vim.cmd("bwipeout!")
+    bm.reload()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/notes.txt"))
+    assert(vim.deep_equal(bookmark_signs(0), { 3 }), "read again: " .. vim.inspect(bookmark_signs(0)))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    vim.api.nvim_feedkeys(vim.keycode("<leader>mm"), "mx", false)
+    assert(#bookmark_signs(0) == 0, "the sign stayed")
+    assert(#bookmarks_kept(bm) == 0, "still kept: " .. vim.inspect(bookmarks_kept(bm)))
+  end)
+end)
+
+test("Bookmarks: one goes with its line - lines added above, its line deleted (undo brings it back), the file changed outside", function()
+  with_bookmarks({ ["code.txt"] = { "a", "b", "target", "c" }, ["other.txt"] = { "x", "keep me", "y" } }, function(root, bm)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/code.txt"))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    bm.toggle()
+    vim.api.nvim_buf_set_lines(0, 0, 0, false, { "new 1", "new 2" })
+    vim.cmd("silent write")
+    assert(vim.deep_equal(bookmarks_kept(bm), { "code.txt:5" }), "two lines above, saved: " .. vim.inspect(bookmarks_kept(bm)))
+    vim.api.nvim_win_set_cursor(0, { 5, 0 })
+    vim.cmd("normal! dd")
+    assert(#bookmark_signs(0) == 0, "the sign stayed on a deleted line")
+    vim.cmd("silent undo")
+    assert(vim.deep_equal(bookmark_signs(0), { 5 }), "undo did not bring it back: " .. vim.inspect(bookmark_signs(0)))
+    vim.cmd("normal! dd")
+    vim.cmd("silent write")
+    assert(#bookmarks_kept(bm) == 0, "its line deleted and saved, still kept: " .. vim.inspect(bookmarks_kept(bm)))
+    -- changed outside Neovim (a git pull put three lines on top): found again by its text
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/other.txt"))
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    bm.toggle()
+    vim.cmd("bwipeout!")
+    vim.fn.writefile({ "1", "2", "3", "x", "keep me", "y" }, root .. "/other.txt")
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/other.txt"))
+    assert(vim.deep_equal(bookmark_signs(0), { 5 }), "not found again: " .. vim.inspect(bookmark_signs(0)))
+    assert(vim.deep_equal(bookmarks_kept(bm), { "other.txt:5" }), "kept: " .. vim.inspect(bookmarks_kept(bm)))
+  end)
+end)
+
+test("Bookmarks: <leader>ml lists them, a named one by its name; Enter opens the file at the line - one not open, [ ] in its name", function()
+  local files = { ["a.txt"] = { "a1", "a2", "a3" }, ["notes [draft].txt"] = { "n1", "n2", "n3", "n4" }, ["notes d.txt"] = { "decoy" } }
+  with_bookmarks(files, function(root, bm)
+    local input = vim.ui.input
+    vim.ui.input = function(_, on_confirm) on_confirm("the draft") end
+    local ok, err = pcall(function()
+      edit(root .. "/notes [draft].txt")
+      vim.api.nvim_win_set_cursor(0, { 4, 0 })
+      vim.api.nvim_feedkeys(vim.keycode("<leader>mr"), "mx", false) -- a name; the bookmark set on the way
+    end)
+    vim.ui.input = input
+    assert(ok, err)
+    assert(vim.deep_equal(bookmarks_kept(bm), { "notes [draft].txt:4:the draft" }), "named: " .. vim.inspect(bookmarks_kept(bm)))
+    vim.cmd("bwipeout!") -- not open any more; "notes d.txt" is (the name as a pattern matched it, 2026-10-21)
+    edit(root .. "/notes d.txt")
+    edit(root .. "/a.txt")
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    vim.api.nvim_feedkeys(vim.keycode("<leader>mm"), "mx", false)
+    vim.api.nvim_feedkeys(vim.keycode("<leader>ml"), "mx", false)
+    local p
+    assert(H.wait(3000, function() p = Snacks.picker.get({ source = "bookmarks" })[1]; return p and p.list:count() == 2 end), "no list of two")
+    local shown = {}
+    for _, item in ipairs(p:items()) do shown[#shown + 1] = (item.label or "-") .. " " .. vim.fs.basename(item.file) .. ":" .. item.pos[1] end
+    assert(vim.deep_equal(shown, { "- a.txt:2", "the draft notes [draft].txt:4" }), "listed: " .. vim.inspect(shown))
+    p.list:view(2)
+    vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+    assert(H.wait(3000, function() return at() == "notes [draft].txt:4" end), "Enter: " .. at())
+    assert(vim.deep_equal(bookmark_signs(0), { 4 }), "no sign in the opened file")
+    -- <C-x> in the list deletes the one under the cursor
+    vim.api.nvim_feedkeys(vim.keycode("<leader>ml"), "mx", false)
+    assert(H.wait(3000, function() p = Snacks.picker.get({ source = "bookmarks" })[1]; return p and p.list:count() == 2 end), "no list again")
+    p.list:view(1)
+    vim.api.nvim_feedkeys(vim.keycode("<C-x>"), "x", false)
+    assert(H.wait(3000, function() return p.list:count() == 1 end), "<C-x> did not delete: " .. p.list:count())
+    assert(vim.deep_equal(bookmarks_kept(bm), { "notes [draft].txt:4:the draft" }), "kept: " .. vim.inspect(bookmarks_kept(bm)))
+  end)
+end)
+
+test("Bookmarks: <leader>mn / <leader>mp go to the next / previous in file and line order, file to file, round at the ends", function()
+  with_bookmarks({ ["a.txt"] = { "1", "2", "3", "4", "5" }, ["b.txt"] = { "1", "2", "3" } }, function(root, bm)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/b.txt"))
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    bm.toggle()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    for _, line in ipairs({ 2, 4 }) do
+      vim.api.nvim_win_set_cursor(0, { line, 0 })
+      bm.toggle()
+    end
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    local seen = {}
+    for _, keys in ipairs({ "<leader>mn", "<leader>mn", "<leader>mn", "<leader>mn", "<leader>mp" }) do
+      vim.api.nvim_feedkeys(vim.keycode(keys), "mx", false)
+      seen[#seen + 1] = at()
+    end
+    assert(vim.deep_equal(seen, { "a.txt:2", "a.txt:4", "b.txt:3", "a.txt:2", "b.txt:3" }), "went: " .. vim.inspect(seen))
+    vim.api.nvim_feedkeys(vim.keycode("<C-o>"), "x", false)
+    assert(at() == "a.txt:2", "<C-o> did not come back: " .. at())
+  end)
+end)
+
+test("Bookmarks: each project its own - in another directory the list and the signs are that one's", function()
+  with_bookmarks({ ["a.txt"] = { "1", "2" } }, function(root, bm)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))
+    local buf = vim.api.nvim_get_current_buf()
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    bm.toggle()
+    local other = real_tmp()
+    vim.fn.chdir(other)
+    local ok, err = pcall(function()
+      assert(#bm.list() == 0, "another project lists them: " .. vim.inspect(bm.list()))
+      assert(#bookmark_signs(buf) == 0, "the sign stayed in another project")
+    end)
+    vim.fn.chdir(root)
+    vim.fn.delete(other, "rf")
+    assert(ok, err)
+    assert(#bm.list() == 1 and vim.deep_equal(bookmark_signs(buf), { 2 }), "back in the project: " .. vim.inspect(bm.list()))
+  end)
+end)
+
+-- ── Recent buffers (config/switcher.lua, 2026-10-22): IntelliJ's Ctrl+Tab ──
+
+-- these files opened one after the other (their buffers by name), all within a second
+local function with_recent(names, fn)
+  local root, bufs = real_tmp(), {}
+  for _, name in ipairs(names) do
+    vim.fn.writefile({ name }, root .. "/" .. name)
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/" .. name))
+    bufs[name] = vim.api.nvim_get_current_buf()
+  end
+  local ok, err = pcall(fn, bufs)
+  for _, p in ipairs(Snacks.picker.get({ source = "recent_buffers", tab = false })) do pcall(p.close, p) end
+  for _, buf in pairs(bufs) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end
+
+local function recent_picker(want_buf)
+  local p
+  local ok = H.wait(3000, function()
+    p = Snacks.picker.get({ source = "recent_buffers" })[1]
+    local item = p and p.list:current()
+    return item and (not want_buf or item.buf == want_buf)
+  end)
+  local item = p and p.list:current()
+  assert(ok, "the list is not on the buffer wanted: " .. tostring(item and vim.fs.basename(item.file)))
+  return p
+end
+
+test("Recent buffers: <leader><Tab> starts on the buffer before this one, Enter goes back to it - the order of use", function()
+  with_recent({ "a.txt", "b.txt", "c.txt" }, function(bufs)
+    vim.cmd.buffer(bufs["a.txt"]) -- used: b, c, a - before this one: c
+    vim.api.nvim_feedkeys(vim.keycode("<leader><Tab>"), "mx", false)
+    local p = recent_picker(bufs["c.txt"])
+    local order = {}
+    for _, item in ipairs(p:items()) do order[#order + 1] = vim.fs.basename(item.file) end
+    assert(vim.deep_equal(vim.list_slice(order, 1, 3), { "a.txt", "c.txt", "b.txt" }), "order: " .. table.concat(order, ", "))
+    vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+    assert(H.wait(3000, function() return vim.api.nvim_get_current_buf() == bufs["c.txt"] end), "Enter: " .. at())
+  end)
+end)
+
+test("Recent buffers: Tab goes further back, Shift+Tab forward again; typing filters", function()
+  with_recent({ "a.txt", "b.txt", "c.txt" }, function(bufs)
+    vim.api.nvim_feedkeys(vim.keycode("<leader><Tab>"), "mx", false) -- this is c: on b
+    local p = recent_picker(bufs["b.txt"])
+    vim.api.nvim_feedkeys(vim.keycode("<Tab>"), "x", false)
+    assert(p.list:current().buf == bufs["a.txt"], "Tab: " .. vim.fs.basename(p.list:current().file))
+    vim.api.nvim_feedkeys(vim.keycode("<S-Tab>"), "x", false)
+    assert(p.list:current().buf == bufs["b.txt"], "Shift+Tab: " .. vim.fs.basename(p.list:current().file))
+    vim.api.nvim_feedkeys(vim.keycode("<Tab><CR>"), "x", false)
+    assert(H.wait(3000, function() return vim.api.nvim_get_current_buf() == bufs["a.txt"] end), "Tab, Enter: " .. at())
+    vim.api.nvim_feedkeys(vim.keycode("<leader><Tab>"), "mx", false)
+    p = recent_picker(bufs["c.txt"])
+    -- the picker types into its input once it shows (insert mode, scheduled) - typing, whichever mode it is in
+    local typing = vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+    vim.api.nvim_feedkeys((typing and "" or "i") .. "b.tx", "x", false)
+    -- the box filters on TextChanged, which Neovim sends once it waits for keys again - a test never does
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = p.input.win.buf })
+    assert(H.wait(3000, function() local item = p.list:current(); return item and item.buf == bufs["b.txt"] end),
+      ("typing b.tx (in mode %s): the pattern %q, on %s"):format(typing and "i" or "n", p.input:get(),
+        p.list:current() and vim.fs.basename(p.list:current().file) or "nothing"))
+    vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+    assert(H.wait(3000, function() return vim.api.nvim_get_current_buf() == bufs["b.txt"] end), "filtered, Enter: " .. at())
+  end)
+end)
+
+-- ── Script slots (config/slots.lua, 2026-10-22): !1 .. !9 run a script on the cursor's item and the marked ones ──
 local function native(path) return vim.fn.has("win32") == 1 and (path:gsub("/", "\\")) or path end
 
 -- the slots of a test: its own folder of scripts (the repo's helpers, slots/lib, with them)
@@ -1326,6 +1634,61 @@ test("Explorer: m and r of a folder take its open files along", function()
       assert(not (name:find("/proj/src/", 1, true) and vim.api.nvim_buf_is_loaded(b)), "a buffer at an old path: " .. name)
     end
   end)
+end)
+
+-- 2026-10-22: where the trash refuses - gio on /tmp ("Trashing on system internal mounts is not supported", Kali) - d
+-- deleted nothing and said so as an error; now it asks to delete for good. The refusal is a stand-in here (the same
+-- message), so it runs everywhere.
+test("Explorer: d where the trash refuses asks to delete for good - yes deletes, no keeps it (no error)", function()
+  local util, actions = Snacks.picker.util, require("snacks.explorer.actions")
+  local saved = { confirm = util.confirm, trash = actions.trash }
+  local asked, answers = {}, {}
+  util.confirm = function(prompt, yes)
+    asked[#asked + 1] = prompt
+    if table.remove(answers, 1) ~= false then yes() end
+  end
+  actions.trash = function(path)
+    return false, ("- cmd: `gio trash %s`\n- error: gio: file://%s: Trashing on system internal mounts is not supported"):format(path, path)
+  end
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg, level, ...) if (level or 0) >= vim.log.levels.ERROR then notes[#notes + 1] = tostring(msg) end return notify(msg, level, ...) end
+  local ok, err = pcall(with_explorer, { "a.txt", "b.txt" }, function(p, root, x)
+    x.on("a.txt")
+    answers = { true, true }
+    p:action("explorer_del")
+    assert(H.wait(3000, function() return not vim.uv.fs_stat(root .. "/a.txt") end), "a.txt not deleted - asked: " .. vim.inspect(asked))
+    assert(asked[2] and asked[2]:find("a.txt cannot go to the trash here (Trashing on system internal mounts is not supported)", 1, true)
+      and asked[2]:find("delete for good?", 1, true), "asked: " .. vim.inspect(asked))
+    x.on("b.txt")
+    asked, answers = {}, { true, false } -- delete: yes; for good: no
+    p:action("explorer_del")
+    vim.wait(500)
+    assert(#asked == 2 and vim.uv.fs_stat(root .. "/b.txt"), "b.txt: asked " .. vim.inspect(asked))
+    assert(#notes == 0, "an error: " .. table.concat(notes, " | "))
+  end)
+  util.confirm, actions.trash, vim.notify = saved.confirm, saved.trash, notify
+  assert(ok, err)
+end)
+
+-- 2026-10-22: a link deleted is the link - never the folder it points to, nor what is in it (Linux)
+test("Explorer: d on a link to a folder deletes the link; the folder and its files stay", function()
+  if vim.fn.has("win32") == 1 then H.skip("links need extra rights on Windows") end
+  local util, config = Snacks.picker.util, Snacks.explorer.config
+  local saved = { confirm = util.confirm, trash = config.trash }
+  util.confirm = function(_, yes) yes() end
+  config.trash = false -- gone for good: no trash for temp folders everywhere
+  local ok, err = pcall(with_explorer, { "target/file.txt", "target/sub/deep.txt" }, function(p, root, x)
+    assert(vim.uv.fs_symlink("target", root .. "/link"))
+    require("snacks.explorer.tree"):refresh(root)
+    require("snacks.explorer.actions").update(p, {})
+    assert(H.wait(5000, function() return pcall(x.item, "link") end), "no link in the tree: " .. x.found())
+    x.on("link")
+    p:action("explorer_del")
+    assert(H.wait(3000, function() return not vim.uv.fs_lstat(root .. "/link") end), "the link is still there")
+    assert(vim.uv.fs_stat(root .. "/target/file.txt") and vim.uv.fs_stat(root .. "/target/sub/deep.txt"), "the folder's files went with the link")
+  end)
+  util.confirm, config.trash = saved.confirm, saved.trash
+  assert(ok, err)
 end)
 
 -- The real explorer, the folders open in it (so watched). snacks closed only a buffer named like the deleted path: the
@@ -1962,7 +2325,10 @@ test("Oil: - shows the file's folder; renamed, added and deleted lines are done 
   vim.cmd.edit(vim.fn.fnameescape(dir .. "/a.txt"))
   local ok, err = pcall(function()
     vim.api.nvim_feedkeys("-", "x", false)
-    assert(H.wait(5000, function() return vim.bo.filetype == "oil" and H.text(0):find("keep.txt", 1, true) end), "-: no listing: " .. H.text(0))
+    -- the listing, and oil done with it: it shows the names before the buffer can be edited (a busy Windows: "Buffer is
+    -- not 'modifiable'" for the lines set right after)
+    assert(H.wait(5000, function() return vim.bo.filetype == "oil" and vim.bo.modifiable and H.text(0):find("keep.txt", 1, true) end),
+      "-: no listing to edit: " .. H.text(0))
     local buf, out = vim.api.nvim_get_current_buf(), {}
     for _, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
       if l:find("gone.txt", 1, true) then -- deleted
@@ -2965,7 +3331,7 @@ end)
 
 test("Docs: every documented <leader> key exists", function()
   -- group prefixes in headings, LSP keys (exist once a server attaches), the AI Dashboard bridge (<leader>W*)
-  local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
+  local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>m"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
     ["<leader>x"] = 1, ["<leader>ca"] = 1, ["<leader>rn"] = 1, ["<leader>D"] = 1, ["<leader>t1/t2/t3"] = 1,
     -- gitsigns' keys: in files of a git repository (the Git test checks them there)
     ["<leader>gs"] = 1, ["<leader>gr"] = 1, ["<leader>gp"] = 1, ["<leader>gb"] = 1 }

@@ -448,6 +448,43 @@ test("Debug: a program whose session still runs keeps its terminal", function()
   assert(alive, "the running program was stopped")
 end)
 
+-- 2026-10-22: dap-ui closed the console's window under a program that was still ending; on Windows Neovim crashed
+-- right after now and then (the input() test above, twice in about ten runs of the suite)
+test("Debug: a session ends - dap-ui closes; with the program still running in its console once it has exited", function()
+  require("lazy").load({ plugins = { "nvim-dap-ui" } })
+  local dbg, dapui, dap = require("devsuite.debug"), require("dapui"), require("dap")
+  local close, session = dapui.close, dap.session
+  local closed, bufs = 0, {}
+  dapui.close = function() closed = closed + 1 end
+  local function console(seconds) -- a program in a terminal of its own, as the console runs it
+    local buf = vim.api.nvim_create_buf(false, true)
+    bufs[#bufs + 1] = buf
+    vim.api.nvim_buf_call(buf, function() vim.fn.jobstart(py_argv(("import time; time.sleep(%s)"):format(seconds)), { term = true }) end)
+    return buf
+  end
+  local function ended(buf) return vim.fn.jobwait({ vim.b[buf].terminal_job_id }, 0)[1] ~= -1 end
+  local ok, err = pcall(function()
+    local buf = console(1.5)
+    dbg.close_ui({ term_buf = buf })
+    assert(closed == 0, "closed while the program still ran")
+    assert(wait(10000, function() return closed == 1 end), "not closed once the program had exited")
+    dbg.close_ui({ term_buf = buf }) -- over already: at once
+    assert(closed == 2, "not closed at once after the program's end")
+    local later = console(1)
+    dbg.close_ui({ term_buf = later })
+    dap.session = function() return {} end -- a session started since: its UI stays
+    assert(wait(10000, function() return ended(later) end), "the program did not end")
+    vim.wait(300)
+    assert(closed == 2, "closed the UI of a session started since")
+  end)
+  dapui.close, dap.session = close, session
+  for _, buf in ipairs(bufs) do
+    wait(5000, function() return ended(buf) end) -- a terminal goes once its program is over (Windows, 0.12.6)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end
+  assert(ok, err)
+end)
+
 test("Debug: four bash sessions in a row", function()
   linux_only("bash debugging (bashdb)")
   local dbg, dap = require("devsuite.debug"), require("dap")
@@ -467,6 +504,59 @@ test("Debug: four bash sessions in a row", function()
     if not ended then dap.terminate() end
     assert(ended, "session " .. i .. " did not end")
   end
+end)
+
+-- 2026-10-22: bash-debug-adapter names its FIFO /tmp/vscode-bash-debug-fifo-<10000..19999> at random, and every session
+-- left a file of that name (bashdb's goodbye); a session that drew a taken name hung - on the pi the test above did,
+-- with 153 such files. Here all 10000 names are taken.
+test("Debug: a bash session runs though leftover files hold every name the adapter can draw for its FIFO", function()
+  linux_only("bash debugging (bashdb)")
+  local dbg, dap = require("devsuite.debug"), require("dap")
+  assert(dbg.setup_bash()) -- else why: the adapter missing, or node
+  local file = vim.fn.tempname() .. ".sh"
+  vim.fn.writefile({ "#!/bin/bash", 'echo "run"' }, file)
+  vim.cmd.edit(file)
+  -- empty files do it (mkfifo fails on any); touch leaves a FIFO - a session running elsewhere - as it is
+  local made = vim.system({ "bash", "-c", "touch /tmp/vscode-bash-debug-fifo-{10000..19999}" }):wait()
+  local ok, err = pcall(function()
+    assert(made.code == 0, made.stderr)
+    dap.run(dbg.bash_config(file))
+    local deadline = vim.uv.hrtime() + 30e9
+    while dap.session() and vim.uv.hrtime() < deadline do -- F5 until the end: bashdb stops on the first line
+      wait(8000, function() local s = dap.session(); return s == nil or s.stopped_thread_id ~= nil end)
+      local s = dap.session()
+      if s and s.stopped_thread_id then dap.continue(); wait(300, function() return false end) end
+    end
+    assert(dap.session() == nil, "the session hangs (its FIFO's name was taken)")
+  end)
+  if dap.session() then dap.terminate(); wait(5000, function() return dap.session() == nil end) end
+  if dap.session() then dap.close() end
+  vim.system({ "find", "/tmp", "-maxdepth", "1", "-type", "f", "-name", "vscode-bash-debug-fifo-*", "-delete" }):wait()
+  assert(ok, err)
+end)
+
+test("Debug: bashdb's leftover files go before a bash session; a FIFO (a session that runs) stays", function()
+  linux_only("FIFOs")
+  local dbg = require("devsuite.debug")
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  local function path(name) return dir .. "/" .. name end
+  local function kind(name) local s = vim.uv.fs_lstat(path(name)); return s and s.type end
+  vim.fn.writefile({ "12345 ######", "bashdb: That's all, folks..." }, path("vscode-bash-debug-fifo-12345"))
+  vim.fn.writefile({}, path("vscode-bash-debug-fifo-12346_in"))
+  vim.fn.writefile({ "mine" }, path("vscode-bash-debug-fifo-notes.txt"))
+  local fifo = vim.system({ "mkfifo", path("vscode-bash-debug-fifo-12347"), path("vscode-bash-debug-fifo-12347_in") }):wait()
+  local ok, err = pcall(function()
+    assert(fifo.code == 0, fifo.stderr)
+    dbg.clear_bash_fifos(dir)
+    assert(kind("vscode-bash-debug-fifo-12345") == nil, "a leftover stayed")
+    assert(kind("vscode-bash-debug-fifo-12346_in") == nil, "a leftover _in stayed")
+    assert(kind("vscode-bash-debug-fifo-12347") == "fifo", "a running session's FIFO went")
+    assert(kind("vscode-bash-debug-fifo-12347_in") == "fifo", "a running session's _in FIFO went")
+    assert(kind("vscode-bash-debug-fifo-notes.txt") == "file", "a file of another name went")
+  end)
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
 end)
 
 -- "python": the flavor this machine's Python gets (bracketed paste from 3.13, else classic); "classic":
@@ -1275,15 +1365,21 @@ test("Python: pyright and ruff - an undefined name marked, gd to another file, <
   assert(ok, err)
 end)
 
--- A language server in this process that can only what `capabilities` says
-local function fake_lsp(capabilities)
+-- A language server in this process that can only what `capabilities` says; answers[method](params) answers a request
+local function fake_lsp(capabilities, answers)
+  answers = answers or {}
   return function(dispatchers)
-    local closing = false
+    local closing, id = false, 0
     return {
-      request = function(method, _, callback)
+      request = function(method, params, callback)
+        id = id + 1
         if method == "initialize" then callback(nil, { capabilities = capabilities })
-        elseif method == "shutdown" then callback(nil, vim.NIL) end
-        return true, 1
+        elseif method == "shutdown" then callback(nil, vim.NIL)
+        elseif answers[method] then
+          local result = answers[method](params)
+          vim.schedule(function() callback(nil, result) end) -- an answer comes later, as from a process
+        end
+        return true, id
       end,
       notify = function(method)
         if method == "exit" then
@@ -1336,6 +1432,139 @@ test("LSP: keys only for what the server can - gd is Vim's where none finds defi
   assert(ok, err)
 end)
 
+-- ── Ctrl+Click as in IntelliJ (config/navigate.lua, 2026-10-22) ──
+-- A Ctrl+Click at a line and (byte) column of a window, as the terminal sends it: nvim_input_mouse queues it with its
+-- place; a running test reads it back and types it - so the mapping runs, getmousepos() sees the click
+local function ctrl_click(win, lnum, col)
+  vim.cmd.redraw()
+  local at = vim.fn.screenpos(win, lnum, col)
+  assert(at.row > 0, ("line %d, column %d is not on the screen"):format(lnum, col))
+  vim.api.nvim_input_mouse("left", "press", "C", 0, at.row - 1, at.col - 1)
+  local key = vim.fn.getcharstr(0)
+  vim.api.nvim_input_mouse("left", "release", "C", 0, at.row - 1, at.col - 1)
+  vim.fn.getcharstr(0)
+  assert(key ~= "", "the click was not queued")
+  vim.api.nvim_feedkeys(key, "mx", false)
+end
+
+local function where() return vim.fs.basename(vim.api.nvim_buf_get_name(0)) .. ":" .. table.concat(vim.api.nvim_win_get_cursor(0), ":") end
+
+test("Ctrl+Click (IntelliJ): on a name to its declaration (<C-o> back); on the declaration its usages - just one: there", function()
+  local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local decl, use = dir .. "/decl.txt", dir .. "/use.txt"
+  vim.fn.writefile({ "", "def greet(): pass" }, decl)
+  vim.fn.writefile({ "x = greet()", "y = greet()" }, use)
+  local function loc(path, line, from, to)
+    return { uri = vim.uri_from_fname(path), range = { start = { line = line, character = from }, ["end"] = { line = line, character = to } } }
+  end
+  local usages, asked = { loc(use, 0, 4, 9), loc(use, 1, 4, 9) }, nil
+  local answers = {
+    ["textDocument/definition"] = function() return { loc(decl, 1, 4, 9) } end,
+    ["textDocument/references"] = function(params) asked = params.context; return usages end,
+  }
+  vim.cmd("silent! only")
+  -- every click on the same spot as the one before: a double click, then a triple one, as a quick second Ctrl+Click
+  -- is to Neovim - it did nothing at first (2026-10-22)
+  local mousetime = vim.o.mousetime
+  vim.o.mousetime = 60000
+  local bufs = {}
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(use))
+    bufs.use = vim.api.nvim_get_current_buf()
+    local client = vim.lsp.start({ name = "gk-fake-nav", cmd = fake_lsp({ definitionProvider = true, referencesProvider = true }, answers), root_dir = dir }, { bufnr = bufs.use })
+    assert(wait(5000, function() return #vim.lsp.get_clients({ bufnr = bufs.use, name = "gk-fake-nav" }) > 0 end), "the fake server did not attach")
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    ctrl_click(0, 2, 6) -- greet in y = greet()
+    assert(wait(5000, function() return where() == "decl.txt:2:4" end), "not at the declaration: " .. where())
+    bufs.decl = vim.api.nvim_get_current_buf()
+    vim.api.nvim_feedkeys(vim.keycode("<C-o>"), "x", false)
+    assert(where() == "use.txt:2:5", "<C-o> did not come back where the click was: " .. where())
+    -- on the declaration itself: its usages, without the declaration - two in the quickfix list
+    vim.cmd.buffer(bufs.decl)
+    vim.lsp.buf_attach_client(bufs.decl, client)
+    assert(wait(5000, function() return #vim.lsp.get_clients({ bufnr = bufs.decl, name = "gk-fake-nav" }) > 0 end), "not attached to decl.txt")
+    ctrl_click(0, 2, 6) -- greet in def greet()
+    assert(wait(5000, function() return #vim.fn.getqflist() == 2 end),
+      ("no list of the usages - at %s, references asked: %s, list: %s"):format(where(), vim.inspect(asked), vim.inspect(vim.fn.getqflist())))
+    assert(asked and asked.includeDeclaration == false, "the declaration asked for too: " .. vim.inspect(asked))
+    local lines = vim.tbl_map(function(q) return vim.fs.basename(vim.api.nvim_buf_get_name(q.bufnr)) .. ":" .. q.lnum end, vim.fn.getqflist())
+    assert(vim.deep_equal(lines, { "use.txt:1", "use.txt:2" }), "usages: " .. vim.inspect(lines))
+    vim.cmd("cclose")
+    vim.fn.setqflist({}, "r")
+    -- just one usage: IntelliJ goes there
+    usages = { loc(use, 1, 4, 9) }
+    vim.cmd.buffer(bufs.decl)
+    ctrl_click(0, 2, 6)
+    assert(wait(5000, function() return where() == "use.txt:2:4" end), "not at the only usage: " .. where())
+    assert(#vim.fn.getqflist() == 0, "a list for one usage")
+  end)
+  vim.o.mousetime = mousetime
+  vim.cmd("silent! cclose")
+  for _, buf in pairs(bufs) do stop_clients(buf) end
+  for _, buf in pairs(bufs) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
+test("Ctrl+Click without a language server: Vim's gd; after the end of a line only the cursor moves; in help the tag", function()
+  vim.cmd("silent! only")
+  vim.cmd.edit(vim.fn.fnameescape(H.file("plain.txt", { "alpha = 1", "", "beta = alpha + 1" })))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    ctrl_click(0, 3, 9) -- alpha in beta = alpha + 1
+    assert(where() == "plain.txt:1:0", "gd: " .. where())
+    ctrl_click(0, 3, 20) -- after the end of the line
+    assert(where() == "plain.txt:3:15", "after the end: " .. where())
+    vim.cmd("help help.txt")
+    local row = vim.fn.search([[|quickref|]], "w")
+    assert(row > 0, "no |quickref| in help.txt")
+    ctrl_click(0, row, vim.fn.col(".") + 4) -- amid quickref: help hides the bars, a column either way is on it
+    assert(wait(3000, function() return vim.fs.basename(vim.api.nvim_buf_get_name(0)) == "quickref.txt" end), "the tag: " .. where())
+  end)
+  pcall(vim.cmd, "helpclose")
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  assert(ok, err)
+end)
+
+test("Ctrl+Click with pyright: a call goes to the def; the def lists its calls", function()
+  if vim.fn.executable("pyright-langserver") == 0 then H.skip("pyright-langserver not installed (Mason installs it with the first Python file)") end
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p")
+  vim.fn.writefile({ "def greet(name):", '    return "hi " + name', "", "", 'print(greet("a"))', 'print(greet("b"))' }, root .. "/main.py")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  for _, c in ipairs(vim.lsp.get_clients()) do if c.name == "pyright" or c.name == "ruff" then c:stop(true) end end
+  wait(10000, function() return #vim.lsp.get_clients({ name = "pyright" }) + #vim.lsp.get_clients({ name = "ruff" }) == 0 end)
+  vim.cmd("silent! only")
+  local buf
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(root .. "/main.py"))
+    buf = vim.api.nvim_get_current_buf()
+    assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "pyright" }) > 0 end), "pyright did not start")
+    assert(wait(60000, function() -- attached is not ready: ready once it answers
+      local res = vim.lsp.buf_request_sync(buf, "textDocument/definition",
+        { textDocument = { uri = vim.uri_from_bufnr(buf) }, position = { line = 4, character = 7 } }, 5000)
+      for _, r in pairs(res or {}) do if type(r.result) == "table" and next(r.result) then return true end end
+    end), "pyright does not answer")
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    ctrl_click(0, 6, 8) -- greet in print(greet("b"))
+    assert(wait(10000, function() return where() == "main.py:1:4" end), "not at the def: " .. where())
+    ctrl_click(0, 1, 6) -- greet in def greet(name)
+    assert(wait(10000, function() return #vim.fn.getqflist() == 2 end), "no list of the calls: " .. vim.inspect(vim.fn.getqflist()))
+    local lnums = vim.tbl_map(function(q) return q.lnum end, vim.fn.getqflist())
+    table.sort(lnums)
+    assert(vim.deep_equal(lnums, { 5, 6 }), "the calls: " .. vim.inspect(lnums))
+  end)
+  vim.cmd("silent! cclose")
+  vim.fn.setqflist({}, "r")
+  if buf then stop_clients(buf) end
+  vim.cmd("silent! %bwipeout!")
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
 -- The config's own files: lua_ls knows Neovim's API and Snacks (lsp.lua: globals, the runtime as library)
 test("Lua: lua_ls knows vim and Snacks - no undefined global for them, one for a name that is defined nowhere", function()
   if vim.fn.executable("lua-language-server") == 0 then H.skip("lua-language-server not installed (Mason)") end
@@ -1354,6 +1583,31 @@ test("Lua: lua_ls knows vim and Snacks - no undefined global for them, one for a
   end)
   stop_clients(buf)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  assert(ok, err)
+end)
+
+-- 2026-10-22: saving a Lua file reformatted it in lua_ls' own style (stylua, the formatter for Lua, is not installed):
+-- one save of this config's keymaps.lua rewrote 74 hand-aligned lines. Now Lua is saved as written unless the project
+-- formats with stylua (a stylua.toml); <leader>fm still formats.
+test("Formatting: :w keeps a hand-aligned Lua file as written (no stylua.toml); <leader>fm formats it", function()
+  if vim.fn.executable("lua-language-server") == 0 then H.skip("lua-language-server not installed (Mason)") end
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p") -- a project: lua_ls attaches
+  local lines = { "local o = vim.opt", "o.tabstop     = 2", "o.shiftwidth  = 2", "local t = {a=1,b='two'}", "return t" }
+  vim.fn.writefile(lines, root .. "/conf.lua")
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/conf.lua"))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "lua_ls" }) > 0 end), "lua_ls did not attach")
+    vim.cmd("silent write")
+    assert(vim.deep_equal(vim.fn.readfile(root .. "/conf.lua"), lines), ":w reformatted it: " .. vim.inspect(vim.fn.readfile(root .. "/conf.lua")))
+    vim.api.nvim_feedkeys(vim.keycode("<leader>fm"), "x", false)
+    assert(wait(30000, function() return vim.api.nvim_buf_get_lines(buf, 3, 4, false)[1]:find("{ a = 1, b = 'two' }", 1, true) end),
+      "<leader>fm did not format: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+  end)
+  stop_clients(buf)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.fn.delete(root, "rf")
   assert(ok, err)
 end)
 
@@ -1487,9 +1741,11 @@ test("Debug: F5 with a VS Code launch.json (comments, trailing commas) - the pic
     dbg.start_or_continue() -- F5
     assert(wait(5000, function() return offered end), "no configurations offered")
     assert(vim.tbl_contains(offered, "App: with args") and vim.tbl_contains(offered, "App: plain"), "offered: " .. vim.inspect(offered))
+    -- the line as printed, wrapped or not: the console is narrow on a test run's 80 columns, and since dap-ui closes
+    -- only after the program's end (devsuite/debug.lua close_ui) nothing widens the terminal before (Kali, 2026-10-22)
     local function printed()
       for _, b in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.bo[b].buftype == "terminal" and H.text(b):find("ARGS=--name knight GK=dev", 1, true) then return true end
+        if vim.bo[b].buftype == "terminal" and H.text(b):gsub("%s+", ""):find("ARGS=--nameknightGK=dev", 1, true) then return true end
       end
     end
     assert(wait(30000, printed), "the program did not run with the configuration's args and env")
@@ -1860,7 +2116,8 @@ test("Qwen: <leader>am names the model the server runs, and says when none runs"
   local saved, saved_agent = vim.env.QWEN_BASE_URL, vim.env.GREYKNIGHT_AGENT
   vim.env.GREYKNIGHT_AGENT = "qwen"
   local ok, err = pcall(function()
-    assert(H.wait(5000, function()
+    -- python's http.server took over 5 s to answer on a busy Windows (IntelliJ indexing, 2026-10-22)
+    assert(H.wait(15000, function()
       return vim.system({ "curl", "-s", "--max-time", "1", base .. "/props" }):wait().code == 0
     end), "fake server did not start")
     vim.env.QWEN_BASE_URL = base .. "/v1"
@@ -1871,8 +2128,9 @@ test("Qwen: <leader>am names the model the server runs, and says when none runs"
     vim.env.QWEN_BASE_URL = "http://127.0.0.1:9/v1" -- nothing listens there
     got = nil
     qwen.model_info(function(msg) got = msg end)
-    -- Windows answers a closed port only after ~2 s of SYN retries (curl's limit is 3 s): 5 s were too tight
-    assert(H.wait(10000, function() return got end) and got:find("No model is running", 1, true), tostring(got))
+    -- Windows answers a closed port only after ~2 s of SYN retries (curl's limit is 3 s): 5 s were too tight, and on a
+    -- busy one (IntelliJ indexing) starting curl and reading its answer took over 10 s (2026-10-22)
+    assert(H.wait(20000, function() return got end) and got:find("No model is running", 1, true), tostring(got))
   end)
   vim.fn.jobstop(server)
   vim.env.QWEN_BASE_URL, vim.env.GREYKNIGHT_AGENT = saved, saved_agent
