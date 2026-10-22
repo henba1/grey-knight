@@ -686,7 +686,8 @@ Files open as **buffers** (like browser tabs). One visible at a time per window.
 **Recent buffers** (`<leader><Tab>`) lists the open files in the order you used them, this one first, and starts on
 the one before it: `<leader><Tab>`, `Enter` goes back there. `Tab` goes further back, `Shift+Tab` forward again,
 typing filters, `dd` (`Ctrl+x`) closes a buffer. `Ctrl+Tab` opens it too where the terminal passes Ctrl+Tab on
-(a GUI, WezTerm); Windows Terminal and kitty switch their own tabs with it.
+(a GUI, WezTerm); Windows Terminal and kitty switch their own tabs with it. After a restart (a restored session)
+the files you have not gone to yet keep the order you last used them in (Neovim's recent files).
 
 ---
 
@@ -1001,7 +1002,9 @@ and a line per session start) and, when Neovim exits, the Lua errors from `:mess
 callback's, an autocommand's with the Lua error and its traceback below the header. It is plain
 text, trimmed to the last 2000 lines when it grows past 512 KB, so it is also the file to read (or
 send) when something broke and you did not see why. Notices of what was done on purpose are shown but
-not logged - "Big file detected" (a big file opens without treesitter, language servers and folds).
+not logged - "Big file detected" (a big file opens without treesitter, language servers and folds), and
+"Client ... quit with exit code ..." while Neovim quits (it ends the language servers; on Windows each
+reports exit code 1). A server that ends while you work is logged.
 
 **Tests:** `tests/run.sh` runs the whole test suite headless (about ten seconds; the dev suite
 starts real python, bash and debugger processes) and exits with status 1 when anything fails. Run
