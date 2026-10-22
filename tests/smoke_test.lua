@@ -864,6 +864,27 @@ test("Error log: a big file's notice is shown, not logged - another warning stil
   assert(ok, err)
 end)
 
+-- 2026-10-22: Neovim stops the language servers when it quits without waiting for them; on Windows a server ended that
+-- way reports exit code 1, and "Client lua_ls quit with exit code 1 and signal 15" went into the log at most quits
+test("Error log: a language server ended because Neovim quits is not logged - one that ends while it runs is", function()
+  local el = require("config.errorlog")
+  local saved_path, saved_exiting, temp = el.path, el.exiting, vim.fn.tempname()
+  el.path = temp
+  local msg = "Client lua_ls quit with exit code 1 and signal 15. Check log for errors: lsp.log"
+  local function log() return vim.fn.filereadable(el.path) == 1 and table.concat(vim.fn.readfile(el.path), "\n") or "" end
+  local ok, err = pcall(function()
+    el.exiting = function() return true end -- Neovim quits
+    vim.notify(msg, vim.log.levels.WARN)
+    assert(not log():find("lua_ls quit", 1, true), "logged while Neovim quits: " .. log())
+    el.exiting = function() return false end -- a server that ends in the middle of the work
+    vim.notify(msg, vim.log.levels.WARN)
+    assert(log():find("lua_ls quit", 1, true), "a server that ended while Neovim runs was not logged: " .. log())
+  end)
+  el.path, el.exiting = saved_path, saved_exiting
+  vim.fn.delete(temp)
+  assert(ok, err)
+end)
+
 -- 2026-10-22: <C-space> grows the selection node by node; <BS> went to a node's first child instead of back -
 -- from foo(bar, baz) to foo, not to (bar, baz)
 test("Editing: <C-space> grows the selection node by node, <BS> takes it back the same way", function()
@@ -1318,6 +1339,35 @@ test("Recent buffers: Tab goes further back, Shift+Tab forward again; typing fil
     vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
     assert(H.wait(3000, function() return vim.api.nvim_get_current_buf() == bufs["b.txt"] end), "filtered, Enter: " .. at())
   end)
+end)
+
+-- 2026-10-22: after a restart (a session restored) the buffers were in the order of their numbers - IntelliJ keeps the
+-- recent files over one; Neovim's own are v:oldfiles, from the ShaDa file
+test("Recent buffers: after a restart, those not entered yet come in the order of Neovim's recent files; one entered first", function()
+  local root, bufs, saved = real_tmp(), {}, vim.v.oldfiles
+  local function order()
+    local names = {}
+    for _, b in ipairs(require("config.switcher").recent()) do
+      local name = vim.fs.basename(vim.api.nvim_buf_get_name(b))
+      if bufs[name] == b then names[#names + 1] = name end
+    end
+    return names
+  end
+  local ok, err = pcall(function()
+    for _, name in ipairs({ "a.txt", "b.txt", "c.txt" }) do -- as a session brings them back: listed, not entered
+      vim.fn.writefile({ name }, root .. "/" .. name)
+      bufs[name] = vim.fn.bufadd(root .. "/" .. name)
+      vim.bo[bufs[name]].buflisted = true
+    end
+    vim.v.oldfiles = { root .. "/b.txt", root .. "/elsewhere.txt", root .. "/c.txt", root .. "/a.txt" }
+    assert(vim.deep_equal(order(), { "b.txt", "c.txt", "a.txt" }), "after a restart: " .. table.concat(order(), ", "))
+    vim.cmd.buffer(bufs["a.txt"])
+    assert(vim.deep_equal(order(), { "a.txt", "b.txt", "c.txt" }), "one entered: " .. table.concat(order(), ", "))
+  end)
+  vim.v.oldfiles = saved
+  for _, b in pairs(bufs) do pcall(vim.api.nvim_buf_delete, b, { force = true }) end
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
 end)
 
 -- ── Script slots (config/slots.lua, 2026-10-22): !1 .. !9 run a script on the cursor's item and the marked ones ──
