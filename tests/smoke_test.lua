@@ -688,6 +688,166 @@ test("Explorer: / D S search files, folders by name, the current view, switch wi
   assert(ok, err)
 end)
 
+-- 2026-10-22: regex search in the explorer (config/explorer.lua): fd gets a Rust regex - or a glob, a text with a * and
+-- nothing only a regex has - against the name, or with a / the path below the tree's root; smart case
+test("Explorer: regex search - fd gets a regex or a glob, for the name or (with a /) the path below the tree's root", function()
+  local x = require("config.explorer")
+  local kinds = { ["*.sh"] = true, ["test_*.py"] = true, ["*.{sh,bash}"] = true, ["**/*.ts"] = true, [".*\\.sh$"] = false,
+    ["\\.sh$"] = false, ["colou?r"] = false, ["^a*b"] = false, ["(a|b)*"] = false, ["a+*"] = false }
+  for text, glob in pairs(kinds) do
+    assert(x.is_glob(text) == glob, ("%s should be %s"):format(text, glob and "a glob" or "a regex"))
+  end
+  local function args(text, root, win) return x.fd_args(text, root, { win = win }) end
+  local a, kind = args(".*\\.sh$", "/home/u/p", false)
+  assert(kind == "regex" and vim.tbl_contains(a, "--regex") and not vim.tbl_contains(a, "--full-path"), vim.inspect(a))
+  assert(a[#a - 1] == ".*\\.sh$" and a[#a] == "/home/u/p" and a[#a - 2] == "--", vim.inspect(a))
+  assert(vim.tbl_contains(a, "--ignore-case"), "smart case, no capital: the case does not count " .. vim.inspect(a))
+  assert(vim.tbl_contains(args(".*\\.SH$", "/home/u/p", false), "--case-sensitive"), "smart case: a capital")
+  a, kind = args("*.sh", "/home/u/p", false)
+  assert(kind == "glob" and vim.tbl_contains(a, "--glob") and a[#a - 1] == "*.sh", vim.inspect(a))
+  -- with a /: the path below the root (fd matches the absolute one) - ^ anchors at the root, else anywhere below it
+  a = args("^src/.*\\.ts$", "/home/u/my.proj", false)
+  assert(vim.tbl_contains(a, "--full-path") and a[#a - 1] == "^/home/u/my\\.proj/(?:src/.*\\.ts$)", a[#a - 1])
+  a = args("sub/.*\\.ts$", "/home/u/p", false)
+  assert(a[#a - 1] == "^/home/u/p/.*?(?:sub/.*\\.ts$)", a[#a - 1])
+  -- a glob with a /: below the root, as in .gitignore - as the regex it is (fd's globs take no \ of Windows' paths)
+  a, kind = args("src/*.ts", "/home/u/[x]", false)
+  assert(kind == "glob" and vim.tbl_contains(a, "--regex") and a[#a - 1] == "^/home/u/\\[x\\]/(?:src/[^/]*\\.ts$)", a[#a - 1])
+  for glob, regex in pairs({ ["**/test_*.py"] = "(?:.*/)?test_[^/]*\\.py", ["*.{sh,bash}"] = "[^/]*\\.(?:sh|bash)",
+    ["[!a]?.txt"] = "[^a][^/]\\.txt", ["a**b"] = "a.*b" }) do
+    assert(x.glob_to_regex(glob) == regex, ("%s: %s, not %s"):format(glob, x.glob_to_regex(glob), regex))
+  end
+  -- Windows: fd's full path has \ - a / matches both, in a [^/] class too; the root's case does not count
+  a = args("^src/[^/]*\\.ts$", "C:/dev/p", true)
+  assert(a[#a - 1] == "^(?i:C:[/\\\\]dev[/\\\\]p)[/\\\\](?:src[/\\\\][^/\\\\]*\\.ts$)", a[#a - 1])
+end)
+
+-- the regex tests' tree: scripts, Python, TypeScript - names in both cases, a folder named like a script
+local function regex_world(fn)
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp, "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  for _, rel in ipairs({ "a.sh", "X.SH", "b.py", "notes.sh.txt", "scripts/c.sh", "scripts/sub/d.bash", "src/x.ts",
+    "src/sub/y.ts", "shell/run.txt" }) do
+    vim.fn.mkdir(vim.fs.dirname(root .. "/" .. rel), "p")
+    vim.fn.writefile({ "x" }, root .. "/" .. rel)
+  end
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  close_explorers()
+  Snacks.explorer()
+  local ok, err = pcall(function()
+    -- the one shown here: an earlier test's, closed scheduled, may still be among explorers()
+    local function shown()
+      local p = Snacks.picker.get({ source = "explorer" })[1]
+      return p and not p.closed and p.list.win:valid() and p or nil
+    end
+    assert(H.wait(OPEN_MS, shown), "explorer did not open")
+    local p = shown()
+    assert(H.wait(OPEN_MS, function() return not p:is_active() and p.list:count() >= 6 end), "explorer did not list")
+    local w = { p = p, root = root }
+    function w.type(text) -- as typing does: the box's text, then its TextChanged (a test never waits for keys)
+      vim.api.nvim_buf_set_lines(p.input.win.buf, 0, -1, false, { text })
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = p.input.win.buf })
+    end
+    function w.hits() -- the matches below the root, folders with a /, sorted
+      local r = {}
+      for i = 1, p.list:count() do
+        local it = p.list:get(i)
+        if it.gk_hit then r[#r + 1] = it.file:sub(#root + 2) .. (it.dir and "/" or "") end
+      end
+      table.sort(r)
+      return table.concat(r, " ")
+    end
+    function w.expect(title, want)
+      assert(H.wait(5000, function() return not p:is_active() and p.title == title and w.hits() == want end),
+        ("%q (%s): %q, not %q (%s)"):format(p.input:get(), p.title, w.hits(), want, title))
+    end
+    function w.marked()
+      local r = {}
+      for _, it in ipairs(p.list.selected) do r[#r + 1] = it.file:sub(#root + 2) .. (it.dir and "/" or "") end
+      table.sort(r)
+      return table.concat(r, " ")
+    end
+    fn(w)
+  end)
+  require("config.explorer").regex = false -- the next tests search fuzzy, as a session starts
+  close_explorers()
+  vim.cmd("stopinsert")
+  vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end
+
+test("Explorer: R finds files by regex (a glob too, with a / the path below the root); Alt+r: fuzzy, the text stays", function()
+  regex_world(function(w)
+    local p = w.p
+    local function key(win, lhs, mode)
+      return vim.api.nvim_buf_call(win.buf, function() return vim.fn.maparg(lhs, mode, false, true) end).desc
+    end
+    assert(key(p.list.win, "R", "n") == "gk_search_regex" and key(p.list.win, "<C-A>", "n") == "gk_mark_matches", "list keys")
+    -- while typing (keys with a mode: the action's description)
+    local toggle, mark = tostring(key(p.input.win, "<M-r>", "i")), tostring(key(p.input.win, "<C-A>", "i"))
+    assert(toggle:find("Regex / fuzzy", 1, true) and mark:find("Mark the search", 1, true), ("box keys: %s / %s"):format(toggle, mark))
+    p:action("gk_search_regex") -- R
+    assert(H.wait(2000, function() return p.title == "Search files (regex)" end), "R: " .. p.title)
+    w.type(".*\\.sh$")
+    w.expect("Search files (regex)", "X.SH a.sh scripts/c.sh") -- the name; no capital: X.SH too (smart case)
+    w.type(".*\\.SH$")
+    w.expect("Search files (regex)", "X.SH")
+    w.type("*.sh")
+    w.expect("Search files (glob)", "X.SH a.sh scripts/c.sh")
+    w.type("^src/.*\\.ts$") -- a /: the path below the root, ^ at the root
+    w.expect("Search files (regex)", "src/sub/y.ts src/x.ts")
+    w.type("sub/.*\\.(ts|bash)$") -- anywhere below it
+    w.expect("Search files (regex)", "scripts/sub/d.bash src/sub/y.ts")
+    w.type("src/*.ts") -- a glob with a /: below the root, as in .gitignore
+    w.expect("Search files (glob)", "src/x.ts")
+    w.type("(foo") -- fd cannot read it: the title says why
+    w.expect("Search files (regex: unclosed group)", "")
+    -- D: folders by regex; Alt+r: fuzzy, the same text; again: regex
+    p:action("gk_search_folders")
+    w.type("^sh")
+    w.expect("Search folders (regex)", "shell/")
+    p:action("gk_regex_toggle")
+    assert(H.wait(3000, function() return p.title == "Search folders" end), "Alt+r: " .. p.title)
+    assert(p.input:get() == "^sh", "Alt+r: the text went - " .. p.input:get())
+    p:action("gk_regex_toggle")
+    w.expect("Search folders (regex)", "shell/")
+    -- it stays on: after the search, / searches by regex again
+    p:action("gk_search_back")
+    p:action("gk_search_leave")
+    assert(H.wait(3000, function() return p.input.filter:is_empty() and p.title == "Explorer" end), "not back in the tree: " .. p.title)
+    p:action("gk_search_files")
+    assert(H.wait(2000, function() return p.title == "Search files (regex)" end), "/ after a regex search: " .. p.title)
+    p:action("gk_regex_toggle")
+    assert(H.wait(2000, function() return p.title == "Search files" end), "Alt+r off: " .. p.title)
+  end)
+end)
+
+-- 2026-10-22: snacks' <c-a> (select_all) in a search marked the folders shown above the matches as well - a d after it
+-- deleted them whole. Now it marks the matches only: a file search's files, a folder search's folders.
+test("Explorer: Ctrl+a marks a search's matches - not the folders above them; again unmarks them", function()
+  regex_world(function(w)
+    local p = w.p
+    p:action("gk_search_regex")
+    w.type(".*\\.sh$")
+    w.expect("Search files (regex)", "X.SH a.sh scripts/c.sh")
+    p:action("gk_mark_matches")
+    assert(w.marked() == "X.SH a.sh scripts/c.sh", "marked: " .. w.marked()) -- not scripts/
+    p:action("gk_mark_matches")
+    assert(w.marked() == "", "again - still marked: " .. w.marked())
+    -- fuzzy: the matches snacks' matcher found, not the folders it shows above them
+    p:action("gk_regex_toggle")
+    w.type("x.ts")
+    assert(H.wait(5000, function()
+      for i = 1, p.list:count() do if p.list:get(i).file == w.root .. "/src/x.ts" then return not p:is_active() end end
+    end), "fuzzy: no src/x.ts")
+    p:action("gk_mark_matches")
+    assert(w.marked() == "src/x.ts", "fuzzy, marked: " .. w.marked()) -- not src/
+  end)
+end)
+
 -- 2026-10-21: the explorer closed right after a find (a refresh, a cd, typed text): snacks' cleanup put a new task in
 -- place of the finder's last one, which still ran once, and snacks then resumed the matcher, gone by then - "attempt
 -- to index field 'matcher' (a nil value)", a prompt that kept the test window from quitting (config/explorer.lua,
