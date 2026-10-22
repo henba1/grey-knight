@@ -322,6 +322,12 @@ Works automatically when you open a supported file. Mason installs the LSP serve
 The keys come with a server that can do what they ask: where none finds definitions (plain HTML, a Python file
 with only ruff running), `gd` stays Vim's - the first use of the word in the file - and `K` Vim's keyword lookup.
 
+The servers are set up with Neovim's own `vim.lsp.config` / `vim.lsp.enable`, over nvim-lspconfig's defaults for each
+(the older `require("lspconfig")` setup is deprecated and goes with nvim-lspconfig v3). A file outside any project
+gets its servers too; for lua_ls its folder is the workspace then - without one it marks nothing. A buffer without a
+file (a scratch buffer with a filetype) gets none.
+`:checkhealth vim.lsp` (`:LspInfo`) shows what runs where.
+
 **Ctrl+Click** does what it does in IntelliJ. On a name it goes to the declaration (`Ctrl+o` comes back, as after
 `gd`). On the declaration itself it shows the usages, without the declaration: in the quickfix list, or straight there
 when there is only one. Two servers naming the same place (angularls and ts_ls in a `.ts` file) make one jump, not a
@@ -703,6 +709,11 @@ project root) has its own list, stored in `~/.local/share/nvim/harpoon/`. Pins a
 written there at once, so they survive even when the session is killed; start Neovim in the
 project again and your pins are still there.
 
+**Slots follow their files.** Renamed or moved with the explorer (`r`, `m` - also with its folder) or in
+an oil buffer, a pinned file keeps its slot. A slot whose file is gone (deleted, moved outside Neovim)
+says so and opens nothing - it used to open an empty new file at the old path; `dd` in the menu
+(`<leader>hh`) unpins it.
+
 **Workflow:** start a task, pin the 2-4 files it touches (`<leader>ha` in each), then move between
 them with `<leader>1-4` instead of searching.
 
@@ -732,7 +743,7 @@ bookmarks find their lines again by their text when you open it. (A line too sho
 `}` - is not looked for.)
 
 **They stay with their files.** Renamed or moved with the explorer (`r`, `m` - a file not open, a whole folder
-too) or with `:file` / `:saveas`, a file keeps its bookmarks. The bookmarks of a deleted file stay in the list,
+too), in an oil buffer or with `:file` / `:saveas`, a file keeps its bookmarks. The bookmarks of a deleted file stay in the list,
 marked *file gone* - after checking out another branch it may come back: `Enter` on one only says so (it opened an
 empty new file), next / previous skip them, `dd` removes them.
 
@@ -896,7 +907,8 @@ Oil lets you edit your filesystem like a buffer.
 
 **Deleting files:** Delete the line and save.
 
-**Renaming:** Edit the filename and save.
+**Renaming:** Edit the filename and save. Moved or renamed this way - a file or a folder, open or not - a
+file keeps its bookmarks and its harpoon slot, as with the explorer's `r` and `m`.
 
 **Folders opened as files** (`nvim <folder>`, `:e <folder>`) open in the explorer, with that folder as the root -
 Oil opens only with `-` and `<leader>o`.

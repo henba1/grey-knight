@@ -150,7 +150,8 @@ explorer pane once focused.
 | `<leader>ha` | Harpoon pin file (tells you its slot) |
 | `<leader>hh` | Harpoon menu (edit the list: reorder / delete lines, `q` keeps the edits) |
 
-> Harpoon pins the 2-4 files of your current task to slots 1-4, per project, kept across sessions.
+> Harpoon pins the 2-4 files of your current task to slots 1-4, per project, kept across sessions. A slot follows
+> its file renamed or moved (explorer `r` / `m`, oil); one of a deleted file says so and opens nothing.
 
 ## Bookmarks — `<leader>m`
 
@@ -164,7 +165,7 @@ explorer pane once focused.
 > Lines to come back to, any number of them, per project (Neovim's directory), kept across sessions. A bookmark
 > moves with its line as you edit - moved, cut and put back (`dd`, `p`), reformatted too; delete the line and save,
 > it is gone. Changed outside Neovim (git pull), a file's bookmarks find their lines again by their text; renamed or
-> moved (explorer `r` / `m`, `:file`), they go along; a deleted file's stay listed as *file gone* (`dd` removes them).
+> moved (explorer `r` / `m`, oil, `:file`), they go along; a deleted file's stay listed as *file gone* (`dd` removes them).
 > IntelliJ's F11 is the debugger's step into here.
 
 ## Git — `<leader>g`
