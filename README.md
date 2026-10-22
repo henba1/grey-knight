@@ -25,7 +25,8 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 - **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications. Its file explorer moves
   and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts,
   keeps the cursor in place on delete and searches files (`/`), folders by name (`D`) or only what the tree
-  shows (`S`); input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
+  shows (`S`) - fuzzy or by regex (`R`: `.*\.sh$`, a glob too: `*.sh`), `Ctrl+A` marks the matches for `m` /
+  `c` / `d`; input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
 - **Script slots in the explorer** — `!1` … `!9` run your scripts (Python everywhere, bash on Linux, PowerShell
   on Windows) on the item under the cursor and the marked items; a script asks through Neovim's dialogs
   (Yes / No, a text, a choice) with one printed line ([USAGE.md](USAGE.md#script-slots))
@@ -148,7 +149,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── autocmds.lua        yank highlight, cursor restore, terminal mode on the way into a terminal
 │   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -), move / copy through the
 │   │                       tree (m, c), typed paths as typed (r, C, a), search files / folders /
-│   │                       the current view (/, D, S)
+│   │                       the current view (/, D, S), by regex or glob (R, Alt+r)
 │   ├── mdlinks.lua         markdown links: gd / Enter follow them (#heading, file, URL)
 │   ├── slots.lua           explorer script slots: !1 … !9 and !!, the context, the scripts' dialogs
 │   ├── bookmarks.lua       bookmarks: lines to come back to, per project, signs, the list (<leader>mm, <leader>ml)

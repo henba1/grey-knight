@@ -182,6 +182,7 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 | `gd` / `gr` / `K` | Definition / references / docs |
 | `Ctrl+Click` | Declaration; on it its usages (IntelliJ's) |
 | `<leader><Tab>` / `<C-o>` | Recent buffers (Ctrl+Tab) / back where you came from (Navigate Back) |
+| `<leader>e` then `R` | Files by regex or glob (Go to File's `*`): `.*Test\.java$`, `*.component.html`; with a `/` the path |
 | `<leader>mm` / `<leader>ml` | Bookmark this line / the bookmarks (IntelliJ's F11 is step into here; Shift+F11 lists) |
 | `<leader>ca` / `<leader>rn` | Code action / rename |
 | `<leader>rt` / `<leader>rT` | Run the test class / test at the cursor |

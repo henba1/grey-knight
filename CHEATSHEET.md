@@ -87,8 +87,11 @@ explorer pane once focused.
 | `/` | Search files (the text matches the path below the root) |
 | `D` | Search folders — by name, no files shown |
 | `S` | Search the current view — only the rows the tree shows (closed folders not looked into) |
+| `R` | Search files by regex — `.*\.sh$` (the name; with a `/` the path below the root), a glob too: `*.sh` |
+| `<M-r>` | While searching: file / folder search by regex ↔ fuzzy (the text stays; the choice too) |
+| `<C-a>` | In a search: mark its matches (not the folders above them) — then `m` / `c` / `d` on all |
 | `H`/`I` | Toggle hidden / ignored |
-| `<Tab>`/`<S-Tab>` | Mark / unmark, then next / prev (`V`…`<Tab>`: a range, `<C-a>`: all) |
+| `<Tab>`/`<S-Tab>` | Mark / unmark, then next / prev (`V`…`<Tab>`: a range, `<C-a>`: all; in a search its matches) |
 | `m` | Move the marked into the folder under the cursor (nothing marked: mark this one) |
 | `c` | Copy the marked into the folder under the cursor (nothing marked: mark this one) |
 | `r` | Rename / move to a typed path (absolute too: `/…`, `~/…`, `C:\…`) |
@@ -120,6 +123,10 @@ explorer pane once focused.
 > `<M-s>` (Alt+s) switches while typing (files → folders → current view). `<Esc>` steps back: box → list (results
 > stay) → the tree, the cursor where it was → closed. `Enter` on a match: the tree, the cursor on it (`Enter` again
 > opens it). `^x` / `x$`: names (paths for files) starting / ending with x.
+>
+> Regex (`R`, `<M-r>`): fd's Rust regex, as ripgrep's (`\d \w \b (a|b) {2,3} (?i)`) — against the name, with a `/`
+> against the path below the root (`^src/.*\.ts$`). `*` and no regex syntax: a glob (`*.sh`, `*.{sh,bash}`;
+> with `/` relative to the root). Lowercase ignores case. The title: `(regex)`, `(glob)`, `(regex: <error>)`.
 
 ## Find (Snacks Picker) — `<leader>f`
 
@@ -319,7 +326,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── keymaps.lua           ← global keymaps
 │   ├── autocmds.lua          ← autocommands
 │   ├── explorer.lua          ← explorer keys: cd here (.), cd .. (<BS>, -), m / c through the tree, typed paths,
-│   │                            search files / folders / the current view (/, D, S)
+│   │                            search files / folders / the current view (/, D, S), by regex or glob (R)
 │   ├── mdlinks.lua           ← markdown links: gd / Enter follow them
 │   ├── slots.lua             ← explorer script slots: !1 … !9, !!, the scripts' dialogs
 │   ├── bookmarks.lua         ← bookmarks: lines to come back to, per project (<leader>mm, <leader>ml)

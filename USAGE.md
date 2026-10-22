@@ -114,15 +114,27 @@ has focus.
 | `<leader>/` | Grep inside the tree |
 | `<C-t>` | Drop a terminal at the current dir |
 
-**Search** - three kinds; the search box's title says which one runs:
+**Search** - three kinds, fuzzy or by regex; the search box's title says which one runs:
 
 | Key | Action |
 |-----|--------|
 | `/` | Search files: every file and folder below the root, the text matches the path (`config/ex` finds `lua/config/explorer.lua`) |
 | `D` | Search folders: only folders, the text matches a folder's name - `java` finds `src/main/java` and `src/test/java`, not every package folder below them. No file is shown |
 | `S` | Search the current view: only the rows the tree shows when you start - the open folders' contents; closed folders are not looked into. The text matches the names |
+| `R` | Search files by regex: `.*\.sh$` finds every shell script below the root; a glob too (`*.sh`) - see below |
+| `<M-r>` (Alt+r) | While searching: the file / folder search by regex, or fuzzy again - the typed text stays, and so does the choice until you switch back |
+| `<C-a>` | In a search: mark its matches - the files of a file search, the folders of a folder search, not the folders shown above them (again: unmark). `m` / `c` / `d` then act on all of them |
 | `<M-s>` (Alt+s) | While typing: the next search (files → folders → current view), the typed text stays |
 | `<Esc>` | One step back: typing → the search box → the list (the results stay) → the tree, the cursor where it was before the search → the explorer closes |
+
+**By regex** (`R`, or `Alt+r` during a file or folder search) the text goes to `fd`: a Rust regex - as in
+ripgrep: `\d` `\w` `\b` `(a|b)` `{2,3}` `(?i)`, no lookaround or backreferences. It matches the **name**
+(`^test_.*\.py$`), or - when it has a `/` - the **path below the tree's root**: `^src/.*\.ts$` from the root,
+`sub/.*\.(ts|bash)$` anywhere below it (on Windows a `/` matches `\` too). A text with a `*` and nothing only a
+regex has (`\ ^ $ ( ) | +`, `.*`) is a **glob**: `*.sh`, `test_*.py`, `*.{sh,bash}`; with a `/` relative to the
+root as in `.gitignore` (`src/*.ts`, `**/test/*.py`). Lowercase text ignores case, a capital makes it count.
+The title says how the text was read - `Search files (regex)`, `(glob)` - and what is wrong with a regex `fd`
+cannot read: `(regex: unclosed group)`.
 
 `/`, `D` and `S` work in the list and in the search box once you stop typing (`<Esc>`). During a search they switch
 to that search and keep the text: search everything with `/`, then `<Esc>` `D` for only the folders. Matches show
@@ -134,7 +146,7 @@ again opens a file; the next `/` is a file search again. Lowercase text ignores 
 
 | Key | Action |
 |-----|--------|
-| `<Tab>` / `<S-Tab>` | Mark / unmark the item, then go to the next / previous one; `V` … `<Tab>` marks a range, `<C-a>` all |
+| `<Tab>` / `<S-Tab>` | Mark / unmark the item, then go to the next / previous one; `V` … `<Tab>` marks a range, `<C-a>` all (in a search: its matches) |
 | `m` | Move the marked items into the folder under the cursor (asks first). Nothing marked: marks the item under the cursor |
 | `c` | Copy the marked items into the folder under the cursor. Nothing marked: marks the item under the cursor |
 | `r` | Rename, or move to a typed path: relative from the working directory (as shown), absolute as typed (`/home/…`, `~/…`, `C:\…`, `\\server\share\…`) |
