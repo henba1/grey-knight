@@ -324,7 +324,8 @@ with only ruff running), `gd` stays Vim's - the first use of the word in the fil
 
 **Ctrl+Click** does what it does in IntelliJ. On a name it goes to the declaration (`Ctrl+o` comes back, as after
 `gd`). On the declaration itself it shows the usages, without the declaration: in the quickfix list, or straight there
-when there is only one. Where no server finds definitions it is `gd`, in a help file it follows the link. A click
+when there is only one. Two servers naming the same place (angularls and ts_ls in a `.ts` file) make one jump, not a
+list. Where no server finds definitions it is `gd`, in a help file it follows the link. A click
 after the end of a line, on a space or a sign only moves the cursor. The terminal must pass Ctrl+Click on to Neovim -
 Windows Terminal, kitty, GNOME Terminal and Konsole do (they open links on it only where they see a URL).
 
@@ -723,9 +724,17 @@ as you like, and they can have a name.
 `Ctrl+o` comes back from a bookmark you went to. IntelliJ's `F11` is the debugger's step into here (`F5` and its
 neighbours are the debug keys); `Shift+F11` and `Ctrl+F11` are as in IntelliJ.
 
-**They stay with their lines.** A bookmark moves with its line while you edit above it; delete the line and save,
-and the bookmark goes with it (`u` before saving brings both back). Changed outside Neovim - a `git pull`, another
-editor - a file's bookmarks find their lines again by their text when you open it.
+**They stay with their lines.** A bookmark moves with its line while you edit above it, and with the line when you
+move it (`:m`, visual `J` / `K`). A line cut and put back elsewhere (`dd`, `p`) or replaced as a whole (a formatter,
+`:%!`) keeps its bookmark too: it follows the line's text, spaces aside. Delete the line and save, and the bookmark
+goes with it (`u` before saving brings both back). Changed outside Neovim - a `git pull`, another editor - a file's
+bookmarks find their lines again by their text when you open it. (A line too short to know it by - an `end`, a
+`}` - is not looked for.)
+
+**They stay with their files.** Renamed or moved with the explorer (`r`, `m` - a file not open, a whole folder
+too) or with `:file` / `:saveas`, a file keeps its bookmarks. The bookmarks of a deleted file stay in the list,
+marked *file gone* - after checking out another branch it may come back: `Enter` on one only says so (it opened an
+empty new file), next / previous skip them, `dd` removes them.
 
 **One set per project, kept across sessions.** Every working directory (`:pwd`) has its own, kept in
 `~/.local/share/nvim/bookmarks.json` (Windows: `%LOCALAPPDATA%\nvim-data\bookmarks.json`) and written at once, so
