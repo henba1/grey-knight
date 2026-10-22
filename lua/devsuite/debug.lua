@@ -200,6 +200,26 @@ function M.fresh_console(get_buf, config)
   return buf, win
 end
 
+--- dap-ui closes when a session ends - while the program's terminal (the console) still runs, once the program has
+--- exited. dap-ui closed its windows the moment the session ended, the console's with them, and the program's end came
+--- right after (the terminal's job): on Windows that took Neovim down now and then (0.12.6, an access violation; the
+--- DAP console test, 2026-10-22, twice in about ten runs of the suite - the windows went first every time).
+function M.close_ui(session)
+  local dapui = require("dapui")
+  local buf = session and session.term_buf
+  local job = buf and vim.api.nvim_buf_is_valid(buf) and vim.b[buf].terminal_job_id
+  if not (job and vim.fn.jobwait({ job }, 0)[1] == -1) then return dapui.close() end
+  vim.api.nvim_create_autocmd("TermClose", {
+    buffer = buf,
+    once = true,
+    callback = function()
+      vim.schedule(function() -- after the terminal has taken the end; not the UI of a session started since
+        if not require("dap").session() then pcall(dapui.close) end
+      end)
+    end,
+  })
+end
+
 --- Wraps dap-ui's terminal_win_cmd in fresh_console (plugins/hacker.lua, right after dapui.setup()).
 function M.wrap_console(get_buf)
   if type(get_buf) ~= "function" then return get_buf end

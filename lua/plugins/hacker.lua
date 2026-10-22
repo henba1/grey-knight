@@ -27,9 +27,11 @@ local plugins = {
       dapui.setup()
       -- the program terminal in dap-ui's console, but never in one that still runs an earlier program
       dap.defaults.fallback.terminal_win_cmd = require("devsuite.debug").wrap_console(dap.defaults.fallback.terminal_win_cmd)
+      -- closed when the session ends - its console once the program in it has exited (devsuite/debug.lua)
+      local function close(session) require("devsuite.debug").close_ui(session) end
       dap.listeners.after.event_initialized["dapui_config"] = function() dapui.open()  end
-      dap.listeners.before.event_terminated["dapui_config"]  = function() dapui.close() end
-      dap.listeners.before.event_exited["dapui_config"]      = function() dapui.close() end
+      dap.listeners.before.event_terminated["dapui_config"]  = close
+      dap.listeners.before.event_exited["dapui_config"]      = close
     end,
   },
   { "nvim-neotest/nvim-nio" },
