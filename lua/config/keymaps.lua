@@ -186,6 +186,15 @@ map("n", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask a
 map("v", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about selection" })
 map("v", "<leader>ae", function() agent().edit() end,        { desc = "AI: Edit selection" })
 map("n", "<leader>ad", function() require("integrations.agent_changes").pick() end, { desc = "AI: What changed since the agent started (diff, take back)" })
+-- Speech to text on this machine (lua/integrations/voice.lua): press to start, again to stop
+local function voice() return require("integrations.voice") end
+map("n", "<leader>av", function() voice().toggle("agent") end,  { desc = "AI: Speak a prompt to the agent (again: stop)" })
+map("n", "<leader>aV", function() voice().toggle("cursor") end, { desc = "AI: Dictate at the cursor (again: stop)" })
+vim.api.nvim_create_user_command("VoiceInstall", function(o) voice().install(o.args) end, {
+  nargs = "?", complete = function() return { "small", "base", "turbo" } end,
+  desc = "Speech to text: download whisper.cpp and a model (small - the default, base, turbo)",
+})
+vim.api.nvim_create_user_command("VoiceCancel", function() voice().cancel() end, { desc = "Speech to text: drop the recording" })
 
 -- ── Debug: Python (debugpy) + bash (bashdb) - lua/devsuite/debug.lua ─
 -- F5 debugs the current file (or continues; with .vscode/launch.json it offers those configs).
