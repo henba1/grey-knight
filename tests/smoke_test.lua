@@ -1085,6 +1085,70 @@ test("Bookmarks: renamed or moved, a file keeps its bookmarks - the explorer's r
   end)
 end)
 
+-- 2026-10-22: harpoon's slots kept the old path of a renamed or moved file - the slot made an empty new file there;
+-- renamed in an oil buffer, also the bookmarks of a file not open stayed behind
+test("Harpoon and bookmarks follow a file - the explorer's r, m of its folder, a rename in oil; a deleted one's slot opens nothing", function()
+  explorer_world(function(ex, w)
+    local harpoon, bm, p, R = require("harpoon"), require("config.bookmarks"), w.picker, w.root
+    local list = harpoon:list()
+    local function clear() for i = list:length(), 1, -1 do list:remove_at(i) end end
+    -- the files the slots name, below the root: harpoon writes a path relative to the working directory, on Windows
+    -- an absolute one (plenary cannot take C:\... off C:/...) - the moved ones as harpoon would
+    local function slots()
+      return vim.tbl_map(function(it) return vim.fs.normalize(vim.fn.fnamemodify(it.value, ":p")):sub(#R + 2) end, list.items)
+    end
+    local function marks() return vim.tbl_map(function(b) return b.file:sub(#R + 2) .. ":" .. b.line end, bm.list()) end
+    local saved = bm.file
+    bm.file = w.far .. "/bookmarks.json"
+    bm.reload()
+    clear()
+    local ok, err = pcall(function()
+      vim.fn.writefile({ "one", "two" }, R .. "/pinned.txt")
+      vim.fn.writefile({ "x" }, R .. "/sub/deep.txt")
+      vim.cmd.edit(vim.fn.fnameescape(R .. "/pinned.txt"))
+      list:add()
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      bm.toggle()
+      vim.cmd("bwipeout")
+      vim.cmd.edit(vim.fn.fnameescape(R .. "/sub/deep.txt"))
+      list:add()
+      vim.cmd("bwipeout")
+      w.answer = "renamed.txt"
+      ex.rename(p, w.at(R .. "/pinned.txt")) -- r: neither file open
+      ex.move(p, w.at(R .. "/sub")) -- m of the folder, m on the target
+      ex.move(p, w.at(R .. "/other"))
+      assert(vim.deep_equal(slots(), { "renamed.txt", "other/sub/deep.txt" }), "the slots: " .. vim.inspect(slots()))
+      assert(vim.deep_equal(marks(), { "renamed.txt:2" }), "the bookmark: " .. vim.inspect(marks()))
+      list:select(2)
+      assert(vim.fs.normalize(vim.api.nvim_buf_get_name(0)) == R .. "/other/sub/deep.txt", "slot 2 opened " .. vim.api.nvim_buf_get_name(0))
+      vim.cmd("bwipeout")
+      require("oil").open(R) -- renamed by editing the folder's listing, saved
+      assert(H.wait(5000, function() return vim.bo.filetype == "oil" and vim.bo.modifiable and H.text(0):find("renamed.txt", 1, true) end),
+        "oil did not list the folder: " .. H.text(0))
+      for i, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+        if line:find("renamed.txt", 1, true) then vim.api.nvim_buf_set_lines(0, i - 1, i, false, { (line:gsub("renamed%.txt", "oiled.txt")) }) end
+      end
+      local done = false
+      require("oil").save({ confirm = false }, function() done = true end)
+      assert(H.wait(5000, function() return done end), "oil did not save")
+      assert(exists(R .. "/oiled.txt") and not exists(R .. "/renamed.txt"), "oil did not rename it: " .. vim.inspect(vim.fn.readdir(R)))
+      assert(slots()[1] == "oiled.txt", "the slot after oil: " .. vim.inspect(slots()))
+      assert(vim.deep_equal(marks(), { "oiled.txt:2" }), "the bookmark after oil: " .. vim.inspect(marks()))
+      vim.cmd("bwipeout!")
+      vim.fn.delete(R .. "/oiled.txt") -- gone: the slot says so and opens nothing
+      list:select(1)
+      assert(table.concat(w.notes, " | "):find("gone", 1, true), "no word of it: " .. table.concat(w.notes, " | "))
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        assert(vim.fs.basename(vim.api.nvim_buf_get_name(b)) ~= "oiled.txt", "an empty oiled.txt was opened")
+      end
+    end)
+    clear()
+    bm.file = saved
+    bm.reload()
+    assert(ok, err)
+  end)
+end)
+
 test("Bookmarks: one of a deleted file stays, listed as gone - Enter opens nothing, next skips it, <C-x> removes it", function()
   with_bookmarks({ ["a.txt"] = { "1", "2", "3" }, ["b.txt"] = { "1", "2", "3" } }, function(root, bm)
     vim.cmd.edit(vim.fn.fnameescape(root .. "/a.txt"))

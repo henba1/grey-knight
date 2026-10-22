@@ -1430,8 +1430,19 @@ test("LSP: keys only for what the server can - gd is Vim's where none finds defi
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     local jump = vim.fn.maparg("]d", "n", false, true)
     assert(jump.callback ~= vim.diagnostic.goto_next, "]d is the deprecated vim.diagnostic.goto_next")
-    vim.api.nvim_feedkeys("]d", "x", false)
-    assert(vim.api.nvim_win_get_cursor(0)[1] == 2, "]d: line " .. vim.api.nvim_win_get_cursor(0)[1])
+    -- nothing deprecated: Neovim 0.12 tells a soft deprecation nowhere but in :checkhealth (float = true was one)
+    local deprecate, deprecated = vim.deprecate, {}
+    vim.deprecate = function(name, ...) deprecated[#deprecated + 1] = name; return deprecate(name, ...) end
+    local fed = pcall(vim.api.nvim_feedkeys, "]d", "x", false)
+    vim.deprecate = deprecate
+    assert(fed and vim.api.nvim_win_get_cursor(0)[1] == 2, "]d: line " .. vim.api.nvim_win_get_cursor(0)[1])
+    assert(#deprecated == 0, "]d used what is deprecated: " .. table.concat(deprecated, ", "))
+    local function shown() -- the message in a float, as before (on_jump runs scheduled, as Neovim's own float did)
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.api.nvim_win_get_config(win).relative ~= "" and H.text(vim.api.nvim_win_get_buf(win)):find("here", 1, true) then return true end
+      end
+    end
+    assert(wait(3000, shown), "]d: no float with the message")
     vim.diagnostic.reset(ns, buf)
     for _, note in ipairs(notes) do assert(not note:find("deprecated", 1, true) and not note:find("not supported", 1, true), note) end
   end)
@@ -1602,6 +1613,144 @@ test("Ctrl+Click with pyright: a call goes to the def; the def lists its calls",
   if buf then stop_clients(buf) end
   vim.cmd("silent! %bwipeout!")
   vim.fn.chdir(before)
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-22: each language server the config sets up starts on a file of its kind and marks its error, where it is
+-- installed - only pyright, lua_ls and ruff had tests that saw them run, a server's setup could break unnoticed
+-- (bashls' test passes with its fallback too). The file outside any project: with Neovim's own vim.lsp.config there
+-- lua_ls had no workspace and marked nothing (the old setup gave it the file's folder). Only installed servers: a
+-- missing html or css server is installed with the first such file.
+test("LSP: each server the config sets up starts on a file of its kind outside any project and marks its error", function()
+  local lang = vim.g.lang or {}
+  local shellcheck = vim.fn.executable("shellcheck") == 1 -- bashls' marks are shellcheck's
+  local cases = {
+    { lang = "python", server = "pyright", exe = "pyright-langserver", file = "a.py", lines = { "print(undefined_name)" }, marks = true },
+    { lang = "python", server = "ruff", exe = "ruff", file = "b.py", lines = { "import os" }, marks = true },
+    { lang = "lua", server = "lua_ls", exe = "lua-language-server", file = "c.lua", lines = { "print(not_defined_anywhere)" }, marks = true },
+    { lang = "bash", server = "bashls", exe = "bash-language-server", file = "d.sh", lines = { "#!/bin/bash", "echo $1" }, marks = shellcheck },
+    { lang = "c", server = "clangd", exe = "clangd", file = "e.c", lines = { "int main(void) { return undeclared_x; }" }, marks = true },
+    { lang = "typescript", server = "ts_ls", exe = "typescript-language-server", file = "f.ts", lines = { 'const x: number = "a";' }, marks = true },
+    { lang = "angular", server = "html", exe = "vscode-html-language-server", file = "g.html", lines = { "<p>hi</p>" } },
+    { lang = "angular", server = "cssls", exe = "vscode-css-language-server", file = "h.css", lines = { "p { color: red; }" } },
+  }
+  local checked, failed, skipped = {}, {}, {}
+  for _, c in ipairs(cases) do
+    if not lang[c.lang] then
+      skipped[#skipped + 1] = c.server .. " (off)"
+    elseif vim.fn.executable(c.exe) == 0 then
+      skipped[#skipped + 1] = c.server .. " (not installed)"
+    else
+      local dir = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir()))) -- no .git, no marker of any server above it
+      vim.fn.writefile(c.lines, dir .. "/" .. c.file)
+      vim.cmd.edit(vim.fn.fnameescape(dir .. "/" .. c.file))
+      local buf = vim.api.nvim_get_current_buf()
+      local function client() return vim.lsp.get_clients({ bufnr = buf, name = c.server })[1] end
+      local function marks() -- this server's own: pushed (nvim.lsp.<name>.<id>) or pulled (.<id>.<the pull's identifier>)
+        local cl = client()
+        if not cl then return 0 end
+        local prefix, n = ("nvim.lsp.%s.%d"):format(cl.name, cl.id), 0
+        for ns, info in pairs(vim.diagnostic.get_namespaces()) do
+          if info.name == prefix or vim.startswith(info.name, prefix .. ".") then n = n + #vim.diagnostic.get(buf, { namespace = ns }) end
+        end
+        return n
+      end
+      checked[#checked + 1] = c.server
+      if not wait(60000, client) then
+        local others = vim.tbl_map(function(cl) return cl.name end, vim.lsp.get_clients({ bufnr = buf }))
+        failed[#failed + 1] = ("%s did not start on %s (there: %s)"):format(c.server, c.file, #others > 0 and table.concat(others, ", ") or "none")
+      elseif c.marks and not wait(60000, function() return marks() > 0 end) then
+        failed[#failed + 1] = ("%s marked nothing in %s (workspace folders: %s)"):format(c.server, c.file, vim.inspect(client().workspace_folders))
+      end
+      stop_clients(buf)
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      vim.fn.delete(dir, "rf")
+    end
+  end
+  assert(#failed == 0, table.concat(failed, "; ") .. " - checked " .. table.concat(checked, ", "))
+  if #checked == 0 then H.skip("no language server installed - " .. table.concat(skipped, ", ")) end
+end)
+
+-- 2026-10-22: vim.lsp.enable() starts servers for every buffer of their filetype, scratch buffers (:enew, a filetype
+-- set) too - nvim-lspconfig's old setup only for files. And files outside any project share one client: after the
+-- interpreter test's scratch buffers bashls marked no bash file any more (devsuite/util.lua lsp_root).
+test("LSP: no server for a buffer without a file (a scratch buffer with a filetype); a bash file outside a project is marked after it", function()
+  local cases = {
+    { ft = "sh", exe = "bash-language-server" },
+    { ft = "python", exe = "pyright-langserver" },
+    { ft = "lua", exe = "lua-language-server" },
+  }
+  local scratches, attached = {}, {}
+  for _, c in ipairs(cases) do
+    if vim.fn.executable(c.exe) == 1 then scratches[#scratches + 1] = H.scratch(c.ft, { "x = 1" }) end
+  end
+  if #scratches == 0 then H.skip("none of bashls, pyright, lua_ls installed") end
+  vim.wait(3000) -- a server starts for a file in under a second
+  for _, buf in ipairs(scratches) do
+    for _, cl in ipairs(vim.lsp.get_clients({ bufnr = buf })) do attached[#attached + 1] = cl.name .. " on a scratch " .. vim.bo[buf].filetype end
+  end
+  local ok, err = pcall(function()
+    assert(#attached == 0, "servers on buffers without a file: " .. table.concat(attached, ", "))
+    if vim.fn.executable("bash-language-server") == 0 or vim.fn.executable("shellcheck") == 0 then return end
+    vim.cmd.edit(vim.fn.fnameescape(H.file("after.sh", { "#!/bin/bash", "echo $1" })))
+    local buf = vim.api.nvim_get_current_buf()
+    local function marks()
+      local cl = vim.lsp.get_clients({ bufnr = buf, name = "bashls" })[1]
+      if not cl then return 0 end
+      local prefix, n = ("nvim.lsp.%s.%d"):format(cl.name, cl.id), 0
+      for ns, info in pairs(vim.diagnostic.get_namespaces()) do
+        if info.name == prefix or vim.startswith(info.name, prefix .. ".") then n = n + #vim.diagnostic.get(buf, { namespace = ns }) end
+      end
+      return n
+    end
+    assert(wait(30000, function() return marks() > 0 end), "bashls marked nothing in a bash file after the scratch buffers")
+    stop_clients(buf)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end)
+  for _, buf in ipairs(scratches) do
+    stop_clients(buf)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end
+  assert(ok, err)
+end)
+
+-- 2026-10-22: require("lspconfig")[server].setup() is deprecated and goes with nvim-lspconfig v3 - config/lazy.lua
+-- kept its warning quiet, a plugin update would have left every server off. Now Neovim's own vim.lsp.config and
+-- vim.lsp.enable; pyright's interpreter (the project's virtualenv) comes from before_init, not on_new_config.
+test("LSP: servers set up by Neovim's own vim.lsp.config, none through the deprecated lspconfig framework; pyright gets the .venv", function()
+  require("lazy").load({ plugins = { "nvim-lspconfig" } })
+  local lang, servers = vim.g.lang or {}, {}
+  if lang.python then vim.list_extend(servers, { "pyright", "ruff" }) end
+  if lang.lua then servers[#servers + 1] = "lua_ls" end
+  if lang.bash then servers[#servers + 1] = "bashls" end
+  if lang.c then servers[#servers + 1] = "clangd" end
+  if lang.typescript then servers[#servers + 1] = "ts_ls" end
+  if lang.angular then -- the web servers set up at start: the installed ones (integrations/web.lua)
+    for name, s in pairs(require("integrations.web").SERVERS) do
+      if vim.fn.executable(s.cmd) == 1 then servers[#servers + 1] = name end
+    end
+  end
+  local framework = package.loaded["lspconfig.configs"]
+  for _, name in ipairs(servers) do
+    assert(vim.lsp.is_enabled(name), name .. " is not enabled with vim.lsp.enable")
+    assert(not (framework and rawget(framework, name)), name .. " went through require('lspconfig')")
+  end
+  if not lang.python or vim.fn.executable("pyright-langserver") == 0 then return end
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p")
+  local python = fake_venv(root .. "/.venv")
+  vim.fn.writefile({ "import os" }, root .. "/main.py")
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/main.py"))
+  local buf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    assert(wait(60000, function() return #vim.lsp.get_clients({ bufnr = buf, name = "pyright" }) > 0 end), "pyright did not attach")
+    local client = vim.lsp.get_clients({ bufnr = buf, name = "pyright" })[1]
+    local path = vim.tbl_get(client.settings or {}, "python", "pythonPath")
+    assert(path and vim.fs.normalize(path) == vim.fs.normalize(python), "pyright's python: " .. tostring(path) .. ", not " .. python)
+  end)
+  stop_clients(buf)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
   vim.fn.delete(root, "rf")
   assert(ok, err)
 end)
@@ -2025,7 +2174,9 @@ test("Bash: shellcheck findings appear once, on the right line (bashls or fallba
   vim.cmd.edit(H.file("check.sh", { "#!/bin/bash", "echo $1" }))
   assert(wait(20000, function()
     return #vim.lsp.get_clients({ bufnr = 0, name = "bashls" }) > 0 and #vim.diagnostic.get(0) > 0
-  end), "no bash diagnostics")
+  end), "no bash diagnostics - bashls: " .. vim.inspect(vim.tbl_map(function(c)
+    return { id = c.id, root = c.root_dir, buffers = vim.tbl_keys(c.attached_buffers), stopped = c:is_stopped(), initialized = c.initialized }
+  end, vim.lsp.get_clients({ name = "bashls" }))):gsub("%s+", " ") .. ", this buffer " .. vim.api.nvim_get_current_buf())
   vim.wait(1500)
   local d = vim.diagnostic.get(0)
   assert(#d == 1 and d[1].lnum == 1 and tostring(d[1].code):find("2086", 1, true), vim.inspect(d))
