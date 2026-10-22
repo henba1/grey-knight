@@ -298,6 +298,159 @@ function M.copy_to(picker, item)
   end)
 end
 
+-- ── Rename by regex (%, 2026-10-22) ──
+
+--- s/regex/replacement/flags - any delimiter after the s, as sed's (s#a/b#c#), a \ before it: the delimiter itself;
+--- the last one may be left out. { regex, replacement, global (g: every match), ignore_case (i) } or nil and why.
+function M.parse_substitution(text)
+  text = vim.trim(text or "")
+  local d = text:match("^s([^%w%s\\])")
+  if not d then return nil, "not s/regex/replacement/" end
+  local parts, cur, i = {}, {}, 3
+  while i <= #text do
+    local c = text:sub(i, i)
+    if c == "\\" and i < #text then
+      local n = text:sub(i + 1, i + 1)
+      cur[#cur + 1] = n == d and n or (c .. n)
+      i = i + 2
+    elseif c == d and #parts < 2 then
+      parts[#parts + 1], cur, i = table.concat(cur), {}, i + 1
+    else
+      cur[#cur + 1], i = c, i + 1
+    end
+  end
+  local regex, replacement, flags
+  if #parts == 2 then
+    regex, replacement, flags = parts[1], parts[2], table.concat(cur)
+  elseif #parts == 1 then
+    regex, replacement, flags = parts[1], table.concat(cur), ""
+  else
+    return nil, "not s/regex/replacement/"
+  end
+  if regex == "" then return nil, "the regex is empty" end
+  if flags:find("[^gi]") then return nil, "flags: g (every match), i (case ignored)" end
+  return { regex = regex, replacement = replacement, global = flags:find("g") ~= nil, ignore_case = flags:find("i") ~= nil }
+end
+
+-- $n and ${n} of a replacement for groups `by` further on; $$ and names stay
+local function shift_groups(replacement, by)
+  local out, i = {}, 1
+  while i <= #replacement do
+    local c, n = replacement:sub(i, i), replacement:sub(i + 1, i + 1)
+    if c == "$" and n == "$" then
+      out[#out + 1], i = "$$", i + 2
+    elseif c == "$" and n == "{" and replacement:find("}", i + 2, true) then
+      local close = replacement:find("}", i + 2, true)
+      local ref = replacement:sub(i + 2, close - 1)
+      out[#out + 1] = ref:match("^%d+$") and ("${" .. (tonumber(ref) + by) .. "}") or replacement:sub(i, close)
+      i = close + 1
+    elseif c == "$" and n:match("%d") then
+      local digits = replacement:match("^%d+", i + 1)
+      out[#out + 1], i = "${" .. (tonumber(digits) + by) .. "}", i + 1 + #digits
+    else
+      out[#out + 1], i = c, i + 1
+    end
+  end
+  return table.concat(out)
+end
+
+--- The names after a substitution (M.parse_substitution) - rg does it, the same Rust regex as the search: $1 /
+--- ${name} / $0 in the replacement. As sed: the first match of a name, every one with g. nil and why for a regex
+--- rg cannot read.
+function M.substitute(names, sub)
+  local rg = vim.fn.exepath("rg")
+  if rg == "" then return nil, "ripgrep (rg) is needed" end
+  local regex, replacement = sub.regex, sub.replacement
+  if not sub.global then -- the first match only: rg replaces every one - so the match from the start, the text before it kept
+    regex, replacement = "^(.*?)(" .. regex .. ")", "${1}" .. shift_groups(replacement, 2)
+  end
+  local r = vim.system({ rg, "--no-config", "--passthru", "--no-line-number", "--no-filename", "--color", "never",
+    sub.ignore_case and "--ignore-case" or "--case-sensitive", "--replace=" .. replacement, "--regexp=" .. regex, "-" },
+    { stdin = table.concat(names, "\n") .. "\n", text = true }):wait(10000)
+  if r.code == 2 then
+    local last = vim.trim((r.stderr or ""):match("([^\n]*)%s*$") or "")
+    local msg = last:gsub("^error:%s*", "")
+    return nil, msg ~= "" and msg or "not a regex"
+  end
+  local out = vim.split((r.stdout or ""):gsub("\r", ""), "\n", { plain = true })
+  if out[#out] == "" then table.remove(out) end
+  if #out ~= #names then return nil, ("rg gave %d names for %d"):format(#out, #names) end
+  return out
+end
+
+--- %: rename the marked items (else the one under the cursor) by regex - s/regex/replacement/ on their names: the
+--- first match, g every one, i case ignored; $1 / ${name} in the replacement. The new names are listed, then yes /
+--- no. One that would leave its folder, be another's too or land on something that exists stays as it is. Open
+--- buffers, language servers, bookmarks and harpoon slots follow, as with r. The last one comes back as the default.
+function M.rename_regex(picker, item)
+  local items = picker:selected()
+  if #items == 0 then items = { item } end
+  local froms = {}
+  for _, it in ipairs(items) do
+    local from = path_of(it)
+    if from and not eq(from, picker:cwd()) then froms[#froms + 1] = from end
+  end
+  if #froms == 0 then return warn("Nothing to rename - mark items (<Tab>, Ctrl+a in a search)") end
+  local what_ = #froms == 1 and vim.fs.basename(froms[1]) or (#froms .. " items")
+  Snacks.input({ prompt = "Rename " .. what_ .. " by regex: s/regex/replacement/ (g, i)", default = M.last_substitution or "s/" }, function(value)
+    if not value or vim.trim(value) == "" or vim.trim(value) == "s/" then return end
+    local sub, why = M.parse_substitution(value)
+    if not sub then return warn(why) end
+    M.last_substitution = vim.trim(value)
+    local names = vim.tbl_map(vim.fs.basename, froms)
+    local new, err = M.substitute(names, sub)
+    if not new then return warn("Regex: " .. err) end
+    local todo, stay, by_target = {}, {}, {}
+    for i, from in ipairs(froms) do
+      local name = new[i]
+      if name ~= names[i] then
+        local to = vim.fs.normalize(vim.fs.dirname(from) .. "/" .. name)
+        if name == "" or name == "." or name == ".." or name:find("[/\\]") then
+          stay[#stay + 1] = ("%s: %q is no name in its folder (m moves)"):format(names[i], name)
+        elseif unsaved(from) then
+          stay[#stay + 1] = unsaved(from)
+        elseif vim.uv.fs_stat(to) and not M.same(to, from) then
+          stay[#stay + 1] = show(to) .. " exists - nothing overwritten"
+        elseif by_target[key(to)] then
+          local other = by_target[key(to)]
+          other.clash = true
+          stay[#stay + 1] = ("%s and %s would both be %s"):format(vim.fs.basename(other.from), names[i], name)
+        else
+          by_target[key(to)] = { from = from, to = to }
+          todo[#todo + 1] = by_target[key(to)]
+        end
+      end
+    end
+    todo = vim.tbl_filter(function(t) return not t.clash end, todo)
+    if #stay > 0 then warn(table.concat(stay, "\n")) end
+    if #todo == 0 then
+      if #stay == 0 then notify("No name changes: " .. M.last_substitution .. " matched none") end
+      return
+    end
+    local lines = {}
+    for i, t in ipairs(todo) do
+      if i > 15 then
+        lines[#lines + 1] = ("… and %d more"):format(#todo - 15)
+        break
+      end
+      lines[#lines + 1] = vim.fs.basename(t.from) .. "  →  " .. vim.fs.basename(t.to)
+    end
+    local id = "greyknight.rename_regex"
+    Snacks.notify(table.concat(lines, "\n"), { id = id, title = "Rename by regex", timeout = 15000 })
+    Snacks.picker.util.confirm(("Rename %s as listed?"):format(#todo == 1 and vim.fs.basename(todo[1].from) or (#todo .. " items")), function()
+      Snacks.notifier.hide(id)
+      table.sort(todo, function(a, b) return #a.from > #b.from end) -- a file in a folder renamed too goes first
+      local dirs = {}
+      for _, t in ipairs(todo) do
+        relocate(t.from, t.to) -- open buffers, language servers, bookmarks, harpoon slots follow
+        dirs[#dirs + 1] = vim.fs.dirname(t.from)
+      end
+      picker.list:set_selected()
+      refresh(picker, dirs, todo[#todo].to)
+    end)
+  end)
+end
+
 --- a: a new file, or a folder when the path ends in / (or \) - relative ones in the folder under the cursor,
 --- absolute ones as typed.
 function M.add(picker)
