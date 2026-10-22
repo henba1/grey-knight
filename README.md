@@ -29,6 +29,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 - **Script slots in the explorer** — `!1` … `!9` run your scripts (Python everywhere, bash on Linux, PowerShell
   on Windows) on the item under the cursor and the marked items; a script asks through Neovim's dialogs
   (Yes / No, a text, a choice) with one printed line ([USAGE.md](USAGE.md#script-slots))
+- **IntelliJ habits** — Ctrl+Click goes to a declaration (on the declaration: its usages), bookmarks on lines per
+  project (`<leader>mm`, the list on `<leader>ml` / Shift+F11), and the buffers in the order you used them, the one
+  before this preselected (`<leader><Tab>`, IntelliJ's Ctrl+Tab)
 - **Hacker tools** — Hex editor, multiple terminals (a shell, the REPL or an agent takes your keys as soon as you
   go to it), send-to-terminal workflow
 - **Session persistence** — Auto-saves per project + git branch
@@ -148,6 +151,9 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   │                       the current view (/, D, S)
 │   ├── mdlinks.lua         markdown links: gd / Enter follow them (#heading, file, URL)
 │   ├── slots.lua           explorer script slots: !1 … !9 and !!, the context, the scripts' dialogs
+│   ├── bookmarks.lua       bookmarks: lines to come back to, per project, signs, the list (<leader>mm, <leader>ml)
+│   ├── navigate.lua        Ctrl+Click as in IntelliJ: the declaration, on the declaration its usages
+│   ├── switcher.lua        recent buffers in the order of use, the previous one preselected (<leader><Tab>)
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)

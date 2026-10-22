@@ -94,7 +94,7 @@ explorer pane once focused.
 | `r` | Rename / move to a typed path (absolute too: `/…`, `~/…`, `C:\…`) |
 | `C` | Copy to a typed path |
 | `a` | New file or dir (trailing `/` = dir; absolute paths too) |
-| `d` | Delete the marked, else this one (system trash; permanent fallback) — the cursor stays put |
+| `d` | Delete the marked, else this one (system trash; where it refuses, e.g. `/tmp`: asks to delete for good) — the cursor stays put |
 | `y`/`p` | Yank paths / paste them as copies into the folder |
 | `Z` | Collapse all folders |
 | `u` | Refresh tree |
@@ -152,6 +152,19 @@ explorer pane once focused.
 
 > Harpoon pins the 2-4 files of your current task to slots 1-4, per project, kept across sessions.
 
+## Bookmarks — `<leader>m`
+
+| Key | Action |
+|-----|--------|
+| `<leader>mm` | Set / remove a bookmark on this line (`⚑` in the sign column) |
+| `<leader>mr` / `<C-F11>` | Name the bookmark on this line (sets one if there is none; an empty name takes the name away) |
+| `<leader>ml` / `<S-F11>` | The project's bookmarks: `Enter` opens the file at the line, `dd` / `Ctrl+x` deletes |
+| `<leader>mn` / `<leader>mp` | Next / previous bookmark - in file and line order, file to file, round at the ends |
+
+> Lines to come back to, any number of them, per project (Neovim's directory), kept across sessions. A bookmark
+> moves with its line as you edit; delete the line and save, it is gone. Changed outside Neovim (git pull), a file's
+> bookmarks find their lines again by their text. IntelliJ's F11 is the debugger's step into here.
+
 ## Git — `<leader>g`
 
 | Key | Action |
@@ -206,6 +219,7 @@ Python/bash REPL use `<leader>ri`).
 | Key | Action |
 |-----|--------|
 | `gd` | Go to definition |
+| `Ctrl+Click` | As in IntelliJ: on a name its declaration; on the declaration its usages (just one: there). No server: `gd`, in help the tag |
 | `gD` | Go to declaration |
 | `gr` | References |
 | `gi` | Implementation |
@@ -282,6 +296,9 @@ DAP console pane; variable values show next to the code while stopped. Full work
 | `<C-h/j/k/l>` | Navigate windows - from a terminal too (clear the shell with `clear` / `cls`) |
 | `<C-Up/Down/Left/Right>` | Resize windows - a terminal too |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
+| `<leader><Tab>` | Recent buffers (IntelliJ's Ctrl+Tab): starts on the one before this - `Enter` goes back, `Tab` / `Shift+Tab` further back / forward. `Ctrl+Tab` too where the terminal passes it on |
+| `<C-^>` | The buffer before this one, at once (again: back) |
+| `<C-o>` / `<C-i>` | Back / forward through the places you jumped to, file to file (IntelliJ's Navigate Back / Forward) |
 | `<Esc><Esc>` | Leave terminal mode (back to normal mode); going to a terminal window (shell, REPL, agent, a run's output) enters it again |
 
 In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `Ctrl+W/U/R` work as typed.
@@ -302,6 +319,9 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   │                            search files / folders / the current view (/, D, S)
 │   ├── mdlinks.lua           ← markdown links: gd / Enter follow them
 │   ├── slots.lua             ← explorer script slots: !1 … !9, !!, the scripts' dialogs
+│   ├── bookmarks.lua         ← bookmarks: lines to come back to, per project (<leader>mm, <leader>ml)
+│   ├── navigate.lua          ← Ctrl+Click: the declaration, on it its usages (IntelliJ's)
+│   ├── switcher.lua          ← recent buffers in the order of use (<leader><Tab>, IntelliJ's Ctrl+Tab)
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest

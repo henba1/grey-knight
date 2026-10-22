@@ -21,18 +21,19 @@
 12. [Windows & Splits](#windows-splits)
 13. [Buffers](#buffers)
 14. [Harpoon (Quick File Switching)](#harpoon-quick-file-switching)
-15. [Flash (Jump Navigation)](#flash-jump-navigation)
-16. [Surround](#surround)
-17. [Diagnostics & Trouble](#diagnostics-trouble)
-18. [Debugging (DAP)](#debugging-dap)
-19. [Hex Editor](#hex-editor)
-20. [Sessions](#sessions)
-21. [Oil (Filesystem Editing)](#oil-filesystem-editing)
-22. [Markdown Rendering](#markdown-rendering)
-23. [Tips & Tricks](#tips-tricks)
-24. [When Something Goes Wrong](#when-something-goes-wrong)
-25. [Mode Reference](#mode-reference)
-26. [Java and Angular](#java-and-angular)
+15. [Bookmarks](#bookmarks)
+16. [Flash (Jump Navigation)](#flash-jump-navigation)
+17. [Surround](#surround)
+18. [Diagnostics & Trouble](#diagnostics-trouble)
+19. [Debugging (DAP)](#debugging-dap)
+20. [Hex Editor](#hex-editor)
+21. [Sessions](#sessions)
+22. [Oil (Filesystem Editing)](#oil-filesystem-editing)
+23. [Markdown Rendering](#markdown-rendering)
+24. [Tips & Tricks](#tips-tricks)
+25. [When Something Goes Wrong](#when-something-goes-wrong)
+26. [Mode Reference](#mode-reference)
+27. [Java and Angular](#java-and-angular)
 
 ---
 
@@ -182,6 +183,8 @@ open empty; the first time a message says why. The rest of the tree works as bef
 > Delete is **trash-first**: it shells to `trash`/`gio trash`/`kioclient` when present,
 > so `d` is recoverable on most desktops. Without a trash backend it falls back to a
 > permanent `:delete` — check with `:checkhealth snacks` before deleting anything precious.
+> Where the trash refuses — `gio` does for everything in `/tmp` ("Trashing on system internal mounts is
+> not supported") — `d` asks once more: delete for good, or keep it. A link goes, never what it points to.
 
 ### Script slots
 
@@ -289,7 +292,7 @@ bash - `source "$GK_LIB/gk.sh"`: `gk_marked` (one per line), `gk_confirm` (its e
 |-----|------|--------|
 | `Ctrl+Space` | n | Start selection (smart, treesitter-aware) |
 | `Ctrl+Space` | v | Expand selection to parent node |
-| `Backspace` | v | Shrink selection |
+| `Backspace` | v | Shrink the selection back the way it grew, node by node |
 
 These run Neovim's own node selection (`:h v_an`), with the LSP's selection ranges where a file type has no
 treesitter parser. Neovim's own keys for it, `an` / `in`, are mini.ai's "next" textobjects here (`vin(`
@@ -305,6 +308,7 @@ Works automatically when you open a supported file. Mason installs the LSP serve
 |-----|--------|
 | `K` | Hover documentation (show function signature, docs) |
 | `gd` | Go to definition |
+| `Ctrl+Click` | As in IntelliJ: on a name go to its declaration; on the declaration itself its usages |
 | `gD` | Go to declaration |
 | `gr` | Find all references |
 | `gi` | Go to implementation |
@@ -317,6 +321,12 @@ Works automatically when you open a supported file. Mason installs the LSP serve
 
 The keys come with a server that can do what they ask: where none finds definitions (plain HTML, a Python file
 with only ruff running), `gd` stays Vim's - the first use of the word in the file - and `K` Vim's keyword lookup.
+
+**Ctrl+Click** does what it does in IntelliJ. On a name it goes to the declaration (`Ctrl+o` comes back, as after
+`gd`). On the declaration itself it shows the usages, without the declaration: in the quickfix list, or straight there
+when there is only one. Where no server finds definitions it is `gd`, in a help file it follows the link. A click
+after the end of a line, on a space or a sign only moves the cursor. The terminal must pass Ctrl+Click on to Neovim -
+Windows Terminal, kitty, GNOME Terminal and Konsole do (they open links on it only where they see a URL).
 
 ### Inline Diagnostics
 
@@ -656,8 +666,17 @@ Files open as **buffers** (like browser tabs). One visible at a time per window.
 |-----|--------|
 | `Shift+h` | Previous buffer |
 | `Shift+l` | Next buffer |
+| `<leader><Tab>` | Recent buffers, IntelliJ's Ctrl+Tab (below) |
+| `<C-^>` | The buffer before this one, at once; again goes back |
+| `<C-o>` / `<C-i>` | Back / forward through the places you jumped to, from file to file (IntelliJ's Navigate Back / Forward) |
 | `<leader>fb` | Buffer picker (see all open buffers) |
+| `<leader>fr` | Recent files - also the ones closed, of earlier sessions |
 | `<leader>bd` | Close current buffer |
+
+**Recent buffers** (`<leader><Tab>`) lists the open files in the order you used them, this one first, and starts on
+the one before it: `<leader><Tab>`, `Enter` goes back there. `Tab` goes further back, `Shift+Tab` forward again,
+typing filters, `dd` (`Ctrl+x`) closes a buffer. `Ctrl+Tab` opens it too where the terminal passes Ctrl+Tab on
+(a GUI, WezTerm); Windows Terminal and kitty switch their own tabs with it.
 
 ---
 
@@ -686,15 +705,31 @@ project again and your pins are still there.
 **Workflow:** start a task, pin the 2-4 files it touches (`<leader>ha` in each), then move between
 them with `<leader>1-4` instead of searching.
 
------|--------|
-| `<leader>ha` | Add current file to harpoon |
-| `<leader>hh` | Open harpoon menu |
-| `<leader>1` | Jump to harpoon file 1 |
-| `<leader>2` | Jump to harpoon file 2 |
-| `<leader>3` | Jump to harpoon file 3 |
-| `<leader>4` | Jump to harpoon file 4 |
+---
 
-**Workflow:** Open your 3-4 most-used files, `<leader>ha` each one, then `<leader>1-4` to instantly jump between them.
+## Bookmarks
+
+Bookmarks mark **lines** to come back to, as IntelliJ's do: the function you are fixing, the config value you keep
+checking, the place a bug shows. Harpoon keeps a few files at fixed numbers; bookmarks are places in files, as many
+as you like, and they can have a name.
+
+| Key | Action |
+|-----|--------|
+| `<leader>mm` | Set a bookmark on the cursor's line (a `⚑` in the sign column), or remove the one there |
+| `<leader>mr` / `<C-F11>` | Name the bookmark on this line - it is set first if there is none; an empty name takes the name away |
+| `<leader>ml` / `<S-F11>` | The project's bookmarks in a list: name, file, line and its text, with a preview. `Enter` opens the file at the line, `dd` / `Ctrl+x` deletes, typing filters |
+| `<leader>mn` / `<leader>mp` | Next / previous bookmark, in file and line order, from file to file; after the last comes the first |
+
+`Ctrl+o` comes back from a bookmark you went to. IntelliJ's `F11` is the debugger's step into here (`F5` and its
+neighbours are the debug keys); `Shift+F11` and `Ctrl+F11` are as in IntelliJ.
+
+**They stay with their lines.** A bookmark moves with its line while you edit above it; delete the line and save,
+and the bookmark goes with it (`u` before saving brings both back). Changed outside Neovim - a `git pull`, another
+editor - a file's bookmarks find their lines again by their text when you open it.
+
+**One set per project, kept across sessions.** Every working directory (`:pwd`) has its own, kept in
+`~/.local/share/nvim/bookmarks.json` (Windows: `%LOCALAPPDATA%\nvim-data\bookmarks.json`) and written at once, so
+they survive a killed session too. Change the directory and the signs and the list are that project's.
 
 ---
 
@@ -757,7 +792,13 @@ variable values appear next to the code.
 
 Every session gets a fresh console: a program terminal left over from an earlier session (bashdb's
 sometimes outlives it) is stopped first. A program whose session still runs keeps its terminal, and
-the new one opens in a split.
+the new one opens in a split. When a session ends, the DAP UI closes; while the program in the console
+is still running, it closes once that program has exited (closing it first crashed Neovim on Windows
+now and then).
+
+bash-debug-adapter leaves a file in `/tmp` after each session (`vscode-bash-debug-fifo-<number>`,
+bashdb's goodbye). It draws that name at random from 10,000, and a session that drew a taken one
+hung. The leftovers are deleted before each bash session.
 
 ### Starting a session
 
@@ -893,8 +934,10 @@ Press `<leader>` and **wait** — a popup shows all available keybindings groupe
 Files auto-format when you save. A file the formatter cannot read yet (an unfinished script) is saved as it
 is, without a message - `<leader>fm` says why it fails, `:ConformInfo` has the details. To format manually:
 `<leader>fm`. JavaScript and TypeScript use the project's own prettier (`node_modules`), else the language
-server. On Windows formatters run without cmd.exe in between, so folders named with spaces, `&` or `^` work
-(cmd.exe split such paths, and Volta's `node` passes them through it). In projects you also open in IntelliJ
+server. Lua is saved as written - your alignment stays - unless the project formats with stylua (a
+`stylua.toml`); `<leader>fm` formats it anyway (stylua there, else the language server). On Windows formatters
+run without cmd.exe in between, so folders named with spaces, `&` or `^` work (cmd.exe split such paths, and
+Volta's `node` passes them through it). In projects you also open in IntelliJ
 (an `.idea` folder) saving does what IntelliJ's Actions on Save do - by default nothing; Java files get that
 default everywhere (see [Java and Angular](#java-and-angular)).
 
@@ -930,7 +973,8 @@ Neovim doesn't have native multi-cursor, but:
 | Qwen Code | its window; debug logs in `~/.qwen/debug/` |
 
 **The error log** keeps every warning and error notification of every session (with time, source
-and a line per session start) and, when Neovim exits, the Lua errors from `:messages`. It is plain
+and a line per session start) and, when Neovim exits, the Lua errors from `:messages` - each whole: a
+callback's, an autocommand's with the Lua error and its traceback below the header. It is plain
 text, trimmed to the last 2000 lines when it grows past 512 KB, so it is also the file to read (or
 send) when something broke and you did not see why.
 

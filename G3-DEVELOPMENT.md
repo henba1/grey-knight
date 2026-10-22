@@ -76,6 +76,7 @@ later starts take seconds. Until the import is through, imports from other modul
 | Key | Action |
 |---|---|
 | `gd` / `gD` | Definition / declaration - also into dependencies (sources or decompiled) |
+| `Ctrl+Click` | As in IntelliJ: the declaration; on the declaration its usages (one: there) |
 | `gr` / `gi` | References / implementations |
 | `K` | Javadoc and signature |
 | `<leader>ca` | Code actions: organize imports, add import, extract variable / constant / method, generate getters, ... |
@@ -179,6 +180,9 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 | Key | Action |
 |---|---|
 | `gd` / `gr` / `K` | Definition / references / docs |
+| `Ctrl+Click` | Declaration; on it its usages (IntelliJ's) |
+| `<leader><Tab>` / `<C-o>` | Recent buffers (Ctrl+Tab) / back where you came from (Navigate Back) |
+| `<leader>mm` / `<leader>ml` | Bookmark this line / the bookmarks (IntelliJ's F11 is step into here; Shift+F11 lists) |
 | `<leader>ca` / `<leader>rn` | Code action / rename |
 | `<leader>rt` / `<leader>rT` | Run the test class / test at the cursor |
 | `<leader>dt` | Debug the test at the cursor |
