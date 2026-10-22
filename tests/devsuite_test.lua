@@ -1675,7 +1675,7 @@ end)
 -- 2026-10-22: vim.lsp.enable() starts servers for every buffer of their filetype, scratch buffers (:enew, a filetype
 -- set) too - nvim-lspconfig's old setup only for files. And files outside any project share one client: after the
 -- interpreter test's scratch buffers bashls marked no bash file any more (devsuite/util.lua lsp_root).
-test("LSP: no server for a buffer without a file (a scratch buffer with a filetype); a bash file outside a project is marked after it", function()
+test("LSP: no server for a buffer without a file (a scratch buffer, a URL); a bash file outside a project is marked after it", function()
   local cases = {
     { ft = "sh", exe = "bash-language-server" },
     { ft = "python", exe = "pyright-langserver" },
@@ -1685,10 +1685,19 @@ test("LSP: no server for a buffer without a file (a scratch buffer with a filety
   for _, c in ipairs(cases) do
     if vim.fn.executable(c.exe) == 1 then scratches[#scratches + 1] = H.scratch(c.ft, { "x = 1" }) end
   end
+  if vim.fn.executable("pyright-langserver") == 1 then -- named by a URL (netrw's scp:// ...): not a file either
+    local url = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(url, "scp://host/remote.py")
+    vim.api.nvim_set_current_buf(url)
+    vim.bo[url].filetype = "python"
+    scratches[#scratches + 1] = url
+  end
   if #scratches == 0 then H.skip("none of bashls, pyright, lua_ls installed") end
   vim.wait(3000) -- a server starts for a file in under a second
   for _, buf in ipairs(scratches) do
-    for _, cl in ipairs(vim.lsp.get_clients({ bufnr = buf })) do attached[#attached + 1] = cl.name .. " on a scratch " .. vim.bo[buf].filetype end
+    for _, cl in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
+      attached[#attached + 1] = ("%s on %s (%s)"):format(cl.name, vim.api.nvim_buf_get_name(buf) ~= "" and vim.api.nvim_buf_get_name(buf) or "a scratch", vim.bo[buf].filetype)
+    end
   end
   local ok, err = pcall(function()
     assert(#attached == 0, "servers on buffers without a file: " .. table.concat(attached, ", "))
@@ -1712,6 +1721,49 @@ test("LSP: no server for a buffer without a file (a scratch buffer with a filety
     stop_clients(buf)
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
   end
+  assert(ok, err)
+end)
+
+-- 2026-10-22: nvim-lspconfig defines :LspInfo, :LspLog, :LspStart, :LspStop and :LspRestart only where Neovim has no :lsp
+-- of its own - on 0.12 there were none, and the docs named :LspInfo and :LspLog
+test("LSP: :LspRestart, :LspStop, :LspStart, :LspLog and :LspInfo do what they say (over Neovim's own :lsp)", function()
+  if vim.fn.executable("pyright-langserver") == 0 or vim.fn.executable("ruff") == 0 then H.skip("pyright or ruff not installed") end
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  vim.fn.mkdir(root .. "/.git", "p")
+  vim.fn.writefile({ "import os" }, root .. "/main.py")
+  vim.cmd("silent! only")
+  vim.cmd.edit(vim.fn.fnameescape(root .. "/main.py"))
+  local buf, tab = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_tabpage()
+  local function client(name) return vim.lsp.get_clients({ bufnr = buf, name = name })[1] end
+  local ok, err = pcall(function()
+    assert(wait(60000, function() return client("pyright") and client("ruff") end), "pyright and ruff did not attach")
+    local before = client("pyright").id
+    vim.cmd("LspRestart pyright")
+    assert(wait(30000, function() return client("pyright") and client("pyright").id ~= before end), ":LspRestart did not restart pyright")
+    vim.cmd("LspStop ruff")
+    assert(wait(10000, function() return client("ruff") == nil end), ":LspStop did not stop ruff")
+    vim.cmd("LspStart ruff")
+    assert(wait(10000, function() return client("ruff") ~= nil end), ":LspStart did not start ruff for this buffer")
+    vim.cmd("LspLog")
+    local log = vim.api.nvim_buf_get_name(0)
+    assert(vim.fs.normalize(log) == vim.fs.normalize(vim.lsp.log.get_filename()), ":LspLog opened " .. log)
+    vim.cmd("LspInfo")
+    assert(vim.bo.filetype == "checkhealth", ":LspInfo opened a " .. vim.bo.filetype .. " buffer")
+  end)
+  for _, t in ipairs(vim.api.nvim_list_tabpages()) do -- the log's and the health check's tabs
+    if t ~= tab and vim.api.nvim_tabpage_is_valid(t) then pcall(vim.cmd.tabclose, vim.api.nvim_tabpage_get_number(t)) end
+  end
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do -- and their buffers
+    local name = vim.api.nvim_buf_get_name(b)
+    if vim.bo[b].filetype == "checkhealth" or (name ~= "" and vim.fs.normalize(name) == vim.fs.normalize(vim.lsp.log.get_filename())) then
+      pcall(vim.api.nvim_buf_delete, b, { force = true })
+    end
+  end
+  if vim.api.nvim_tabpage_is_valid(tab) then vim.api.nvim_set_current_tabpage(tab) end
+  vim.cmd("silent! only")
+  stop_clients(buf)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  vim.fn.delete(root, "rf")
   assert(ok, err)
 end)
 
@@ -2360,6 +2412,17 @@ local function jdtls_end_to_end()
         if uri and uri:find("Helper.java", 1, true) then return true end
       end
     end), "the definition of Helper.greet() was not found")
+    -- 2026-10-22: Ctrl+Click into the JDK as into any dependency - on String a jdt:// buffer with its source or the
+    -- decompiled class (nvim-jdtls reads those in), <C-o> back
+    vim.cmd("silent! only")
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    ctrl_click(0, 5, 10) -- String in "String s = Helper.greet();"
+    assert(wait(60000, function()
+      local name = vim.api.nvim_buf_get_name(0)
+      return name:find("^jdt://") ~= nil and name:find("String", 1, true) ~= nil and vim.api.nvim_buf_line_count(0) > 1
+    end), "Ctrl+Click on String did not open the JDK's class: " .. vim.api.nvim_buf_get_name(0))
+    vim.api.nvim_feedkeys(vim.keycode("<C-o>"), "x", false)
+    assert(vim.api.nvim_get_current_buf() == buf, "<C-o> did not come back to Main.java: " .. vim.api.nvim_buf_get_name(0))
     -- 2026-10-21: completion from jdtls as it is typed - Helper.gr offers greet() (LSP), Tab and Enter take it
     vim.api.nvim_buf_set_lines(buf, 5, 5, false, { "        String t = " })
     local lines, seen = complete_in(6, "Helper.gr", "greet", "lsp")

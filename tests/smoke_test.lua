@@ -190,6 +190,13 @@ test("Dashboard bridge only inside the dashboard", function()
   assert((vim.fn.exists(":AidashPreview") == 2) == inside, ":AidashPreview defined outside the dashboard")
 end)
 
+-- 2026-10-22: test runs read the jumplist and recent files of the user's sessions (an a.txt remembered from an
+-- earlier run became a buffer when <C-o> loaded the jumplist) and wrote theirs back among the user's (tests/harness.lua)
+test("Tests: a run leaves the user's ShaDa alone - their history is not read, the test files' not written", function()
+  assert(vim.o.shadafile == "NONE", "'shadafile': " .. vim.inspect(vim.o.shadafile))
+  assert(#vim.v.oldfiles == 0, ("the user's recent files were read: %d, e.g. %s"):format(#vim.v.oldfiles, tostring(vim.v.oldfiles[1])))
+end)
+
 -- T13: Keys that once misbehaved (2026-10-19). 2026-10-21: Ctrl+L moves from a terminal too (it went to the shell),
 -- Ctrl+arrows resize a terminal; every other key is the program's, so bash's own keys work in a terminal - and only
 -- there: insert and command-line mode stay Vim's (the same keys on any machine)
@@ -799,6 +806,28 @@ test("Error log: Neovim 0.12's errors are logged whole - a scheduled callback's,
   assert(ok, err)
 end)
 
+-- 2026-10-22: each big file opened put snacks' "Big file detected" (a warning) into the error log, between the errors
+test("Error log: a big file's notice is shown, not logged - another warning still is", function()
+  local el = require("config.errorlog")
+  local saved = el.path
+  el.path = vim.fn.tempname()
+  local lines = {}
+  for i = 1, 40000 do lines[#lines + 1] = ("line %06d of a big log file, long enough to pass snacks' 1.5 MB"):format(i) end
+  local file = H.file("big.log", lines)
+  local ok, err = pcall(function()
+    vim.cmd.edit(vim.fn.fnameescape(file))
+    assert(H.wait(3000, function() return vim.bo.filetype == "bigfile" end), "not taken for a big file: " .. vim.bo.filetype)
+    vim.notify("a warning of something else", vim.log.levels.WARN, { title = "Test" })
+    local log = vim.fn.filereadable(el.path) == 1 and table.concat(vim.fn.readfile(el.path), "\n") or ""
+    assert(not log:find("Big file", 1, true), "the big file's notice was logged: " .. log)
+    assert(log:find("a warning of something else", 1, true), "another warning was not: " .. log)
+  end)
+  pcall(vim.cmd, "bwipeout!")
+  vim.fn.delete(el.path)
+  el.path = saved
+  assert(ok, err)
+end)
+
 -- 2026-10-22: <C-space> grows the selection node by node; <BS> went to a node's first child instead of back -
 -- from foo(bar, baz) to foo, not to (bar, baz)
 test("Editing: <C-space> grows the selection node by node, <BS> takes it back the same way", function()
@@ -1175,8 +1204,8 @@ test("Bookmarks: one of a deleted file stays, listed as gone - Enter opens nothi
       p.list:view(1)
       vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
       assert(table.concat(notes, " | "):find("gone", 1, true), "Enter on it: no word - " .. table.concat(notes, " | "))
-      for _, b in ipairs(vim.api.nvim_list_bufs()) do
-        assert(vim.fs.basename(vim.api.nvim_buf_get_name(b)) ~= "a.txt", "an empty a.txt was opened")
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do -- this one's: not any a.txt (one of an earlier run, 2026-10-22)
+        assert(vim.fs.normalize(vim.api.nvim_buf_get_name(b)) ~= root .. "/a.txt", "an empty a.txt was opened")
       end
       p.list:view(1)
       vim.api.nvim_feedkeys(vim.keycode("<C-x>"), "x", false)
@@ -1627,12 +1656,17 @@ test("Explorer workflow: Enter twice opens a match in the editor, the explorer s
     p:action("confirm") -- the file, in the editor
     assert(H.wait(3000, function() return shown() == root .. "/src/app/main.txt" end), "not in the editor: " .. shown())
     assert(not p.closed, "the explorer closed")
-    -- a file opened in the editor some other way: the tree opens its folder and goes to it
+    -- a file opened in the editor some other way: the tree opens its folder and goes to it. snacks follows from a
+    -- scheduled callback that does nothing when the explorer has the focus by then: what the open above scheduled
+    -- runs first (2026-10-22: on a busy Windows the tree did not follow, 10 s did not help)
+    vim.wait(300)
     vim.api.nvim_set_current_win(editor)
     vim.cmd.edit(vim.fn.fnameescape(root .. "/notes/todo.txt"))
-    -- the folder listed first, as when the explorer opens: 3 s were too few on a busy Windows (2026-10-22, twice)
+    -- the folder listed first, as when the explorer opens: 3 s were too few on a busy Windows (2026-10-22)
     assert(H.wait(OPEN_MS, function() return p:current() and p:current().file == root .. "/notes/todo.txt" end),
-      "the tree did not follow: on " .. tostring(p:current() and x.rel(p:current().file)))
+      ("the tree did not follow: on %s - explorer focused %s, closed %s, current window the editor %s, buffer %s"):format(
+        tostring(p:current() and x.rel(p:current().file)), tostring(p:is_focused()), tostring(p.closed),
+        tostring(vim.api.nvim_get_current_win() == editor), vim.fs.basename(vim.api.nvim_buf_get_name(0))))
   end)
 end)
 
@@ -2125,14 +2159,19 @@ test("Git: added, changed and deleted lines get their signs; the explorer's ]g /
     key("]c").callback()
     assert(H.wait(3000, function() return line() == 7 end), "]c to the deleted line: line " .. line())
     key("<leader>gp").callback()
-    local preview = H.wait(5000, function() return has_float("eight") end)
+    -- gitsigns shows it a moment later (async); on a busy Windows 5 s were too few once (2026-10-22)
+    local preview = H.wait(10000, function() return has_float("eight") end)
+    local floats = {} -- what there was instead, for the failure message
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if vim.api.nvim_win_get_config(win).relative ~= "" then pcall(vim.api.nvim_win_close, win, true) end
+      if vim.api.nvim_win_get_config(win).relative ~= "" then
+        floats[#floats + 1] = H.text(vim.api.nvim_win_get_buf(win)):gsub("%s+", " "):sub(1, 80)
+        pcall(vim.api.nvim_win_close, win, true)
+      end
     end
-    assert(preview, "<leader>gp showed no change with eight")
+    assert(preview, ("<leader>gp showed no change with eight - floats: %s, hunks: %s, line %d"):format(vim.inspect(floats), kinds(), line()))
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     key("<leader>gb").callback()
-    local blame = H.wait(5000, function() return has_float("gk") end)
+    local blame = H.wait(10000, function() return has_float("gk") end)
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if vim.api.nvim_win_get_config(win).relative ~= "" then pcall(vim.api.nvim_win_close, win, true) end
     end
@@ -2332,6 +2371,18 @@ end)
 
 test("Pickers: every <leader>f picker and <leader>/ opens, lists and closes without an error", function()
   vim.cmd.edit(vim.fn.fnameescape(vim.fn.stdpath("config") .. "/README.md")) -- a file open: buffers, grep_buffers
+  -- a history of its own - a test run reads none of the user's (tests/harness.lua): a recent file, a command, a
+  -- diagnostic; each picker has something to list (an empty one waited out its 5 s, 2026-10-22)
+  local oldfiles, ns = vim.v.oldfiles, vim.api.nvim_create_namespace("gk-test-pickers")
+  vim.v.oldfiles = { vim.fn.stdpath("config") .. "/CHEATSHEET.md" }
+  vim.fn.histadd("cmd", "echo 'gk pickers'")
+  -- on a file under the working directory: <leader>fd lists only those (stdpath("config") is a link to it)
+  local marked_file = vim.fn.getcwd() .. "/CHEATSHEET.md"
+  local had_marked = vim.fn.bufexists(marked_file) == 1
+  local marked = vim.fn.bufadd(marked_file)
+  vim.fn.bufload(marked)
+  vim.diagnostic.set(ns, marked, { { lnum = 0, col = 0, message = "gk picker mark", severity = vim.diagnostic.severity.WARN } })
+  local live = { ["<leader>fg"] = true, ["<leader>/"] = true } -- the greps list what is typed: nothing yet
   local notes, notify = {}, vim.notify
   vim.notify = function(msg, level, opts)
     if (level or 0) >= vim.log.levels.ERROR then notes[#notes + 1] = tostring(msg) end
@@ -2343,19 +2394,25 @@ test("Pickers: every <leader>f picker and <leader>/ opens, lists and closes with
       "<leader>fk", "<leader>f:", "<leader>/" }) do
       for _, p in ipairs(Snacks.picker.get()) do p:close() end
       vim.api.nvim_feedkeys(vim.keycode(lhs), "x", false)
-      H.wait(5000, function() local p = Snacks.picker.get()[1]; return p and not p:is_active() and p.list:count() > 0 end)
-      local p = Snacks.picker.get()[1] -- an empty one (no diagnostics, no history) said "No results" and closed
+      H.wait(5000, function()
+        local p = Snacks.picker.get()[1]
+        return p and not p:is_active() and (live[lhs] or p.list:count() > 0)
+      end)
+      local p = Snacks.picker.get()[1] -- an empty one said "No results" and closed
       counts[lhs] = p and p.list:count() or 0
       if p then p:close() end
       vim.cmd("stopinsert")
     end
   end)
   vim.notify = notify
+  vim.v.oldfiles = oldfiles
+  vim.diagnostic.reset(ns)
+  if not had_marked then pcall(vim.api.nvim_buf_delete, marked, { force = true }) end
   for _, p in ipairs(Snacks.picker.get()) do p:close() end
   vim.cmd("silent! bwipeout " .. vim.fn.fnameescape(vim.fn.stdpath("config") .. "/README.md"))
   assert(ok, err)
   assert(#notes == 0, "errors: " .. table.concat(notes, " | "))
-  for _, lhs in ipairs({ "<leader>ff", "<leader>fb", "<leader>fh", "<leader>fc", "<leader>fk" }) do
+  for _, lhs in ipairs({ "<leader>ff", "<leader>fb", "<leader>fh", "<leader>fr", "<leader>fc", "<leader>fd", "<leader>fk", "<leader>f:" }) do
     assert(counts[lhs] > 0, lhs .. " listed nothing: " .. vim.inspect(counts))
   end
 end)
