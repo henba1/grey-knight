@@ -107,7 +107,11 @@ o.splitright = true
 -- Wildmenu
 o.wildmenu = true
 o.wildmode = "longest:full,full"
-o.diffopt:append("linematch:60")
+-- Diffs of Neovim's own (the agent's, :diffthis): changed lines paired up to 60 lines (linematch), the histogram
+-- algorithm (a moved block stays whole), and within a changed line the changed words in a color of their own
+-- (inline:char - Neovim 0.12's default too)
+o.diffopt:remove("linematch:40")
+o.diffopt:append({ "linematch:60", "algorithm:histogram", "inline:char", "indent-heuristic" })
 o.redrawtime    = 10000
 o.maxmempattern = 20000
 
