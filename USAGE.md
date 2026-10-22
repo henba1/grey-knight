@@ -497,6 +497,25 @@ is. `vim.g.greyknight_agent_link = false` (in `init.lua`) connects no agent.
 OpenCode has no IDE mode: it writes its edits right away (its own permission prompt asks first when
 `"permission": { "edit": "ask" }`), with the editor tools above.
 
+**What the agent changed - `<leader>ad`.** When the first agent starts in a project (and with a new conversation,
+`<leader>ac`), GreyKnight notes the project as it is: a git snapshot of its tracked files - through a copy of the index,
+so your index, `HEAD` and branches stay as they are - and the names of its untracked files. `<leader>ad` lists every
+file changed since (yours too), the diff in the preview:
+
+| Key (in the list) | Action |
+|-------------------|--------|
+| `Enter` | The file when the agent started and now, side by side (the old side red, the new green; the right side is the file - edit it). `q` in the old side closes it |
+| `Ctrl+x` / `dd` | Take it back - as it was when the agent started (asks first); a new file is deleted. Your index stays |
+
+A file that was untracked when the agent started has no snapshot: it is listed (*untracked then*), not taken back.
+Git repositories only. For the whole picture as it lands, `<leader>gv` (codediff).
+
+**Done, or waiting for you.** An agent you are not looking at says so: *"Qwen Code is done"* when it finished
+answering, *"... waits for your answer"* (a warning) when it asks permission - not while its window is the current
+one, nor while you look at the diff it asks about. Qwen Code tells it through two hooks (`Stop`, `PermissionRequest`)
+in the same system defaults - your own hooks run as well; OpenCode through a plugin GreyKnight puts into a config
+folder of its own (`OPENCODE_CONFIG_DIR`, added to yours; when you set that variable yourself, none).
+
 ---
 
 ## Running Scripts & REPL
