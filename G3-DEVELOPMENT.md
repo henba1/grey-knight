@@ -56,7 +56,7 @@ when IntelliJ is gone.
 | JDK for jdtls | `JDTLS_JAVA_HOME`; else `JAVA_HOME` or the `java` on the `PATH` when it is 21+; else the newest JDK 21+ installed |
 | Installed JDKs | Next to `JAVA_HOME`, `JDTLS_JAVA_HOME` and the `java` on the `PATH` (JDKs unpacked side by side), in the usual places (`/usr/lib/jvm`, SDKMAN, `~/.jdks`, `C:\Program Files\Java`, Eclipse Adoptium, ...) and in the folders `GREYKNIGHT_JDK_DIRS` names (separated like `PATH`) |
 | Maven | The `mvn` on the `PATH` (else `MAVEN_HOME`, `M2_HOME`): its `conf/settings.xml` - mirror, local repository - and `~/.m2/settings.xml`. Maven only, never Gradle |
-| Saving, `<leader>fm` | Java as IntelliJ's defaults: nothing on save, `<leader>fm` with the IntelliJ-like profile. Other files: GreyKnight's own [format on save](USAGE.md#format-on-save) |
+| Saving, `<leader>fm` | Java as IntelliJ's defaults: nothing on save, `<leader>fm` with the IntelliJ-like profile. Other files: GreyKnight's own [format on save](docs/code.md#format-on-save) |
 | Debugging | `<leader>da` attaches to `host:port`; `F5` offers the main classes |
 
 On Linux (Debian, Ubuntu, Kali): `sudo apt install openjdk-21-jdk maven`, plus the JDK of the project when that is

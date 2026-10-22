@@ -11,44 +11,50 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 
 ## Features
 
-- **AI-powered coding** — Qwen Code or OpenCode agent (`GREYKNIGHT_AGENT`; agentic mode: read files, edit code, run commands)
-- **The agent works in the editor** — asked where something is, it opens the file tree on it (or a search there);
-  it shows code at a line, lists places in the quickfix list and asks Neovim's language servers. Qwen Code sees
-  the open files and the selection, and each edit it proposes opens as a diff to accept (`ga`) or reject (`q`)
-  before it writes it. `<leader>ad` lists what changed since the agent started, a file taken back with a key; an
-  agent you are not looking at says when it is done or waits for you (USAGE.md → The agent in your editor)
-- **Speech to text** — `<leader>av` speaks a prompt to the agent, `<leader>aV` dictates at the cursor: recorded on
-  the machine Neovim runs on, written down by whisper.cpp there (`:VoiceInstall`, a few hundred MB) - or by a server
-  you name yourself (`$GREYKNIGHT_STT_URL`)
-- **Bash + Python dev suite** — one-key runs as tasks (overseer.nvim): files, project scripts, selections,
-  `# %%` cells and pytest, side by side, in a real terminal (`input()`/`read`/`sudo` work); errors marked in
-  the code; debugging for Python and bash (F5, breakpoints, inline values); IPython/bash REPL; a failed
-  run goes to the AI agent with one key
-- **Java and Angular, the IntelliJ way** — jdtls with the project's JDK and IntelliJ's Maven settings, TestNG /
-  JUnit and debugging (also IntelliJ's remote debug configurations); angularls, ESLint, AngularJS through ts_ls;
-  saving and reformatting as IntelliJ's settings say. No IntelliJ needed: without it (Linux) the JDKs and the
-  Maven of the machine, as the `mvn` command line ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
+- **A coding agent that works in the editor** — Qwen Code or OpenCode in a terminal next to the code
+  (`GREYKNIGHT_AGENT`). Asked where something is, it opens the file tree on it; it shows code at a line and asks
+  Neovim's language servers. Qwen Code sees the open files and the selection, and each edit it proposes opens as a
+  diff to accept (`ga`) or reject (`q`); `<leader>ad` lists what the agent changed; one you are not looking at says
+  when it is done ([the coding agent](docs/agent.md))
+- **Speech to text** — `<leader>av` speaks a prompt to the agent, `<leader>aV` dictates at the cursor, written down by
+  whisper.cpp on your machine (`:VoiceInstall`) ([speech to text](docs/agent.md#speech-to-text))
+- **Diffs as in a pull request** — codediff (VS Code's diff) reviews the changes live as they land, the old side red,
+  the new green, the changed words stronger; stage or discard a hunk right there (`<leader>gv`) ([git](docs/git.md))
+- **Bash + Python dev suite** — one-key runs as tasks in a real terminal (`input()`, `read`, `sudo` work), project
+  scripts, cells, pytest; errors marked in the code; debugging Python and bash; an IPython / bash REPL; a failed run
+  goes to the agent with one key ([running and debugging](docs/run-debug.md))
+- **Java and Angular, the IntelliJ way** — jdtls with the project's JDK and IntelliJ's Maven settings, TestNG / JUnit
+  and debugging, angularls, ESLint; no IntelliJ needed ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
+- **A file tree that does the work** — moves and copies by the tree, searches files and folders fuzzy or by regex
+  (`.*\.sh$`, `*.sh`), renames the marked by regex, runs your scripts on them (`!1` … `!9`); oil, harpoon, bookmarks
+  ([files](docs/files.md))
+- **IntelliJ habits** — Ctrl+Click goes to a declaration (on it: its usages), bookmarks on lines (`<leader>mm`,
+  Shift+F11 lists them), the buffers in the order you used them (`<leader><Tab>`)
+- **Windows and terminals** — `Ctrl+H/J/K/L` between windows and terminals alike, `Ctrl+arrows` resize, a terminal
+  takes your keys as soon as you go to it; sessions per project and git branch ([windows](docs/windows.md))
+- **Over SSH** — copies over OSC 52, PuTTY's keys understood ([remote](docs/ssh.md))
 - **Local LLM** — Qwen Code points at any OpenAI-compatible endpoint (llama.cpp, Ollama, vLLM)
-- **Rust-powered completion** — blink.cmp with ghost text and signature help
-- **Snacks.nvim** — Replaces Telescope, neo-tree, indent-blankline, and notifications. Its file explorer moves
-  and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts,
-  keeps the cursor in place on delete and searches files (`/`), folders by name (`D`) or only what the tree
-  shows (`S`) - fuzzy or by regex (`R`: `.*\.sh$`, a glob too: `*.sh`), `Ctrl+A` marks the matches for `m` /
-  `c` / `d`, `%` renames the marked by regex (`s/\.txt$/.md/`); input dialogs edit like a shell prompt
-  (`Ctrl+A` / `E` / `K` …)
-- **Script slots in the explorer** — `!1` … `!9` run your scripts (Python everywhere, bash on Linux, PowerShell
-  on Windows) on the item under the cursor and the marked items; a script asks through Neovim's dialogs
-  (Yes / No, a text, a choice) with one printed line ([USAGE.md](USAGE.md#script-slots))
-- **IntelliJ habits** — Ctrl+Click goes to a declaration (on the declaration: its usages), bookmarks on lines per
-  project (`<leader>mm`, the list on `<leader>ml` / Shift+F11), and the buffers in the order you used them, the one
-  before this preselected (`<leader><Tab>`, IntelliJ's Ctrl+Tab)
-- **Hacker tools** — Hex editor, multiple terminals (a shell, the REPL or an agent takes your keys as soon as you
-  go to it), send-to-terminal workflow
-- **Session persistence** — Auto-saves per project + git branch
-- **Diffs as in a pull request** — codediff (VS Code's diff) reviews the changes live as they land (an agent at
-  work), the old side red and the new side green, the changed words within a line stronger; stage or discard a
-  hunk right there (`<leader>gv`)
-- **2026 plugin stack** — Flash, Harpoon v2, Oil, mini.surround/ai, grug-far, Trouble v3, codediff
+  ([the model](docs/agent.md#the-model))
+- **2026 plugin stack** — snacks.nvim (picker, explorer, notifications), blink.cmp, Flash, Harpoon v2, Oil,
+  mini.surround/ai, grug-far, Trouble v3, codediff, Cyberdream
+
+## Documentation
+
+| Topic | |
+|-------|-|
+| [Getting started](docs/start.md) | First launch, the start screen, the modes, tips, when something goes wrong |
+| [The coding agent](docs/agent.md) | The agent in the editor, Qwen Code's diffs, its changes, speech to text, the model |
+| [Files](docs/files.md) | The file tree, oil, harpoon, bookmarks |
+| [Windows, buffers, terminals, sessions](docs/windows.md) | Splits, resizing, buffers, terminals, sessions |
+| [Finding](docs/find.md) | Pickers, search and replace, flash |
+| [Code](docs/code.md) | Editing, language servers, completion, diagnostics, formatting, Java / Angular |
+| [Running and debugging](docs/run-debug.md) | Tasks, the REPL, errors, debugging |
+| [Git](docs/git.md) | Lazygit, codediff, gitsigns |
+| [Remote](docs/ssh.md) | SSH, PuTTY, the clipboard, the dashboard's Dev Environment |
+| [G3 development](G3-DEVELOPMENT.md) | Java, ngx-his, html5 clients - with or without IntelliJ |
+| [CHEATSHEET](CHEATSHEET.md) | Every key on one page |
+
+In Neovim, `<leader>gd` opens them read-only; `gd` or `Enter` on a link follows it.
 
 ## Quick Install
 
@@ -120,34 +126,10 @@ GreyKnight runs on Windows 11 as well, without admin rights:
 Python runs, tasks, the REPL, Python debugging and error locations work; bash scripts (run, REPL,
 debugging) and sudo runs are Linux only for now. Tests: `tests\run.ps1` (see Running Tests).
 
-## LLM Configuration
+### The agent's model
 
-The AI agent is **Qwen Code**, configured like any other Qwen Code install in
-`~/.qwen/settings.json` (an OpenAI-compatible provider pointed at your local LLM):
-
-```json
-{
-  "model": { "name": "llama-cpp", "baseUrl": "http://YOUR_LLM_HOST:PORT/v1" },
-  "modelProviders": {
-    "openai": [{ "id": "llama-cpp", "baseUrl": "http://YOUR_LLM_HOST:PORT/v1", "envKey": "QWEN_LOCAL_KEY" }]
-  },
-  "env": { "QWEN_LOCAL_KEY": "no-key" }
-}
-```
-
-The default on this rig is `http://192.168.2.173:8000/v1` (llama.cpp). Works with any
-OpenAI-compatible API: llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, etc.
-
-For coding, start one of the two coding launchers on the AI Dashboard's Models page. Both have no
-chat persona in the template, thinking on (effort medium), MTP and 128k context, and both passed the
-same Qwen Code checks (tool calls, a bash task, a pytest bug fix; infra-scripts `tools/llm-eval`):
-
-- **`qwen38official-q6-text-think-mtp-128k`**: the official Qwen3.8-27B weights
-- **`qwen38alt-q6-text-think-mtp-128k`**: the "alternative" uncensored Qwen3.8-27B build, about 10 % faster
-
-The chat launchers prepend a chat persona and have less context. `~/.qwen/settings.json` has a
-provider for each coding launcher (`qwen38-official`, `qwen38-alternative`); both point to the rig, so
-whichever launcher runs answers - `<leader>am` shows which model that is.
+Qwen Code talks to any OpenAI-compatible endpoint configured in `~/.qwen/settings.json` - the local LLM on the rig,
+Ollama, vLLM: [docs/agent.md → The model](docs/agent.md#the-model).
 
 ## Structure
 
@@ -181,7 +163,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── lsp.lua             LSP, Mason, Treesitter, conform
 │   ├── session.lua         persisted.nvim
 │   └── snacks.lua          picker, explorer, dashboard, notify
-├── lua/devsuite/           bash + python dev suite (USAGE.md → Running Scripts & REPL, Debugging)
+├── lua/devsuite/           bash + python dev suite (docs/run-debug.md)
 │   ├── runner.lua          what to run: file / args / sudo / project scripts / selection / cell / pytest
 │   ├── tasks.lua           runs as overseer tasks: output window, args memory, watch, fix with Qwen
 │   ├── errors.lua          tracebacks + bash errors -> quickfix + marks in the code
@@ -200,7 +182,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── voice.lua           speech to text (<leader>av to the agent, <leader>aV at the cursor): recorded on this
 │   │                       machine, whisper.cpp here (:VoiceInstall, pinned and checked) or $GREYKNIGHT_STT_URL
 │   ├── aidash.lua          AI Dashboard bridge: preview, up/download, notify —
-│   │                       loaded only inside its Dev Environment (USAGE.md → Terminal)
+│   │                       loaded only inside its Dev Environment (docs/ssh.md)
 │   ├── intellij.lua        IntelliJ's settings, read only: JDKs, a project's JDK and Maven, Actions on Save,
 │   │                       Prettier, Remote JVM Debug configurations
 │   ├── jdtls.lua           Java: jdtls with the project's JDK and Maven (IntelliJ's, else the machine's,
@@ -212,10 +194,20 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   └── markdown.lua        wrap + spellcheck
 ├── resources/
 │   └── intellij-java-format.xml   jdtls formatter profile close to IntelliJ's default Java code style
-├── slots/                  explorer script slots (USAGE.md → Script slots)
+├── slots/                  explorer script slots (docs/files.md → Script slots)
 │   ├── 1-info.py           slot 1: path, type, size, date, permissions of the marked items
 │   └── lib/                helpers for the scripts: gk.py, gk.sh, gk.ps1
-├── CHEATSHEET.md           keybinding reference (USAGE.md: the full guide)
+├── docs/                   the guide, a file per topic (README.md: the topics)
+│   ├── start.md            first launch, start screen, modes, tips, when something goes wrong
+│   ├── agent.md            the coding agent: in the editor, Qwen Code's diffs, its changes, speech to text, the model
+│   ├── files.md            the file tree, oil, harpoon, bookmarks
+│   ├── windows.md          windows, buffers, terminals, sessions
+│   ├── find.md             pickers, search and replace, flash
+│   ├── code.md             editing, language servers, completion, diagnostics, formatting, Java / Angular
+│   ├── run-debug.md        running, tasks, the REPL, debugging
+│   ├── git.md              lazygit, codediff, gitsigns
+│   └── ssh.md              over SSH, PuTTY, the clipboard, the dashboard's Dev Environment
+├── CHEATSHEET.md           every key on one page
 ├── G3-DEVELOPMENT.md       G3 work with or without IntelliJ: Java, ngx-his, html5 clients
 └── tests/
     ├── run.sh              runs all suites; exit status 1 on failure
@@ -250,7 +242,7 @@ Adding a new language:
 
 ## Key Bindings
 
-See [CHEATSHEET.md](CHEATSHEET.md) for the full reference. Highlights:
+See [CHEATSHEET.md](CHEATSHEET.md) for every key on one page, the [guide](docs/README.md) for how they work. Highlights:
 
 | Key | Action |
 |-----|--------|
@@ -312,8 +304,10 @@ sudo npm install -g opencode-ai
 
 # Both configured via:
 # ~/.qwen/settings.json
-# ~/.config/opencode/config.json
+# ~/.config/opencode/opencode.json
 ```
+
+Their model: [docs/agent.md → The model](docs/agent.md#the-model).
 
 ## Credits
 

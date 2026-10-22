@@ -2,6 +2,7 @@
 
 > Leader = `Space` | Open this: `nvim ~/.config/nvim/CHEATSHEET.md` or `<leader>gd`
 > On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
+> How it all works, a file per topic: [the guide](docs/README.md).
 
 **Contents:** [General](#general) · [AI](#ai-qwen-code-or-opencode-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
 
@@ -57,7 +58,7 @@ writes it (when it asks for permission: `/approval-mode default`):
 | `do` / `]c` / `[c` | Take one change back / next / previous change |
 
 > Only agents started here are connected (`vim.g.greyknight_agent_link = false`: none); the agents' settings files
-> stay as they are ([USAGE.md → The agent in your editor](USAGE.md#the-agent-in-your-editor)). An agent you are not
+> stay as they are ([docs/agent.md → The agent in your editor](docs/agent.md#the-agent-in-your-editor)). An agent you are not
 > looking at says when it is **done** or **waits for your answer** (a notification).
 >
 > **Speech to text** on this machine: `:VoiceInstall` downloads whisper.cpp and a model once (checked by sha256);
@@ -130,7 +131,7 @@ explorer pane once focused.
 | `!!` | The script slots: pick one to run |
 
 > Script slots: files `<n>-<name>.py` (`.sh` Linux, `.ps1` Windows) in `slots/` here or in
-> `~/.local/share/nvim/slots`; a script can ask you through dialogs - see USAGE.md, [Script slots](USAGE.md#script-slots).
+> `~/.local/share/nvim/slots`; a script can ask you through dialogs - see [docs/files.md → Script slots](docs/files.md#script-slots).
 
 > The tree shows Neovim's working directory: `.`, `<BS>` and `-` change both (a message shows the new one).
 > Move by the tree: `m` on the file, then `m` on the target folder (`c` there: copy). On a file the target is its
@@ -266,7 +267,7 @@ Python/bash REPL use `<leader>ri`).
 | `<leader>ca` | Code action |
 | `<leader>D` | Type definition |
 | `[d` / `]d` | Prev/next diagnostic |
-| `<leader>fm` | Format buffer / selection (IntelliJ projects: like its Reformat Code, see USAGE.md) |
+| `<leader>fm` | Format buffer / selection (IntelliJ projects: like its Reformat Code, see [docs/code.md](docs/code.md#java-and-angular)) |
 
 > Neovim's own LSP keys work too: `grn` rename, `grr` references, `gra` code action, `gO` symbols.
 > Because of them `gr` waits a moment before it runs; `grr` is the instant one. The keys come only with a server
@@ -275,8 +276,8 @@ Python/bash REPL use `<leader>ri`).
 ## Debug — `<F5>` / `<leader>d` (Python + bash)
 
 Breakpoints first, then `F5`. Python via debugpy, bash via bashdb; the program's input goes in the
-DAP console pane; variable values show next to the code while stopped. Full workflow: USAGE.md,
-"Debugging (DAP)". C/C++'s `:Codelldb*` surface is pending `porkfly/codelldb.nvim` syncing.
+DAP console pane; variable values show next to the code while stopped. Full workflow: [docs/run-debug.md →
+Debugging (DAP)](docs/run-debug.md#debugging-dap). C/C++'s `:Codelldb*` surface is pending `porkfly/codelldb.nvim` syncing.
 
 | Key | Action |
 |-----|--------|
@@ -344,7 +345,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 
 > Over SSH from **PuTTY**: its default keys send Ctrl+arrows as plain arrows and Shift/Ctrl+F11 as F11. In PuTTY set
 > Terminal → Keyboard: arrow keys *xterm-style bitmap*, function keys *Xterm 216+*; Connection → Data: terminal type
-> *xterm-256color* (USAGE.md, "Over SSH (PuTTY)"). Home / End as PuTTY sends them (`<Find>` / `<Select>`) work.
+> *xterm-256color* ([docs/ssh.md → Over SSH (PuTTY)](docs/ssh.md#over-ssh-putty)). Home / End as PuTTY sends them (`<Find>` / `<Select>`) work.
 
 ## Config Structure
 
@@ -352,6 +353,8 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 ~/.config/nvim/
 ├── init.lua                  ← entry point
 ├── CHEATSHEET.md             ← this file
+├── docs/                     ← the guide, a file per topic: start, agent, files, windows, find, code,
+│                                run-debug, git, ssh (docs/README.md: the topics)
 ├── lua/config/
 │   ├── options.lua           ← vim opts + language toggles
 │   ├── clipboard.lua         ← over SSH: copy with OSC 52, paste the last copy
@@ -413,7 +416,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 
 | Key | Action |
 |-----|--------|
-| `<leader>gd` | Read GreyKnight docs (README, CHEATSHEET, USAGE, G3-DEVELOPMENT): read-only, `q` closes |
+| `<leader>gd` | Read GreyKnight docs (README, CHEATSHEET, the guide's topics in docs/, G3-DEVELOPMENT): read-only, `q` closes |
 | `gd` / `Enter` | On a link in a markdown file: follow it (heading, other file, URL) |
 | `Ctrl+o` | Back to where you came from |
 | `gO` | All headings of the file (outline); `Enter` jumps |
