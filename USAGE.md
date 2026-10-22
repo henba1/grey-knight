@@ -325,8 +325,11 @@ with only ruff running), `gd` stays Vim's - the first use of the word in the fil
 The servers are set up with Neovim's own `vim.lsp.config` / `vim.lsp.enable`, over nvim-lspconfig's defaults for each
 (the older `require("lspconfig")` setup is deprecated and goes with nvim-lspconfig v3). A file outside any project
 gets its servers too; for lua_ls its folder is the workspace then - without one it marks nothing. A buffer without a
-file (a scratch buffer with a filetype) gets none.
-`:checkhealth vim.lsp` (`:LspInfo`) shows what runs where.
+file (a scratch buffer with a filetype) or one named by a URL (netrw's `scp://`, `diffview://`) gets none.
+`:checkhealth vim.lsp` (`:LspInfo`) shows what runs where, `:LspLog` opens the log. `:LspRestart` restarts a server
+(none named: those of this buffer), `:LspStop` stops it, `:LspStart` starts it here again - Neovim 0.12's own
+`:lsp restart` / `stop` / `enable` work too (nvim-lspconfig no longer defines the `:Lsp…` commands there; these are the
+config's).
 
 **Ctrl+Click** does what it does in IntelliJ. On a name it goes to the declaration (`Ctrl+o` comes back, as after
 `gd`). On the declaration itself it shows the usages, without the declaration: in the quickfix list, or straight there
@@ -997,14 +1000,17 @@ Neovim doesn't have native multi-cursor, but:
 and a line per session start) and, when Neovim exits, the Lua errors from `:messages` - each whole: a
 callback's, an autocommand's with the Lua error and its traceback below the header. It is plain
 text, trimmed to the last 2000 lines when it grows past 512 KB, so it is also the file to read (or
-send) when something broke and you did not see why.
+send) when something broke and you did not see why. Notices of what was done on purpose are shown but
+not logged - "Big file detected" (a big file opens without treesitter, language servers and folds).
 
 **Tests:** `tests/run.sh` runs the whole test suite headless (about ten seconds; the dev suite
 starts real python, bash and debugger processes) and exits with status 1 when anything fails. Run
 it after changing the config. On Windows: `tests\run.ps1` - each suite in a minimized Neovim window
 (a headless one gets no terminal output there), the bash tests skipped. Some tests only:
 `GK_TEST_ONLY='Explorer workflow,Session' tests/run.sh smoke` runs the tests whose names contain one of the
-comma-separated pieces, `GK_TEST_SKIP` all but those.
+comma-separated pieces, `GK_TEST_SKIP` all but those. A test run leaves your state alone: it neither
+reads nor writes your history (jumps, marks, recent files) and writes no harpoon lists, sessions or
+error log entries.
 
 ---
 
