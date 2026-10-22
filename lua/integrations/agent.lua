@@ -92,6 +92,16 @@ function M.command(first_prompt)
   return cmd
 end
 
+--- What connects a new agent to this Neovim - its tools, Qwen Code's IDE mode (integrations/agent_link.lua): the
+--- environment of its terminal. vim.g.greyknight_agent_link = false: none. Fails: the agent starts without it.
+function M.link_env()
+  if vim.g.greyknight_agent_link == false then return nil end
+  local ok, env = pcall(function() return require("integrations.agent_link").env(M.backend_id(), vim.fn.getcwd()) end)
+  if ok then return env end
+  vim.notify_once(("%s: not connected to Neovim - its tools and diffs are off (%s)"):format(M.backend().short, tostring(env)),
+    vim.log.levels.WARN)
+end
+
 local function agent(name, direction, first_prompt)
   local T = require("toggleterm.terminal")
   local backend = M.backend()
@@ -109,6 +119,7 @@ local function agent(name, direction, first_prompt)
     direction = direction,
     display_name = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1)),
     close_on_exit = false, -- keep the transcript when the CLI exits
+    env = M.link_env(),
   })
   term.gk_agent = true
   return term, true
