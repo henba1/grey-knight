@@ -12,6 +12,18 @@ local NAMES = { [vim.log.levels.WARN] = "WARN", [vim.log.levels.ERROR] = "ERROR"
 
 local session_started = false
 
+-- Warnings that tell what was done on purpose, not that something went wrong: shown, not logged. Each big file opened
+-- put snacks' "Big file detected" into the log, between the errors it is there for (2026-10-22).
+M.HARMLESS = {
+  { title = "Big File", text = "Big file detected" },
+}
+local function harmless(title, msg)
+  for _, h in ipairs(M.HARMLESS) do
+    if title == h.title and tostring(msg):find(h.text, 1, true) then return true end
+  end
+  return false
+end
+
 local function append(lines)
   -- plain io: works in fast event contexts too, where vim.fn is not allowed
   local file = io.open(M.path, "a")
@@ -89,8 +101,9 @@ function M.setup()
     inner = function(msg, level, opts) return snacks.notifier.notify(msg, level, opts) end
   end
   vim.notify = function(msg, level, opts)
-    if level and level >= vim.log.levels.WARN then
-      pcall(M.write, NAMES[level] or "ERROR", type(opts) == "table" and opts.title or "notify", msg)
+    local title = type(opts) == "table" and opts.title or "notify"
+    if level and level >= vim.log.levels.WARN and not harmless(title, msg) then
+      pcall(M.write, NAMES[level] or "ERROR", title, msg)
     end
     return inner(msg, level, opts)
   end
