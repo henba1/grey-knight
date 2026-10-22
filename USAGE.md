@@ -150,6 +150,7 @@ again opens a file; the next `/` is a file search again. Lowercase text ignores 
 | `m` | Move the marked items into the folder under the cursor (asks first). Nothing marked: marks the item under the cursor |
 | `c` | Copy the marked items into the folder under the cursor. Nothing marked: marks the item under the cursor |
 | `r` | Rename, or move to a typed path: relative from the working directory (as shown), absolute as typed (`/home/…`, `~/…`, `C:\…`, `\\server\share\…`) |
+| `%` | Rename the marked items by regex (else the one under the cursor): `s/regex/replacement/` on their names - see below |
 | `C` | Copy to a typed path: relative from the item's folder, absolute as typed |
 | `a` | New file or dir (trailing `/` makes a directory) - in the folder under the cursor, or at an absolute path |
 | `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash). The cursor stays on its item; when that one went, on the next one. Open files of what was deleted are closed - in a folder too |
@@ -163,6 +164,13 @@ unmarks it. A typed path that names an existing folder (or ends in `/` or `\`) t
 like `mv`; nothing is overwritten. Marks stay through searches and in the tree: `/` for the files, `<Tab>` on each,
 `D` for the target folder, `m` there. A file with unsaved changes (or a folder with such a file) stays where it is
 for `m` and `r` - save them (`:w`) or drop them (`:e!`) first.
+
+**Renaming by regex** (`%`): `s/regex/replacement/` on the names of the marked items, as `sed` does it - the first
+match, `g` every one, `i` ignores case; any delimiter after the `s` (`s#a/b#c#`). The regex is the search's (Rust
+regex, as ripgrep's); the replacement takes `$1`, `${name}`, `$0` (the whole match), `$$` (a `$`). A list of the
+new names shows first, then a yes. A name that would leave its folder, be another's too or land on something that
+exists stays as it is (each says why); open buffers, bookmarks and harpoon slots follow, as with `r`. The last
+substitution comes back as the default. Together: `R` `.*\.txt$`, `Ctrl+a`, `%` `s/\.txt$/.md/`.
 
 **Typing in the prompts** - `r`, `C`, `a` and every other input dialog (the agent's questions too) - works like
 a shell prompt:
@@ -672,6 +680,9 @@ Works for **all** windows: editor splits, explorer, terminal, Qwen agent.
 | `Ctrl+↑` | Taller |
 | `Ctrl+↓` | Shorter |
 
+`Alt+←` `Alt+→` `Alt+↑` `Alt+↓` (`<M-Left>` …) do the same in the editor - for a terminal that sends Ctrl+arrows as
+plain arrows, as PuTTY does by default ([Over SSH (PuTTY)](#over-ssh-putty)). In a terminal they stay the shell's.
+
 ### Closing
 
 | Key | Action |
@@ -750,7 +761,8 @@ as you like, and they can have a name.
 | `<leader>mn` / `<leader>mp` | Next / previous bookmark, in file and line order, from file to file; after the last comes the first |
 
 `Ctrl+o` comes back from a bookmark you went to. IntelliJ's `F11` is the debugger's step into here (`F5` and its
-neighbours are the debug keys); `Shift+F11` and `Ctrl+F11` are as in IntelliJ.
+neighbours are the debug keys); `Shift+F11` and `Ctrl+F11` are as in IntelliJ - most terminals send them the way
+Neovim calls `<F23>` and `<F35>`, mapped too (PuTTY: [Over SSH (PuTTY)](#over-ssh-putty)).
 
 **They stay with their lines.** A bookmark moves with its line while you edit above it, and with the line when you
 move it (`:m`, visual `J` / `K`). A line cut and put back elsewhere (`dd`, `p`) or replaced as a whole (a formatter,
@@ -869,7 +881,7 @@ unavailable from this network for now.
 | `<leader>du` | Toggle DAP UI (variables, stack, watches, console) |
 
 > `Shift+F5` needs a terminal that sends it (not all do over SSH or in the browser); `<leader>dq`
-> always works.
+> always works. Most terminals send it the way Neovim calls `<F17>` - mapped too; PuTTY: [Over SSH (PuTTY)](#over-ssh-putty).
 
 ---
 
@@ -964,6 +976,33 @@ Yank and paste use the system clipboard (`unnamedplus`). On your own machine Neo
 front of you via OSC 52, and `p` pastes the last yank made in nvim - text copied on that computer comes in with
 the terminal's paste (`Ctrl+Shift+V` / right-click). Reading the clipboard over OSC 52 works in few terminals; in
 the others (Windows Terminal) every `p` used to wait 10 seconds.
+
+### Over SSH (PuTTY)
+PuTTY's default keyboard settings send some keys so that Neovim cannot tell them from others: **Ctrl+arrows come as
+plain arrows**, Shift+F11 and Ctrl+F11 as `F11` (step into), Shift+F5 as another F-key, Home and End as the old
+VT220 keys Find and Select (those work anyway now). Three settings fix it - in PuTTY: *Change Settings*, then *Save*
+the session (or *Default Settings* for new ones):
+
+| Where in PuTTY | Setting |
+|---|---|
+| Terminal → Keyboard → Shift/Ctrl/Alt with the arrow keys | **xterm-style bitmap** |
+| Terminal → Keyboard → The Function keys and keypad | **Xterm 216+** |
+| Connection → Data → Terminal-type string | **xterm-256color** |
+
+| Key | PuTTY's defaults | With the settings |
+|---|---|---|
+| `Ctrl+arrows` (resize) | plain arrows - use `Alt+arrows` | work |
+| `Shift+F5` (stop debugging) | another F-key - use `<leader>dq` | work |
+| `Shift+F11` / `Ctrl+F11` (bookmarks) | `F11`, step into - use `<leader>ml` / `<leader>mr` | work |
+| `Home` / `End` | work | work |
+| `Alt` keys (`Alt+r`, `Alt+s`), `Ctrl+Space` | work | work |
+
+GreyKnight says so once on a machine when a session looks like PuTTY's defaults (over SSH, terminal type `xterm`).
+Most terminals send Shift and Ctrl with an F-key as xterm does, and Neovim names those keys as terminfo does:
+Shift+F5 `<F17>`, Shift+F11 `<F23>`, Ctrl+F11 `<F35>` - both names are mapped. PuTTY cannot take a copy over
+OSC 52: a yank stays in Neovim (`p` pastes it there); to copy out select with the mouse while holding Shift (PuTTY
+copies what you select), and paste with right-click. Windows Terminal with the `ssh` of Windows 10/11 sends every
+key as itself out of the box and takes OSC 52 copies.
 
 ### Which-key
 Press `<leader>` and **wait** — a popup shows all available keybindings grouped by category.

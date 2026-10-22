@@ -26,7 +26,8 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   and copies by the tree (mark, then `m` / `c` on the target folder), takes absolute paths in its prompts,
   keeps the cursor in place on delete and searches files (`/`), folders by name (`D`) or only what the tree
   shows (`S`) - fuzzy or by regex (`R`: `.*\.sh$`, a glob too: `*.sh`), `Ctrl+A` marks the matches for `m` /
-  `c` / `d`; input dialogs edit like a shell prompt (`Ctrl+A` / `E` / `K` …)
+  `c` / `d`, `%` renames the marked by regex (`s/\.txt$/.md/`); input dialogs edit like a shell prompt
+  (`Ctrl+A` / `E` / `K` …)
 - **Script slots in the explorer** — `!1` … `!9` run your scripts (Python everywhere, bash on Linux, PowerShell
   on Windows) on the item under the cursor and the marked items; a script asks through Neovim's dialogs
   (Yes / No, a text, a choice) with one printed line ([USAGE.md](USAGE.md#script-slots))
@@ -149,12 +150,13 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── autocmds.lua        yank highlight, cursor restore, terminal mode on the way into a terminal
 │   ├── explorer.lua        file explorer keys: cd here (.), cd .. (<BS>, -), move / copy through the
 │   │                       tree (m, c), typed paths as typed (r, C, a), search files / folders /
-│   │                       the current view (/, D, S), by regex or glob (R, Alt+r)
+│   │                       the current view (/, D, S), by regex or glob (R, Alt+r), rename by regex (%)
 │   ├── mdlinks.lua         markdown links: gd / Enter follow them (#heading, file, URL)
 │   ├── slots.lua           explorer script slots: !1 … !9 and !!, the context, the scripts' dialogs
 │   ├── bookmarks.lua       bookmarks: lines to come back to, per project, signs, the list (<leader>mm, <leader>ml)
 │   ├── navigate.lua        Ctrl+Click as in IntelliJ: the declaration, on the declaration its usages
 │   ├── switcher.lua        recent buffers in the order of use, the previous one preselected (<leader><Tab>)
+│   ├── putty.lua           over SSH from PuTTY with its default keys: once a word on the settings that fix them
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
