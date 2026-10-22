@@ -218,14 +218,45 @@ return {
       require("nvim-treesitter").install(ts_langs)
 
       -- Node selection with Neovim's own code, what its an / in run (mini.ai has those keys for its "next"
-      -- textobjects); the incremental_selection module these keys called is gone from the main branch
+      -- textobjects); the incremental_selection module these keys called is gone from the main branch.
+      -- <BS> goes back the way <C-space> came: Neovim's own shrink took a node's first child - from foo(bar, baz) back
+      -- to foo, not to (bar, baz) where it had come from (2026-10-22). Each window keeps the selections <C-space> grew
+      -- from; a selection changed in between (or none grown) shrinks as Neovim does.
+      local grown = {} -- window -> { stack = { selection, ... }, last = the selection <C-space> / <BS> left }
+      local function selection()
+        local a, b = vim.fn.getpos("v"), vim.fn.getpos(".")
+        if a[2] > b[2] or (a[2] == b[2] and a[3] > b[3]) then a, b = b, a end
+        return { a[2], a[3], b[2], b[3] }
+      end
+      local function same(x, y) return x and y and x[1] == y[1] and x[2] == y[2] and x[3] == y[3] and x[4] == y[4] end
+      local function reselect(s)
+        vim.cmd("normal! \27") -- out of visual mode first: leaving it sets '< and '>
+        vim.api.nvim_buf_set_mark(0, "<", s[1], s[2] - 1, {})
+        vim.api.nvim_buf_set_mark(0, ">", s[3], s[4] - 1, {})
+        vim.cmd("normal! gv")
+      end
       local function select_node(outer)
+        local win = vim.api.nvim_get_current_win()
+        local state, now = grown[win], selection()
+        if not outer and state and #state.stack > 0 and same(state.last, now) then
+          state.last = table.remove(state.stack)
+          return reselect(state.last)
+        end
+        if outer then
+          if not (state and same(state.last, now)) then state = { stack = {} } end
+          table.insert(state.stack, now)
+          grown[win] = state
+        else
+          grown[win] = nil
+        end
         local count = vim.v.count1
         if vim.treesitter.get_parser(nil, nil, { error = false }) then
           local select = require("vim.treesitter._select")
           if outer then select.select_parent(count) else select.select_child(count) end
+          if outer then state.last = selection() end
         else
           vim.lsp.buf.selection_range(outer and count or -count)
+          if outer then grown[win] = nil end -- the server answers later: no history for it
         end
       end
       vim.keymap.set("n", "<C-space>", "v<C-space>", { remap = true, desc = "TS: Init selection" })
