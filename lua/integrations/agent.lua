@@ -94,12 +94,29 @@ end
 
 --- What connects a new agent to this Neovim - its tools, Qwen Code's IDE mode (integrations/agent_link.lua): the
 --- environment of its terminal. vim.g.greyknight_agent_link = false: none. Fails: the agent starts without it.
-function M.link_env()
+function M.link_env(id)
   if vim.g.greyknight_agent_link == false then return nil end
-  local ok, env = pcall(function() return require("integrations.agent_link").env(M.backend_id(), vim.fn.getcwd()) end)
+  local ok, env = pcall(function() return require("integrations.agent_link").env(M.backend_id(), vim.fn.getcwd(), id) end)
   if ok then return env end
   vim.notify_once(("%s: not connected to Neovim - its tools and diffs are off (%s)"):format(M.backend().short, tostring(env)),
     vim.log.levels.WARN)
+end
+
+--- The agent says it is done ("stop") or waits for an answer ("permission") - its hooks (agent_link.lua). A word
+--- unless the user looks at it: its window is the current one, or the diff it asks about (agent_ide.lua) is.
+function M.attention(event, id)
+  local T = require("toggleterm.terminal")
+  local term = id and T.get(id, true)
+  if term and term.window and vim.api.nvim_win_is_valid(term.window) and vim.api.nvim_get_current_win() == term.window then
+    return
+  end
+  if event == "permission" and require("integrations.agent_ide").current() then return end
+  local who = term and term.display_name or M.backend().name
+  if event == "stop" then
+    vim.notify(who .. " is done", vim.log.levels.INFO, { title = who })
+  elseif event == "permission" then
+    vim.notify(who .. " waits for your answer", vim.log.levels.WARN, { title = who })
+  end
 end
 
 local function agent(name, direction, first_prompt)
@@ -119,7 +136,7 @@ local function agent(name, direction, first_prompt)
     direction = direction,
     display_name = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1)),
     close_on_exit = false, -- keep the transcript when the CLI exits
-    env = M.link_env(),
+    env = M.link_env(id),
   })
   term.gk_agent = true
   return term, true

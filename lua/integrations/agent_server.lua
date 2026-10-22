@@ -35,6 +35,26 @@ local function cast(fn, ...)
   vim.rpcnotify(chan, "nvim_exec_lua", "require('integrations.agent_link')." .. fn .. "(...)", { ... })
 end
 
+-- role "hook" (nvim -l agent_server.lua hook <address> <event>): an agent's hook - Qwen Code's Stop / PermissionRequest,
+-- OpenCode's plugin - says it is done or waits for the user. Its JSON comes on stdin (none from OpenCode); it goes to
+-- that Neovim with the agent's terminal ($GREYKNIGHT_AGENT_ID), then the hook ends - it never holds the agent up.
+if role == "hook" then
+  local input, eof = "", false
+  -- stdin only when it is a pipe: libuv opening /dev/null as one aborted the process (2026-10-22, Linux)
+  if uv.guess_handle(0) == "pipe" then
+    local stdin = uv.new_pipe(false)
+    stdin:open(0)
+    stdin:read_start(function(err, data)
+      if err or not data then eof = true else input = input .. data end
+    end)
+    vim.wait(2000, function() return eof end, 10)
+  end
+  local okj, payload = pcall(vim.json.decode, input ~= "" and input or "{}", { luanil = { object = true, array = true } })
+  -- no nil among the arguments: a hole in the list the call sends would drop what follows it
+  pcall(call, "hook", _G.arg[3] or "", vim.env.GREYKNIGHT_AGENT_ID or "", okj and payload or vim.empty_dict())
+  os.exit(0)
+end
+
 -- What that Neovim sends: the answer to a tool call, or a notification for the agent (agent_link.lua, send)
 _G.gk_link = function(kind, payload)
   if kind == "reply" then
@@ -69,6 +89,10 @@ local function handle(line)
 end
 
 local done, pending = false, ""
+if uv.guess_handle(0) ~= "pipe" then -- an agent talks to it through pipes; anything else would abort libuv
+  log("stdin is no pipe - an agent starts this server, its MCP client talks to it over stdio")
+  os.exit(1)
+end
 local stdin = uv.new_pipe(false)
 stdin:open(0)
 stdin:read_start(function(err, data)

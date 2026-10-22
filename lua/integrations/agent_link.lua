@@ -36,6 +36,13 @@ function M.server_command(role)
   return { vim.v.progpath, "-l", M.script(), role, M.address() }
 end
 
+--- The command of an agent's hook: it says the agent is done ("stop") or waits for the user ("permission")
+function M.hook_command(event)
+  local cmd = M.server_command("hook")
+  cmd[#cmd + 1] = event
+  return cmd
+end
+
 local function module(role)
   return require(role == "ide" and "integrations.agent_ide" or "integrations.agent_tools")
 end
@@ -54,6 +61,11 @@ end
 function M.ready(chan, role)
   local mod = module(role)
   if mod.ready then mod.ready(chan) end
+end
+
+--- An agent's hook (agent_server.lua, role "hook"): done or waiting - a word unless the user looks at that agent
+function M.hook(event, agent_id, payload)
+  require("integrations.agent").attention(event, tonumber(agent_id), payload)
 end
 
 function M.detach(chan)
@@ -339,7 +351,48 @@ function M.qwen_settings()
     trust = true,
     description = "GreyKnight: show files in the user's Neovim (file tree, editor, quickfix), its language servers",
   }
+  -- done (Stop: after it answered) or waiting for the user (PermissionRequest: its question shows): a word in Neovim.
+  -- Hooks of every settings level run, these after the user's own
+  data.hooks = type(data.hooks) == "table" and data.hooks or {}
+  for event, what in pairs({ Stop = "stop", PermissionRequest = "permission" }) do
+    local list = type(data.hooks[event]) == "table" and data.hooks[event] or {}
+    local shell = table.concat(vim.tbl_map(function(a) return vim.fn.shellescape(a) end, M.hook_command(what)), " ")
+    list[#list + 1] = { hooks = { { type = "command", command = shell } } }
+    data.hooks[event] = list
+  end
   return data
+end
+
+--- OpenCode's word when it is done or waits for the user: a plugin of GreyKnight's, in a config folder of this
+--- Neovim's own ($OPENCODE_CONFIG_DIR adds its plugins to the user's - a user's own folder there stays: no plugin then)
+local PLUGIN = [[
+// GreyKnight: tells the Neovim that started this OpenCode when it is done or waits for an answer
+// (lua/integrations/agent_link.lua wrote this file into that Neovim's temp folder; it goes when Neovim quits)
+import { spawn } from "node:child_process"
+const COMMAND = %s
+function tell(event) {
+  try {
+    // stdin a pipe that ends at once: the hook reads nothing (not /dev/null - see agent_server.lua)
+    const child = spawn(COMMAND[0], [...COMMAND.slice(1), event], { stdio: ["pipe", "ignore", "ignore"], windowsHide: true })
+    child.on("error", () => {})
+    child.stdin.on("error", () => {})
+    child.stdin.end()
+  } catch (e) {}
+}
+export const GreyKnight = async () => ({
+  event: async ({ event }) => {
+    if (event.type === "session.idle") tell("stop")
+    else if (event.type === "permission.asked" || event.type === "permission.updated") tell("permission")
+  },
+})
+]]
+
+function M.opencode_dir()
+  local dir = private_dir() .. "/opencode"
+  vim.fn.mkdir(dir .. "/plugins", "p")
+  local cmd = M.server_command("hook")
+  vim.fn.writefile(vim.split(PLUGIN:format(vim.json.encode(cmd)), "\n"), dir .. "/plugins/greyknight.js")
+  return dir
 end
 
 --- OpenCode's inline config for one started here ($OPENCODE_CONFIG_CONTENT; one the user set stays, extended)
@@ -356,21 +409,25 @@ function M.opencode_config()
 end
 
 --- The environment of an agent's terminal: what connects it to this Neovim. `backend`: "qwen" | "opencode";
---- `dir`: where it starts. Only the backend's own: no ~/.qwen folder on a machine with OpenCode only.
-function M.env(backend, dir)
+--- `dir`: where it starts; `id`: its terminal (the hooks name it). Only the backend's own: no ~/.qwen folder on a
+--- machine with OpenCode only.
+function M.env(backend, dir, id)
   if dir and dir ~= "" then dirs[#dirs + 1] = vim.fn.fnamemodify(dir, ":p"):gsub("[/\\]$", "") end
+  local env = { GREYKNIGHT_AGENT_ID = id and tostring(id) or nil }
   if backend == "opencode" then
-    return { OPENCODE_CONFIG_CONTENT = M.opencode_config() }
+    env.OPENCODE_CONFIG_CONTENT = M.opencode_config()
+    local own = vim.env.OPENCODE_CONFIG_DIR
+    if not own or own == "" then env.OPENCODE_CONFIG_DIR = M.opencode_dir() end
+    return env
   end
   local l = M.lock_file()
   write_lock() -- with the folder this agent starts in
   local settings = private_dir() .. "/qwen-system-defaults.json"
   write_json(settings, M.qwen_settings())
-  return {
-    QWEN_CODE_IDE_SERVER_PORT = tostring(l.n),
-    QWEN_CODE_IDE_WORKSPACE_PATH = M.workspaces(),
-    QWEN_CODE_SYSTEM_DEFAULTS_PATH = settings,
-  }
+  env.QWEN_CODE_IDE_SERVER_PORT = tostring(l.n)
+  env.QWEN_CODE_IDE_WORKSPACE_PATH = M.workspaces()
+  env.QWEN_CODE_SYSTEM_DEFAULTS_PATH = settings
+  return env
 end
 
 --- The lock file goes with Neovim
