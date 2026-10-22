@@ -35,26 +35,40 @@ function M.write(level, source, msg)
   append(out)
 end
 
--- Lua errors of mappings and commands only reach :messages - keep them when Neovim exits
-local function log_messages()
-  local ok, result = pcall(vim.api.nvim_exec2, "messages", { output = true })
-  if not ok or not result.output or result.output == "" then return end
-  local block = {}
+--- The errors in :messages output, each whole: { "Error in User Autocommands for ...\nLua callback: ...\n..." }.
+--- Neovim 0.12 writes a callback's error as "vim.schedule callback: <error>" and an autocommand's under its header as
+--- "Lua callback: <error>" with the traceback below: the first was not seen at all, the second kept only its header
+--- (2026-10-22 - "Error in BufEnter Autocommands for "<buffer=25>":" and nothing else in the Kali log).
+function M.parse_messages(output)
+  local blocks, block = {}, {}
   local function flush()
-    if #block > 0 then M.write("ERROR", "messages", table.concat(block, "\n")) end
+    if #block > 0 then blocks[#blocks + 1] = table.concat(block, "\n") end
     block = {}
   end
-  for _, line in ipairs(vim.split(result.output, "\n")) do
-    if line:match("^E%d+:") or line:match("^Error") or line:match("^%S+%.lua:%d+:") then
+  for _, line in ipairs(vim.split(output or "", "\n")) do
+    local starts = line:match("^E%d+:") or line:match("^Error") or line:match("^%S+%.lua:%d+:")
+      or line:match("^[%w%._]+ callback: ")
+    local continues = #block > 0 and line ~= "" and (line:match("^%s") or line:match("^stack traceback")
+      or line:match("^Lua callback: ") or line:match("^Lua function: ") or line:match("^line%s+%d+:")
+      or block[#block]:match(":$")) -- after a header ("Error in ... Autocommands for ...:", "Error detected while ...:")
+    if continues then
+      block[#block + 1] = line
+    elseif starts then
       flush()
       block[1] = line
-    elseif #block > 0 and (line:match("^%s") or line:match("^stack traceback")) then
-      block[#block + 1] = line
     else
       flush()
     end
   end
   flush()
+  return blocks
+end
+
+-- Lua errors of mappings, callbacks and autocommands only reach :messages - keep them when Neovim exits
+function M.log_messages()
+  local ok, result = pcall(vim.api.nvim_exec2, "messages", { output = true })
+  if not ok or not result.output or result.output == "" then return end
+  for _, block in ipairs(M.parse_messages(result.output)) do M.write("ERROR", "messages", block) end
 end
 
 function M.setup()
@@ -83,7 +97,7 @@ function M.setup()
 
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("greyknight_errorlog", { clear = true }),
-    callback = log_messages,
+    callback = function() M.log_messages() end,
   })
 end
 
