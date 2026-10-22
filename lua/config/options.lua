@@ -120,3 +120,8 @@ vim.g.loaded_node_provider = 0
 vim.g.loaded_perl_provider = 0
 vim.g.loaded_ruby_provider = 0
 vim.g.loaded_python3_provider = 0
+
+-- :Cfilter /regex/ keeps the quickfix list's entries whose file or text matches - a run's errors, Ctrl+Click's usages,
+-- a grep - :Cfilter! drops them, :Lfilter does it for a location list. Neovim's own (an optional package, one Vim
+-- script: loaded before lazy.nvim's runtimepath, its commands stay). Vim's regex: \v for (a|b) without backslashes.
+pcall(vim.cmd.packadd, "cfilter")
