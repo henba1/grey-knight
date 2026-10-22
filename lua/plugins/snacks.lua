@@ -68,7 +68,8 @@ return {
           -- Search: / files (snacks' own), D folders by name, S the rows the tree shows - in the list and in the
           -- search box when not typing; <a-s> while typing goes on to the next. <Esc> steps back: box -> list ->
           -- tree -> closed. R files by regex (a glob too), <a-r> switches the file / folder search between fuzzy
-          -- and regex. finder and config: snacks' own, with the other searches.
+          -- and regex; <c-a> marks a search's matches (not the folders above them). finder and config: snacks'
+          -- own, with the other searches.
           explorer = {
             finder = function(opts, ctx) return require("config.explorer").finder(opts, ctx) end,
             config = function(opts) return require("config.explorer").setup(opts) end,
@@ -89,15 +90,16 @@ return {
               gk_search_leave   = { action = function(p) require("config.explorer").search_leave(p) end,   desc = "Leave the search (back to the tree), else close" },
               gk_search_regex   = { action = function(p) require("config.explorer").search_regex(p) end,   desc = "Search files by regex or glob (stays on until Alt+r)" },
               gk_regex_toggle   = { action = function(p) require("config.explorer").regex_toggle(p) end,   desc = "Regex / fuzzy for the file and folder search" },
+              gk_mark_matches   = { action = function(p) require("config.explorer").mark_matches(p) end,   desc = "Mark the search's matches (again: unmark)" },
             },
             win = {
               list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to",
                 ["/"] = "gk_search_files", ["D"] = "gk_search_folders", ["S"] = "gk_search_view", ["<Esc>"] = "gk_search_leave",
-                ["R"] = "gk_search_regex" } },
-              -- the search box: keys in normal mode (after <Esc>), so typing stays typing; <a-s> and <a-r> while
-              -- typing too
+                ["R"] = "gk_search_regex", ["<c-a>"] = "gk_mark_matches" } },
+              -- the search box: keys in normal mode (after <Esc>), so typing stays typing; <a-s>, <a-r> and <c-a>
+              -- while typing too
               input = { keys = { ["<a-s>"] = { "gk_search_next", mode = { "i", "n" } },
-                ["<a-r>"] = { "gk_regex_toggle", mode = { "i", "n" } },
+                ["<a-r>"] = { "gk_regex_toggle", mode = { "i", "n" } }, ["<c-a>"] = { "gk_mark_matches", mode = { "i", "n" } },
                 ["/"] = "gk_search_files", ["D"] = "gk_search_folders", ["S"] = "gk_search_view", ["<Esc>"] = "gk_search_back",
                 ["R"] = "gk_search_regex" } },
             },

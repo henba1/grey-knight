@@ -399,7 +399,8 @@ end
 -- fuzzy and regex - it stays so until switched back. The text goes to fd then: a Rust regex (\d \w \b (?i) (a|b)
 -- {2,3}; no lookaround, no backreferences) against the name, or - when it has a / - the path below the tree's root;
 -- a text with a * and nothing only a regex has is a glob (*.sh, test_*.py, *.{sh,bash}; with a /: below the root, as
--- in .gitignore). The title says which: "Search files (regex)", "(glob)", "(regex: unclosed group)".
+-- in .gitignore). The title says which: "Search files (regex)", "(glob)", "(regex: unclosed group)". Ctrl+a marks
+-- the matches of a search - not the folders shown above them - for m / c / d.
 
 local LABEL = { file = "Search files", folder = "Search folders", view = "Search current view" }
 local NEXT = { file = "folder", folder = "view", view = "file" }
@@ -604,10 +605,11 @@ local function view(opts, ctx)
   local lower = search:lower() == search
   local function hit(name) return (lower and name:lower() or name):find(search, 1, true) ~= nil end
   return function(cb)
-    local rows, want, copies = {}, {}, {}
+    local rows, want, copies, hits = {}, {}, {}, {}
     tree(function(row) rows[#rows + 1] = row end)
     for _, row in ipairs(rows) do
       if search == "" or (row.parent and hit(vim.fs.basename(row.file))) then
+        hits[row] = search ~= "" -- a match; the folders above it only come along (Ctrl+a marks matches)
         local r = row -- with the folders above it
         while r and not want[r] do
           want[r] = true
@@ -621,6 +623,7 @@ local function view(opts, ctx)
         for _, key in ipairs(KEEP) do item[key] = row[key] end
         item.parent = row.parent and copies[row.parent] or nil
         item.text = item.parent and vim.fs.basename(row.file) or "" -- the root row: only there as the top
+        item.gk_hit = hits[row] or nil
         copies[row] = item
         cb(item)
       end
@@ -865,6 +868,41 @@ function M.search_regex(picker) search(picker, "file", true) end
 function M.regex_toggle(picker)
   local mode = search_of(picker).mode
   search(picker, mode == "view" and "file" or mode, not M.regex)
+end
+
+-- A match of the search, not one of the folders above them: a file search's files, a folder search's folders, a
+-- row of the current view that matched. Fuzzy: snacks' matcher says which rows only came along (child_match_only).
+local function match(picker, item)
+  if not item.parent then return false end -- the root
+  local mode = search_of(picker).mode
+  if mode == "view" or picker.opts.live then return item.gk_hit == true end
+  return (item.score or 0) > 0 and not item.child_match_only and (item.dir == true) == (mode == "folder")
+end
+
+--- Ctrl+a - in a search: marks its matches, the files of a file search, the folders of a folder search; not the
+--- folders above them - snacks' select_all marked those too, and d deleted them whole. Again: unmarks them. Marks
+--- of before stay. Outside a search: snacks' own (every row).
+function M.mark_matches(picker)
+  if not searching(picker) then return picker.list:select_all() end
+  local hits = {}
+  for item in picker:iter() do
+    if match(picker, item) then hits[#hits + 1] = item end
+  end
+  if #hits == 0 then return notify("Nothing to mark - no match") end
+  local all = true
+  for _, item in ipairs(hits) do all = all and picker.list:is_selected(item) end
+  local keys, selected = {}, {}
+  for _, item in ipairs(hits) do keys[picker.list:select_key(item)] = true end
+  for _, item in ipairs(picker.list.selected) do
+    if not (all and keys[picker.list:select_key(item)]) then selected[#selected + 1] = item end
+  end
+  if not all then
+    for _, item in ipairs(hits) do
+      if not picker.list:is_selected(item) then selected[#selected + 1] = item end
+    end
+  end
+  picker.list:set_selected(selected)
+  notify(("%s %d match%s - m / c / d act on the marked"):format(all and "Unmarked" or "Marked", #hits, #hits == 1 and "" or "es"))
 end
 
 return M
