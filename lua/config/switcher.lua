@@ -20,18 +20,35 @@ function M.setup()
   vim.api.nvim_create_autocmd("BufWipeout", { group = group, callback = function(ev) seen[ev.buf] = nil end })
 end
 
---- The listed file buffers, the one entered last first
+local WIN = vim.fn.has("win32") == 1
+local function key(path)
+  path = vim.fs.normalize(path)
+  return WIN and path:lower() or path
+end
+
+--- The listed file buffers, the one entered last first. Those this session has not entered yet - a restored
+--- session's, files named on the command line - in the order of Neovim's recent files: v:oldfiles, read from the
+--- ShaDa file, the one left last first. IntelliJ keeps the order over a restart (2026-10-22: after one the list was
+--- in the order of the buffer numbers).
 function M.recent()
-  local bufs, used = {}, {}
+  local rank = {}
+  for i, file in ipairs(vim.v.oldfiles) do
+    local k = key(file)
+    if not rank[k] then rank[k] = i end
+  end
+  local bufs, used, old = {}, {}, {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= "" then
+    local name = vim.api.nvim_buf_get_name(buf)
+    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and name ~= "" then
       bufs[#bufs + 1] = buf
       used[buf] = vim.fn.getbufinfo(buf)[1].lastused
+      old[buf] = rank[key(name)] or math.huge
     end
   end
   table.sort(bufs, function(a, b)
     local sa, sb = seen[a] or 0, seen[b] or 0
     if sa ~= sb then return sa > sb end
+    if old[a] ~= old[b] then return old[a] < old[b] end
     if used[a] ~= used[b] then return used[a] > used[b] end
     return a > b
   end)
