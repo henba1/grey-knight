@@ -2,7 +2,7 @@
 -- ║  Bootstrap lazy.nvim + load lua/plugins/*                   ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not (vim.uv or vim.loop).fs_stat(lazypath) then -- vim.loop: before Neovim 0.10 (a fresh machine's install.sh)
   vim.fn.system({
     "git", "clone", "--filter=blob:none",
     "https://github.com/folke/lazy.nvim.git",

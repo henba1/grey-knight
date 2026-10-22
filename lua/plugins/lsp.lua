@@ -203,7 +203,10 @@ return {
           map("<leader>D",  "textDocument/typeDefinition", vim.lsp.buf.type_definition, "Type definition")
           -- diagnostics of any source (runs too), with the message in a float as before; goto_prev/goto_next are
           -- deprecated
-          local function jump(count) return function() vim.diagnostic.jump({ count = count, float = true }) end end
+          -- the message in a float after the jump: on_jump, as Neovim's own float = true does it - deprecated, said
+          -- nowhere but in :checkhealth vim.deprecated (2026-10-22); Neovim 0.14 drops it, and the float with it
+          local function float(_, bufnr) vim.diagnostic.open_float({ bufnr = bufnr, scope = "cursor", focus = false }) end
+          local function jump(count) return function() vim.diagnostic.jump({ count = count, on_jump = float }) end end
           vim.keymap.set("n", "[d", jump(-1), { buffer = b, desc = "Prev diagnostic" })
           vim.keymap.set("n", "]d", jump(1), { buffer = b, desc = "Next diagnostic" })
         end,
