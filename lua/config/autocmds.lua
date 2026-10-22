@@ -44,6 +44,9 @@ vim.api.nvim_create_autocmd("BufEnter", {
   end,
 })
 
+-- Bookmarks: their signs, and their lines kept as you edit (lua/config/bookmarks.lua)
+require("config.bookmarks").setup()
+
 -- Close certain filetypes with q
 vim.api.nvim_create_autocmd("FileType", {
   pattern = { "help", "qf", "man", "notify", "lspinfo", "checkhealth", "oil" },

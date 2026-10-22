@@ -17,6 +17,7 @@ vim.api.nvim_create_autocmd("User", {
         { "<leader>f",  group = "Find (Picker)" },
         { "<leader>g",  group = "Git" },
         { "<leader>h",  group = "Harpoon/Hex" },
+        { "<leader>m",  group = "Bookmarks" },
         { "<leader>p",  group = "Session" },
         { "<leader>r",  group = "Run/Tasks/REPL" },
         { "<leader>s",  group = "Search & Replace" },
@@ -73,6 +74,17 @@ for _, lhs in ipairs({ "<C-LeftMouse>", "<C-2-LeftMouse>", "<C-3-LeftMouse>", "<
   map("n", lhs, function() require("config.navigate").ctrl_click() end, { desc = "Go to declaration / usages" })
 end
 map("i", "<C-LeftMouse>", "<Esc><C-LeftMouse>", { remap = true, desc = "Go to declaration / usages" })
+
+-- ── Bookmarks: lines to come back to, per project (lua/config/bookmarks.lua) ──
+-- IntelliJ's F11 is step into here (the debugger's F-keys); Shift+F11 and Ctrl+F11 are as there
+local function bookmarks() return require("config.bookmarks") end
+map("n", "<leader>mm", function() bookmarks().toggle() end, { desc = "Bookmark: set / remove on this line" })
+map("n", "<leader>mr", function() bookmarks().name() end,   { desc = "Bookmark: name it (sets one if none)" })
+map("n", "<leader>ml", function() bookmarks().pick() end,   { desc = "Bookmarks: list - Enter opens, dd deletes" })
+map("n", "<leader>mn", function() bookmarks().jump(1) end,  { desc = "Bookmark: next" })
+map("n", "<leader>mp", function() bookmarks().jump(-1) end, { desc = "Bookmark: previous" })
+map("n", "<S-F11>",    function() bookmarks().pick() end,   { desc = "Bookmarks: list" })
+map("n", "<C-F11>",    function() bookmarks().name() end,   { desc = "Bookmark with a name" })
 
 -- ── Move lines (visual) ─────────────────────────────────────
 map("v", "J", ":m '>+1<CR>gv=gv", { silent = true, desc = "Move selection down" })
