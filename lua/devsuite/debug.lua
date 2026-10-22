@@ -49,6 +49,23 @@ function M.pytest_config(file, target)
   }
 end
 
+--- bash-debug-adapter talks to bashdb through a FIFO it names /tmp/vscode-bash-debug-fifo-<10000..19999>, drawn at
+--- random. When a session ends, bashdb's goodbye ("That's all, folks...") lands there after the FIFO is gone: a regular
+--- file that stays. A session that draws a taken name hangs - mkfifo fails, the adapter's script deletes the file and
+--- quits, and bashdb waits in the console for a FIFO that never comes (2026-10-22: 153 such files on the pi, 139 on
+--- Kali, so each session hung with a chance of 1.5 %, growing). The leftovers go before each bash session; a FIFO is a
+--- session that runs, it stays. dir: for the tests (the adapter's is /tmp).
+function M.clear_bash_fifos(dir)
+  dir = dir or "/tmp"
+  for name in vim.fs.dir(dir) do
+    if name:match("^vscode%-bash%-debug%-fifo%-%d+$") or name:match("^vscode%-bash%-debug%-fifo%-%d+_in$") then
+      local path = dir .. "/" .. name
+      local stat = vim.uv.fs_lstat(path)
+      if stat and stat.type == "file" then vim.uv.fs_unlink(path) end -- another user's stays (/tmp's sticky bit)
+    end
+  end
+end
+
 --- The bash debug adapter (bashdb, from Mason's bash-debug-adapter); false and why when it cannot run.
 function M.setup_bash()
   if vim.fn.executable(BASHDB .. "/bash-debug-adapter") ~= 1 then
@@ -62,6 +79,11 @@ function M.setup_bash()
   end
   local dap = require("dap")
   dap.adapters.bashdb = dap.adapters.bashdb or { type = "executable", command = BASHDB .. "/bash-debug-adapter", name = "bashdb" }
+  -- every bash session passes here, however it starts (F5, launch.json, dap.run)
+  dap.listeners.on_config["devsuite.bash_fifos"] = function(config)
+    if config.type == "bashdb" then pcall(M.clear_bash_fifos) end
+    return config
+  end
   return true
 end
 
