@@ -1009,8 +1009,9 @@ it after changing the config. On Windows: `tests\run.ps1` - each suite in a mini
 (a headless one gets no terminal output there), the bash tests skipped. Some tests only:
 `GK_TEST_ONLY='Explorer workflow,Session' tests/run.sh smoke` runs the tests whose names contain one of the
 comma-separated pieces, `GK_TEST_SKIP` all but those. A test run leaves your state alone: it neither
-reads nor writes your history (jumps, marks, recent files) and writes no harpoon lists, sessions or
-error log entries.
+reads nor writes your history (jumps, marks, recent files) and writes no harpoon lists, sessions, picker
+history, run arguments or error log entries; each suite gets temp, state and cache folders of its own,
+deleted afterwards (language servers' temp folders, `lsp.log`, `dap.log`).
 
 ---
 

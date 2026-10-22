@@ -270,7 +270,9 @@ terminal jobs - and skips the bash tests. The filters work there too: `$env:GK_T
 
 Warnings and errors that the tests provoke go to a temp log, not to `~/.local/state/nvim/greyknight.log`.
 Nor does a test run touch the rest of your Neovim's state: its history (the ShaDa file - jumps, marks,
-recent files) is neither read nor written, harpoon lists and sessions are not saved.
+recent files) is neither read nor written, harpoon lists, sessions, picker history and run arguments are
+not saved. Each suite runs with temp, state and cache folders of its own, deleted afterwards - what the
+language servers and plugins leave there (temp folders, `lsp.log`, histories) does not pile up in yours.
 When a suite ends without its report (a crash, the time limit), the runner names the test that was running.
 
 ## Optional: Terminal Coding Agents
