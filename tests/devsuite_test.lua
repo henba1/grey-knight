@@ -2307,6 +2307,46 @@ test("Harpoon: pin files, see their slot, jump, menu edits kept on q", function(
   assert(ok, err)
 end)
 
+-- 2026-10-22: harpoon's own relative path (plenary's) compares the names as they are: on Windows a buffer named with
+-- "/" (snacks opens files as C:/...) kept its whole path, and the same file pinned from a buffer named with "\" - or
+-- one a slot had as a whole path - was a second slot
+test("Harpoon: a slot is relative to the project however its buffer is named; one file is never two slots", function()
+  local harpoon = require("harpoon")
+  harpoon.sync = function() end -- this test process never writes your real harpoon lists
+  local cwd, notify = vim.fn.getcwd(), vim.notify
+  local notes = {}
+  vim.notify = function(msg, level, opts)
+    notes[#notes + 1] = tostring(msg)
+    return notify(msg, level, opts)
+  end
+  local dir = vim.fs.normalize(vim.fn.tempname()) -- "/" all the way, as snacks names a file
+  local ok, err = pcall(function()
+    vim.fn.mkdir(dir .. "/sub", "p")
+    vim.fn.writefile({ "a = 1" }, dir .. "/sub/a.py")
+    vim.cmd.cd(dir)
+    vim.cmd.edit({ args = { dir .. "/sub/a.py" }, magic = { file = false } })
+    vim.api.nvim_feedkeys(" ha", "x", false)
+    local list = harpoon:list()
+    assert(list:length() == 1 and list.items[1].value == "sub/a.py", "pinned as " .. vim.inspect(list.items))
+    -- a slot with the whole path, as harpoon wrote them before (on Windows with "\", in another case): the file
+    -- pinned again stays one slot
+    local whole = dir .. "/sub/a.py"
+    if vim.fn.has("win32") == 1 then whole = whole:gsub("/", "\\"):upper() end
+    list.items[1].value = whole
+    vim.api.nvim_feedkeys(" ha", "x", false)
+    assert(list:length() == 1, "pinned twice: " .. vim.inspect(list.items))
+    assert(notes[#notes]:find("is slot 1", 1, true), "the slot it has: " .. vim.inspect(notes))
+  end)
+  vim.notify = notify
+  pcall(function() harpoon:list():clear() end)
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fs.normalize(vim.api.nvim_buf_get_name(b)):find(dir, 1, true) == 1 then pcall(vim.api.nvim_buf_delete, b, { force = true }) end
+  end
+  vim.cmd.cd(cwd)
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
 test("Error log: a plugin that wraps vim.notify does not break notifications", function()
   local el = require("config.errorlog")
   local previous, calls = vim.notify, 0

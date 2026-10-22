@@ -13,9 +13,16 @@ test("Plugins registered", function()
   assert(count >= 35, "only " .. count .. " plugins")
 end)
 
--- T3: Colorscheme
-test("Cyberdream colorscheme active", function()
+-- T3: Colorscheme - from the start, also the first one (2026-10-22: with cyberdream's cache a start without its
+-- cache file - a new machine, an emptied ~/.cache, changed options - had Neovim's colors for a second, then "A
+-- restart may be required"; a test run has an empty cache folder of its own)
+test("Cyberdream colorscheme active from the start - also the first one (an empty cache folder)", function()
   assert(vim.g.colors_name == "cyberdream", "colorscheme is " .. tostring(vim.g.colors_name))
+  assert(vim.api.nvim_get_hl(0, { name = "Normal" }).bg, "Normal has no background of the theme")
+  if (vim.env.GK_TEST_RUN_DIR or "") ~= "" then -- the run's own cache folder, empty at its start (tests/run.sh)
+    local cache = vim.fn.stdpath("cache") .. "/cyberdream_cache.json"
+    assert(not vim.uv.fs_stat(cache), "cyberdream built its cache (the theme comes a second later): " .. cache)
+  end
 end)
 
 -- T4: Language toggles
@@ -195,6 +202,35 @@ end)
 test("Tests: a run leaves the user's ShaDa alone - their history is not read, the test files' not written", function()
   assert(vim.o.shadafile == "NONE", "'shadafile': " .. vim.inspect(vim.o.shadafile))
   assert(#vim.v.oldfiles == 0, ("the user's recent files were read: %d, e.g. %s"):format(#vim.v.oldfiles, tostring(vim.v.oldfiles[1])))
+end)
+
+-- 2026-10-22: a test run left pyright's and tsserver's temp folders (11 and 4 a run, never removed), grew lsp.log,
+-- dap.log and conform.log, wrote grug-far's history, blink's frecency, the pickers' history, the run arguments and a
+-- Maven settings file for each run's temp project into the user's folders (tests/run.sh, run.ps1, tests/harness.lua)
+test("Tests: a run keeps to folders of its own - temp, state, cache; no picker history, run arguments, Maven settings in the user's", function()
+  local run = vim.env.GK_TEST_RUN_DIR
+  if not run or run == "" then H.skip("started without tests/run.sh or run.ps1") end
+  local function real(path) -- made if missing: Neovim makes a folder when it first writes there
+    vim.fn.mkdir(path, "p")
+    return vim.fs.normalize(assert(vim.uv.fs_realpath(path))):lower()
+  end
+  run = real(run)
+  local own = {
+    ["Neovim's temp folder"] = vim.fs.dirname(vim.fn.tempname()),
+    ["the temp folder of servers and plugins"] = vim.uv.os_tmpdir(),
+    state = vim.fn.stdpath("state"),
+    log = vim.fn.stdpath("log"),
+    cache = vim.fn.stdpath("cache"),
+  }
+  for what, path in pairs(own) do
+    assert(vim.startswith(real(path), run .. "/"), ("%s is the user's: %s"):format(what, path))
+  end
+  local ok, au = pcall(vim.api.nvim_get_autocmds, { group = "snacks_history" })
+  assert(not ok or #au == 0, "the pickers' history is saved on exit")
+  local data = vim.fs.normalize(vim.fn.stdpath("data")):lower()
+  for what, path in pairs({ ["the run arguments"] = require("devsuite.tasks").args_file, ["the Maven settings"] = require("integrations.jdtls").settings_dir }) do
+    assert(not vim.startswith(vim.fs.normalize(path):lower(), data .. "/"), ("%s in the user's data folder: %s"):format(what, path))
+  end
 end)
 
 -- T13: Keys that once misbehaved (2026-10-19). 2026-10-21: Ctrl+L moves from a terminal too (it went to the shell),
