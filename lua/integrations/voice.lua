@@ -252,6 +252,9 @@ end
 
 -- ── :VoiceInstall ──────────────────────────────────────────────
 
+--- Between two tries of a download (ms)
+M.RETRY_MS = 3000
+
 -- A file's sha256 (lowercase hex), or nil
 local function sha256(file)
   local res = WIN and vim.system({ "powershell", "-NoProfile", "-Command",
@@ -263,13 +266,16 @@ local function sha256(file)
   end
 end
 
--- curl `url` to `dest`, checked against `sum`: done(true) or done(false, why)
-local function fetch(url, dest, sum, done)
+-- curl `url` to `dest`, checked against `sum`: done(true) or done(false, why). Three tries: GitHub refused one now and
+-- then from a company's address (403, the work laptop - the next try worked, 2026-10-23)
+function M.fetch(url, dest, sum, done, tries)
+  tries = tries or 3
   vim.fn.mkdir(vim.fs.dirname(dest), "p")
   local part = dest .. ".part"
   vim.system({ "curl", "-fsSL", "--retry", "2", "-o", part, url }, {}, vim.schedule_wrap(function(res)
     if res.code ~= 0 then
       os.remove(part)
+      if tries > 1 then return vim.defer_fn(function() M.fetch(url, dest, sum, done, tries - 1) end, M.RETRY_MS) end
       return done(false, ("download failed (curl %d): %s"):format(res.code, url))
     end
     local got = sha256(part)
@@ -299,7 +305,7 @@ function M.install(name)
     steps[#steps + 1] = function(next)
       notify(("Downloading whisper.cpp (%s, %s) ..."):format(M.RELEASE, pkg.file), vim.log.levels.INFO, { timeout = false })
       local archive = M.DIR .. "/" .. pkg.file
-      fetch(("https://github.com/ggml-org/whisper.cpp/releases/download/%s/%s"):format(M.RELEASE, pkg.file), archive, pkg.sha256, function(ok, why)
+      M.fetch(("https://github.com/ggml-org/whisper.cpp/releases/download/%s/%s"):format(M.RELEASE, pkg.file), archive, pkg.sha256, function(ok, why)
         if not ok then return fail(why) end
         vim.fn.mkdir(dir, "p")
         vim.system({ "tar", "-xf", archive, "-C", dir }, {}, vim.schedule_wrap(function(res)
@@ -314,7 +320,7 @@ function M.install(name)
   if vim.fn.filereadable(model_path) == 0 then
     steps[#steps + 1] = function(next)
       notify(("Downloading the model %s (%d MB) ..."):format(model.file, model.mb), vim.log.levels.INFO, { timeout = false })
-      fetch("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" .. model.file, model_path, model.sha256, function(ok, why)
+      M.fetch("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" .. model.file, model_path, model.sha256, function(ok, why)
         if not ok then return fail(why) end
         next()
       end)
@@ -323,7 +329,7 @@ function M.install(name)
   local sample = M.DIR .. "/samples/" .. M.SAMPLE.file
   if vim.fn.filereadable(sample) == 0 then
     steps[#steps + 1] = function(next)
-      fetch(M.SAMPLE.url, sample, M.SAMPLE.sha256, function(ok, why)
+      M.fetch(M.SAMPLE.url, sample, M.SAMPLE.sha256, function(ok, why)
         if not ok then return fail(why) end
         next()
       end)
