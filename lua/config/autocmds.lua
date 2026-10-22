@@ -48,6 +48,7 @@ vim.api.nvim_create_autocmd("BufEnter", {
 -- for <leader><Tab> (lua/config/switcher.lua)
 require("config.bookmarks").setup()
 require("config.switcher").setup()
+require("config.putty").setup() -- over SSH from PuTTY with its default keys: a word once on the settings
 
 -- Files moved or renamed in an oil buffer: bookmarks and harpoon's slots go along, as with the explorer's m and r
 -- (config/explorer.lua). They kept the old path (2026-10-22). Each move that happened - a failed batch did some.
