@@ -257,6 +257,67 @@ test("Keys: in a terminal Ctrl+H/J/K/L go to the next window, Ctrl+arrows resize
   end
 end)
 
+-- 2026-10-22, over SSH from PuTTY 0.85 with its default keys (its bytes fed to Neovim under TERM=xterm): Ctrl+arrows
+-- came as plain arrows, Home / End as Find / Select (the cursor stayed), Shift+F11 / Ctrl+F11 as F11; and most
+-- terminals send Shift+F5 / Shift+F11 / Ctrl+F11 so that Neovim names them <F17> / <F23> / <F35>
+test("Keys: as PuTTY sends them - Alt+arrows resize, Find / Select are Home / End, <F17> <F23> <F35> are Shift+F5 / Shift+F11 / Ctrl+F11", function()
+  for _, k in ipairs({ "<M-Up>", "<M-Down>", "<M-Left>", "<M-Right>" }) do
+    assert(vim.fn.maparg(k, "n"):find("resize", 1, true), k .. " does not resize: " .. vim.fn.maparg(k, "n"))
+    assert(vim.fn.maparg(k, "t") == "", k .. " is taken in terminal mode (the shell's): " .. vim.fn.maparg(k, "t"))
+  end
+  for alias, key in pairs({ ["<F17>"] = "<S-F5>", ["<F23>"] = "<S-F11>", ["<F35>"] = "<C-F11>" }) do
+    local a, k = vim.fn.maparg(alias, "n", false, true), vim.fn.maparg(key, "n", false, true)
+    assert(a.callback and a.desc == k.desc, ("%s is not %s: %s / %s"):format(alias, key, tostring(a.desc), tostring(k.desc)))
+  end
+  for _, mode in ipairs({ "n", "x", "o", "i", "c" }) do
+    assert(vim.fn.maparg("<Find>", mode) == "<Home>" and vim.fn.maparg("<Select>", mode) == "<End>", "Find / Select in mode " .. mode)
+  end
+  assert(vim.fn.maparg("<Find>", "t") == "", "Find in terminal mode: the program's")
+  local buf = H.scratch("text", { "hello world" })
+  local ok, err = pcall(function()
+    vim.api.nvim_win_set_cursor(0, { 1, 6 })
+    vim.api.nvim_feedkeys(vim.keycode("<Find>"), "mx", false)
+    assert(vim.fn.col(".") == 1, "Find (Home): column " .. vim.fn.col("."))
+    vim.api.nvim_feedkeys(vim.keycode("<Select>"), "mx", false)
+    assert(vim.fn.col(".") == 11, "Select (End): column " .. vim.fn.col("."))
+    vim.api.nvim_feedkeys(vim.keycode("i<Find>X<Esc>"), "mx", false) -- insert mode
+    assert(vim.api.nvim_get_current_line() == "Xhello world", "Find in insert mode: " .. vim.api.nvim_get_current_line())
+    -- <F23>: the bookmarks' list, as Shift+F11 (an empty one only says so: the call is what counts)
+    local bm = require("config.bookmarks")
+    local pick, listed = bm.pick, false
+    bm.pick = function() listed = true end
+    local fed = pcall(vim.api.nvim_feedkeys, vim.keycode("<F23>"), "mx", false)
+    bm.pick = pick
+    assert(fed and listed, "<F23> did not list the bookmarks")
+  end)
+  vim.cmd("stopinsert")
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  assert(ok, err)
+end)
+
+test("PuTTY: a session that looks like PuTTY's default keys (SSH, TERM=xterm) gets the word on the settings - once", function()
+  local putty = require("config.putty")
+  local ssh = "10.0.0.2 50000 10.0.0.1 22"
+  assert(putty.looks_like({ SSH_CONNECTION = ssh, TERM = "xterm" }), "SSH, TERM=xterm")
+  assert(not putty.looks_like({ SSH_CONNECTION = ssh, TERM = "xterm-256color" }), "TERM=xterm-256color (Windows Terminal, PuTTY set up)")
+  assert(not putty.looks_like({ TERM = "xterm" }), "no SSH")
+  local saved, notes, notify = putty.flag, {}, vim.notify
+  putty.flag = vim.fn.tempname() .. "/putty-hint"
+  vim.notify = function(msg, level, opts)
+    notes[#notes + 1] = tostring(msg)
+    return notify(msg, level, opts)
+  end
+  local ok, err = pcall(function()
+    assert(not putty.show_once({ SSH_CONNECTION = ssh, TERM = "xterm-256color" }) and #notes == 0, "a word without PuTTY")
+    assert(putty.show_once({ SSH_CONNECTION = ssh, TERM = "xterm" }), "no word")
+    assert(notes[1] and notes[1]:find("xterm-style bitmap", 1, true) and notes[1]:find("Xterm 216+", 1, true)
+      and notes[1]:find("xterm-256color", 1, true), "the word: " .. tostring(notes[1]))
+    assert(not putty.show_once({ SSH_CONNECTION = ssh, TERM = "xterm" }) and #notes == 1, "a second word")
+  end)
+  vim.notify, putty.flag = notify, saved
+  assert(ok, err)
+end)
+
 -- The real explorer in tests (2026-10-21). snacks shows a picker once it has listed - on a slow moment (Windows: a
 -- test window that stalled for seconds) only after the test gave up waiting. Snacks.picker.get() without tab = false
 -- leaves out a picker not shown yet, so the test's cleanup missed it; it showed afterwards, and the next test's
@@ -846,6 +907,96 @@ test("Explorer: Ctrl+a marks a search's matches - not the folders above them; ag
     p:action("gk_mark_matches")
     assert(w.marked() == "src/x.ts", "fuzzy, marked: " .. w.marked()) -- not src/
   end)
+end)
+
+-- 2026-10-22: % renames the marked items by regex (config/explorer.lua): s/regex/replacement/ as sed - the first
+-- match, g every one, i case ignored - with the Rust regex of the search (rg does it: $1, $0, ${name})
+test("Explorer: rename by regex - s/re/repl/ as sed (the first match, g every one, i), $1 $0 ${name}, any delimiter", function()
+  local x = require("config.explorer")
+  local s = x.parse_substitution([[s/(\d+)\.txt$/$1.md/]])
+  assert(s and s.regex == [[(\d+)\.txt$]] and s.replacement == "$1.md" and not s.global and not s.ignore_case, vim.inspect(s))
+  s = x.parse_substitution("s#a/b#c#gi") -- another delimiter: / is no delimiter then
+  assert(s and s.regex == "a/b" and s.replacement == "c" and s.global and s.ignore_case, vim.inspect(s))
+  s = x.parse_substitution([[s/a\/b/c/]]) -- \ before the delimiter: the delimiter itself
+  assert(s and s.regex == "a/b", vim.inspect(s))
+  s = x.parse_substitution("s/a/b") -- the last delimiter left out
+  assert(s and s.regex == "a" and s.replacement == "b", vim.inspect(s))
+  for _, bad in ipairs({ "x/a/b/", "s//b/", "s/a/b/q", "s" }) do
+    assert(x.parse_substitution(bad) == nil, bad .. " was taken")
+  end
+  local names = { "a-b-c", "report-1.txt", "README.md" }
+  local function sub(text)
+    local new, err = x.substitute(names, assert(x.parse_substitution(text)))
+    return new and table.concat(new, " ") or ("error: " .. tostring(err))
+  end
+  for text, want in pairs({
+    ["s/-/_/"] = "a_b-c report_1.txt README.md", -- the first match
+    ["s/-/_/g"] = "a_b_c report_1.txt README.md", -- every one
+    [ [[s/(\d+)\.txt$/$1.md/]] ] = "a-b-c report-1.md README.md",
+    [ [[s/^(\w+)-(\d+)/$2-$1/]] ] = "a-b-c 1-report.txt README.md",
+    [ [[s/\d+/[$0]/]] ] = "a-b-c report-[1].txt README.md", -- $0: the match
+    ["s/(?P<w>[a-z]+)-(?P<n>\\d)/${n}_${w}/"] = "a-b-c 1_report.txt README.md",
+    ["s/readme/x/i"] = "a-b-c report-1.txt x.md",
+    ["s/readme/x/"] = "a-b-c report-1.txt README.md", -- case counts without i
+  }) do
+    assert(sub(text) == want, ("%s: %s, not %s"):format(text, sub(text), want))
+  end
+  local new, err = x.substitute(names, assert(x.parse_substitution("s/(/x/")))
+  assert(new == nil and tostring(err):find("unclosed group", 1, true), "a regex rg cannot read: " .. tostring(err))
+end)
+
+test("Explorer: % renames the marked by regex - R, Ctrl+a, % s/\\.sh$/.bash/; an open file follows; clashes, existing names stay", function()
+  local util, x = Snacks.picker.util, require("config.explorer")
+  local saved = { confirm = util.confirm, input = Snacks.input, notify = vim.notify }
+  local asked, default, notes = {}, nil, {}
+  local answer
+  util.confirm = function(prompt, yes) asked[#asked + 1] = prompt; yes() end
+  Snacks.input = function(opts, on_confirm) default = opts.default; on_confirm(answer) end
+  vim.notify = function(msg, level, opts)
+    notes[#notes + 1] = tostring(msg)
+    return saved.notify(msg, level, opts)
+  end
+  local ok, err = pcall(regex_world, function(w)
+    local p, root = w.p, w.root
+    local function key(lhs)
+      return vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg(lhs, "n", false, true) end).desc
+    end
+    assert(key("%") == "gk_rename_regex", "% in the list: " .. tostring(key("%")))
+    local buf = vim.fn.bufadd(root .. "/a.sh") -- open (loaded), as a file in the editor
+    vim.fn.bufload(buf)
+    p:action("gk_search_regex")
+    w.type(".*\\.sh$")
+    w.expect("Search files (regex)", "X.SH a.sh scripts/c.sh")
+    p:action("gk_mark_matches")
+    answer = "s/\\.sh$/.bash/" -- case counts: X.SH stays
+    p:action("gk_rename_regex")
+    assert(asked[#asked] == "Rename 2 items as listed?", "asked: " .. tostring(asked[#asked]))
+    for rel, there in pairs({ ["a.bash"] = true, ["scripts/c.bash"] = true, ["X.SH"] = true, ["a.sh"] = false, ["scripts/c.sh"] = false }) do
+      assert((vim.uv.fs_stat(root .. "/" .. rel) ~= nil) == there, rel .. (there and " is not there" or " is still there"))
+    end
+    assert(vim.fn.bufexists(root .. "/a.bash") == 1 and vim.fn.bufexists(root .. "/a.sh") == 0, "the open a.sh did not follow")
+    assert(#p.list.selected == 0, "still marked: " .. #p.list.selected)
+    -- what stays: two onto one name, onto an existing one, out of the folder - nothing renamed, each says why
+    local function rename(text, marks)
+      w.type(marks)
+      assert(H.wait(5000, function() return not p:is_active() and w.hits() ~= "" end), "no match for " .. marks)
+      p.list:set_selected()
+      p:action("gk_mark_matches")
+      answer, notes = text, {}
+      local before = #asked
+      p:action("gk_rename_regex")
+      assert(#asked == before, text .. ": asked to rename")
+      return table.concat(notes, " | ")
+    end
+    assert(rename("s/.*/same.txt/", "^(b\\.py|X\\.SH)$"):find("would both be same.txt", 1, true), "two onto one: " .. table.concat(notes, " | "))
+    assert(default == "s/\\.sh$/.bash/", "the last one as the default: " .. tostring(default))
+    assert(rename("s/b\\.py/notes.sh.txt/", "^b\\.py$"):find("exists - nothing overwritten", 1, true), "onto one that exists: " .. table.concat(notes, " | "))
+    assert(rename("s/b/x\\/b/", "^b\\.py$"):find("is no name in its folder", 1, true), "out of the folder: " .. table.concat(notes, " | "))
+    assert(vim.uv.fs_stat(root .. "/b.py") and vim.uv.fs_stat(root .. "/X.SH"), "renamed after all")
+  end)
+  util.confirm, Snacks.input, vim.notify = saved.confirm, saved.input, saved.notify
+  x.last_substitution = nil
+  assert(ok, err)
 end)
 
 -- 2026-10-21: the explorer closed right after a find (a refresh, a cd, typed text): snacks' cleanup put a new task in
@@ -2689,6 +2840,31 @@ test("Trouble: <leader>xx lists the diagnostics, <leader>xq the quickfix list - 
   vim.fn.setqflist({}, "r")
   pcall(vim.cmd, "Trouble close")
   vim.cmd("silent! bwipeout! " .. vim.fn.fnameescape(file))
+  assert(ok, err)
+end)
+
+-- 2026-10-22: Neovim's :Cfilter (an optional package) - a quickfix list kept or thinned by regex
+test("Quickfix: :Cfilter /re/ keeps the entries whose file or text matches, :Cfilter! drops them; :Lfilter too", function()
+  assert(vim.fn.exists(":Cfilter") == 2 and vim.fn.exists(":Lfilter") == 2, "no :Cfilter / :Lfilter")
+  local dir = vim.fn.tempname()
+  local items = {
+    { filename = dir .. "/a.sh", lnum = 1, text = "one" },
+    { filename = dir .. "/b.py", lnum = 2, text = "two" },
+    { filename = dir .. "/c.sh", lnum = 3, text = "three" },
+  }
+  local function names()
+    return table.concat(vim.tbl_map(function(i) return vim.fs.basename(vim.api.nvim_buf_get_name(i.bufnr)) end, vim.fn.getqflist()), " ")
+  end
+  local ok, err = pcall(function()
+    vim.fn.setqflist({}, "r", { items = items })
+    vim.cmd([[Cfilter /\.sh$/]]) -- the file
+    assert(names() == "a.sh c.sh", "kept: " .. names())
+    vim.fn.setqflist({}, "r", { items = items })
+    vim.cmd([[Cfilter! /^t/]]) -- the text: two, three go
+    assert(names() == "a.sh", "dropped: " .. names())
+  end)
+  vim.fn.setqflist({}, "f") -- the lists of the test gone
+  for _, i in ipairs(items) do pcall(vim.cmd, "silent! bwipeout! " .. vim.fn.fnameescape(i.filename)) end
   assert(ok, err)
 end)
 

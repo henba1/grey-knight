@@ -1206,6 +1206,53 @@ test("Keys: F6 runs the current file as a task", function()
   assert(task.status == "SUCCESS" and task_out(task):find("via F6", 1, true), task.status .. ": " .. task_out(task))
 end)
 
+-- 2026-10-22: PuTTY's own bytes into a Neovim with this config, in a terminal (a pty) under TERM=xterm - Linux only:
+-- Windows' ConPTY rewrites what goes in. PuTTY's default Home / End (Find / Select) left the cursor where it was;
+-- its Ctrl+arrows come as plain arrows, Alt+arrows resize instead; with its xterm-style keys Ctrl+Up comes as itself and
+-- Shift+F11 as <F23> (Neovim's name for it)
+test("Keys: PuTTY's bytes in a terminal - its Home / End move, Alt+Up resizes; xterm-style Ctrl+Up resizes, Shift+F11 lists", function()
+  linux_only("a pty that passes a terminal's bytes on as they are")
+  local ESC = "\27"
+  local dir = tmpdir()
+  local probe, log = dir .. "/probe.lua", dir .. "/keys.txt"
+  vim.fn.writefile({
+    "local log = assert(io.open(vim.env.GK_KEYLOG, 'w'))",
+    "local function say(s) log:write(s, '\\n'); log:flush() end",
+    "require('config.bookmarks').pick = function() say('LISTED') end",
+    "vim.keymap.set('n', '<F18>', function() vim.fn.cursor(1, 7) end)",
+    "vim.keymap.set('n', '<F19>', function() say(('COL %d HEIGHT %d'):format(vim.fn.col('.'), vim.api.nvim_win_get_height(0))) end)",
+    "vim.api.nvim_create_autocmd('UIEnter', { once = true, callback = function() vim.schedule(function()",
+    "  vim.cmd('enew') vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'hello world' }) vim.cmd('split') say('READY')",
+    "end) end })",
+  }, probe)
+  local job = vim.fn.jobstart({ vim.v.progpath, "-i", "NONE", "-c", "luafile " .. probe },
+    { pty = true, width = 100, height = 30, env = { TERM = "xterm", GK_KEYLOG = log } })
+  local function lines() return vim.uv.fs_stat(log) and vim.fn.readfile(log) or {} end
+  local function after(bytes, want) -- PuTTY's bytes, then the line the Neovim in there says
+    local n = #lines()
+    vim.fn.chansend(job, bytes)
+    assert(wait(5000, function() return #lines() > n and (not want or lines()[#lines()]:find(want, 1, true)) end),
+      ("after %q: %s"):format(bytes, table.concat(vim.list_slice(lines(), n + 1), " | ")))
+    return lines()[#lines()]
+  end
+  local F18, F19 = ESC .. "[32~", ESC .. "[33~"
+  local ok, err = pcall(function()
+    assert(job > 0, "no Neovim in a pty")
+    assert(wait(20000, function() return vim.tbl_contains(lines(), "READY") end), "the Neovim in the pty did not start: " .. table.concat(lines(), " | "))
+    after(F18 .. ESC .. "[1~" .. F19, "COL 1 ") -- PuTTY's Home (the VT220's Find)
+    after(F18 .. ESC .. "[4~" .. F19, "COL 11 ") -- PuTTY's End (Select)
+    local h = tonumber(after(F19):match("HEIGHT (%d+)"))
+    after(ESC .. ESC .. "OA" .. F19, ("HEIGHT %d"):format(h + 2)) -- Alt+Up as PuTTY sends it by default: taller
+    after(ESC .. "[1;5A" .. F19, ("HEIGHT %d"):format(h + 4)) -- Ctrl+Up, PuTTY's xterm-style keys
+    after(ESC .. "[23;2~", "LISTED") -- Shift+F11, PuTTY's Xterm 216+ (xterm's too): <F23>
+  end)
+  pcall(vim.fn.chansend, job, ESC .. ":qa!\r")
+  vim.fn.jobwait({ job }, 3000)
+  pcall(vim.fn.jobstop, job)
+  vim.fn.delete(dir, "rf")
+  assert(ok, err)
+end)
+
 test("Keys: <leader>rs runs the visual selection (lines 2-3 only)", function()
   local tasks = require("devsuite.tasks")
   vim.cmd.edit(H.file("sel.py", { "print('first')", "print('second')", "print('third')" }))
