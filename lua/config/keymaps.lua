@@ -256,7 +256,7 @@ map("n", "<leader>gh", function() require("config.gitdiff").history() end, { des
 -- ── GreyKnight Docs (read-only picker) ───────────────────────
 -- The guide is a file per topic (docs/, 2026-10-23): its index first, the topics in the order one reads them, any
 -- other file in docs/ after them
-local GUIDE = { "README", "start", "agent", "files", "windows", "find", "code", "run-debug", "git", "ssh" }
+local GUIDE = { "README", "start", "agent", "files", "windows", "find", "code", "run-debug", "git", "ssh", "testbook" }
 map("n", "<leader>gd", function()
   local config_dir = vim.fn.stdpath("config")
   local names = { "README.md", "CHEATSHEET.md" }
