@@ -33,6 +33,8 @@ vim.api.nvim_create_autocmd("User", {
 -- A terminal gets every key but these: Ctrl+H/J/K/L go to the next window, Ctrl+arrows resize (below), <Esc><Esc> is
 -- normal mode. The shell keeps its own keys - Ctrl+A/E, Alt+B/F, Ctrl+W/U, Ctrl+R ...; for its Ctrl+L (clear) type
 -- clear (cls). Ctrl+L went to the shell, so from a terminal the window on the right was Esc Esc, Ctrl+L (2026-10-21).
+-- An agent's terminal keeps only the ways out (Esc Esc, Ctrl+H/J/K/L): every other terminal-mode key here goes to the
+-- agent there - Ctrl+arrows move through Claude Code's prompt (integrations/agent.lua, M.own_keys; 2026-10-23).
 map("t", "<Esc><Esc>", "<C-\\><C-n>",       { desc = "Exit terminal mode" })
 map("t", "<C-h>",      "<C-\\><C-n><C-w>h", { desc = "Window left (from term)" })
 map("t", "<C-j>",      "<C-\\><C-n><C-w>j", { desc = "Window down (from term)" })

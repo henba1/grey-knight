@@ -71,7 +71,11 @@ else `claude` on the `PATH`.
 - Going to the agent window (`Ctrl+l`, a click, `<leader>tt`) puts you straight into terminal mode, as
   every terminal window does ([Terminal](windows.md#terminal)): type away. Inside it, `Esc Esc` gives normal mode
   (scroll, copy); the next time you come back it is terminal mode again - unless the agent has exited (a
-  key would close its window). Qwen Code's input box can have a vim mode of its own (`general.vimMode` in
+  key would close its window).
+- **The agent's window has its own keys.** In it only the ways out are GreyKnight's: `Ctrl+h/j/k/l` (the next
+  window) and `Esc Esc` (normal mode; Neovim's `Ctrl+\ Ctrl+n` too). Every other key goes to the agent -
+  `Ctrl+←` / `Ctrl+→` move word by word in its prompt, where other terminals resize the window with them
+  ([Terminal](windows.md#terminal)). Qwen Code's input box can have a vim mode of its own (`general.vimMode` in
   `~/.qwen/settings.json`, `/vim` toggles it): a single `Esc` there puts that box into its NORMAL mode,
   which Neovim neither sees nor changes - `i` gets back to typing.
 

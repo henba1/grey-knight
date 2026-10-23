@@ -1973,6 +1973,69 @@ test("Terminals: Ctrl+L goes to the window on the right, Ctrl+arrows resize - ba
   assert(ok, err)
 end)
 
+-- 2026-10-23: the agent's window has a keyboard of its own - Ctrl+arrows resized it instead of moving through
+-- Claude Code's prompt word by word. There every key is the agent's but the ways out: Esc Esc, Ctrl+H/J/K/L. In
+-- other terminals Ctrl+arrows still resize (the test above). The stand-in agent reports every key it gets.
+test("Agent: its window has its own keys - Ctrl+arrows reach the agent (no resize), Ctrl+H still leaves it", function()
+  linux_only("the fake agent (sh + python, raw tty)")
+  local agent, T = require("integrations.agent"), require("toggleterm.terminal")
+  local script, fake = vim.fn.tempname() .. ".py", vim.fn.tempname() .. "-opencode"
+  vim.fn.writefile(KEY_REPORTER, script)
+  vim.fn.writefile({ "#!/bin/sh", ("exec %s %s"):format(vim.fn.shellescape(require("devsuite.util").system_python()), vim.fn.shellescape(script)) }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT }
+  vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT = fake, "opencode"
+  local old = T.get(agent.AGENTS.agent, true)
+  if old then old:shutdown() end
+  local code = vim.api.nvim_get_current_win()
+  local term
+  local ok, err = pcall(function()
+    agent.launch("agent", "vertical")
+    term = T.get(agent.AGENTS.agent, true)
+    assert(term and term.window and vim.api.nvim_win_is_valid(term.window), "no agent window")
+    assert(wait(10000, function() return text(term.bufnr):find("READY", 1, true) end), "the stand-in did not start: " .. text(term.bufnr))
+    for _, k in ipairs(agent.ESCAPE_KEYS) do -- the ways out: GreyKnight's global keys, no map of the agent's buffer
+      assert(vim.fn.maparg(k, "t", false, true).buffer ~= 1, k .. " is mapped in the agent's buffer")
+    end
+    vim.cmd("stopinsert")
+    vim.api.nvim_set_current_win(term.window)
+    local width, height = vim.api.nvim_win_get_width(term.window), vim.api.nvim_win_get_height(term.window)
+    local keys, i = { "<C-Left>", "<C-Right>", "<C-Up>", "<C-Down>", "<C-h>" }, 0
+    local function step() -- one key every 200 ms, in terminal mode
+      i = i + 1
+      if not keys[i] then return end
+      vim.api.nvim_feedkeys(vim.keycode(keys[i]), "t", false)
+      vim.defer_fn(step, 200)
+    end
+    vim.defer_fn(step, 200)
+    local stop = vim.uv.new_timer() -- out of terminal mode if Ctrl+H does not leave it
+    stop:start(15000, 0, vim.schedule_wrap(function() vim.api.nvim_feedkeys(vim.keycode("<C-\\><C-n>"), "nt", false) end))
+    vim.api.nvim_feedkeys("i", "tx!", false) -- returns when terminal mode ends
+    stop:stop()
+    stop:close()
+    assert(vim.api.nvim_get_current_win() ~= term.window, "Ctrl+H did not leave the agent's window")
+    assert(vim.api.nvim_win_get_width(term.window) == width and vim.api.nvim_win_get_height(term.window) == height,
+      ("Ctrl+arrows resized the agent's window: %dx%d, was %dx%d"):format(vim.api.nvim_win_get_width(term.window),
+        vim.api.nvim_win_get_height(term.window), width, height))
+    local want = { "1b 5b 31 3b 35 44", "1b 5b 31 3b 35 43", "1b 5b 31 3b 35 41", "1b 5b 31 3b 35 42" }
+    wait(3000, function() local _, n = text(term.bufnr):gsub("GOT ", ""); return n >= #want end)
+    local got = {}
+    for g in text(term.bufnr):gmatch("GOT ([%x ]+)") do got[#got + 1] = vim.trim(g) end
+    assert(vim.deep_equal(got, want), "typed Ctrl+Left/Right/Up/Down " .. vim.inspect(want) .. ", the agent got " .. vim.inspect(got))
+  end)
+  if term then
+    pcall(vim.fn.jobstop, term.job_id)
+    wait(5000, function() return vim.fn.jobwait({ term.job_id }, 0)[1] ~= -1 end)
+    pcall(function() term:shutdown() end)
+  end
+  vim.env.OPENCODE_BIN, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2]
+  if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
+  vim.cmd("stopinsert")
+  vim.fn.delete(script)
+  vim.fn.delete(fake)
+  assert(ok, err)
+end)
+
 -- ── Stabilization: the behaviour of 2026-10-15, pinned down ──
 
 -- Completion: types like a user; each step waits until the menu is open (or 5 s), then feeds its keys

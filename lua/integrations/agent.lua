@@ -188,6 +188,24 @@ local function note_start(dir)
   pcall(function() require("integrations.agent_changes").start(dir) end)
 end
 
+-- 2026-10-23: the agent's window has a keyboard of its own. GreyKnight's terminal keys (config/keymaps.lua) are for
+-- every terminal; in an agent's they caught keys its TUI needs - Ctrl+Left / Ctrl+Right resized the window instead of
+-- moving the cursor word by word in Claude Code's prompt. There only these stay GreyKnight's, the ways out of the
+-- window: Esc Esc (normal mode) and Ctrl+H/J/K/L (the next window); Neovim's own Ctrl+\ Ctrl+N is always there.
+M.ESCAPE_KEYS = { "<Esc><Esc>", "<C-h>", "<C-j>", "<C-k>", "<C-l>" }
+
+--- Every other global terminal-mode key goes to the agent in buffer `buf`: a buffer-local map of the key onto
+--- itself (not remapped), which Neovim sends to the program as typed.
+function M.own_keys(buf)
+  local keep = {}
+  for _, k in ipairs(M.ESCAPE_KEYS) do keep[vim.keycode(k)] = true end
+  for _, m in ipairs(vim.api.nvim_get_keymap("t")) do
+    if not keep[vim.keycode(m.lhs)] then
+      vim.keymap.set("t", m.lhs, m.lhs, { buffer = buf, desc = "The agent's (not GreyKnight's)" })
+    end
+  end
+end
+
 local function agent(name, direction, first_prompt)
   local T = require("toggleterm.terminal")
   local backend = M.backend()
@@ -206,6 +224,7 @@ local function agent(name, direction, first_prompt)
     display_name = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1)),
     close_on_exit = false, -- keep the transcript when the CLI exits
     env = M.link_env(id),
+    on_create = function(t) M.own_keys(t.bufnr) end,
   })
   term.gk_agent = true
   note_start(vim.fn.getcwd())
