@@ -2850,6 +2850,109 @@ test("Explorer workflow: r renames a match, d deletes one - each search ends in 
   assert(ok, err)
 end)
 
+-- 2026-10-23: a right-click in the tree showed Neovim's PopUp menu (no Copy in normal mode, nothing about files). Now
+-- <RightMouse> puts the cursor on the clicked row and shows GKExplorer (config/explorer.lua). Mouse input sent in a
+-- test is only processed after it: the row under the mouse (getmousepos()'s fields) and the menu's actions directly.
+test("Explorer: right-click - a file menu (GKExplorer) on the clicked row, the tree's folder below the rows; editors keep the PopUp", function()
+  local util, config = Snacks.picker.util, Snacks.explorer.config
+  local saved = { confirm = util.confirm, trash = config.trash, input = Snacks.input }
+  local answer
+  util.confirm = function(_, yes) yes() end
+  config.trash = false
+  Snacks.input = function(_, done) done(answer) end
+  local ok, err = pcall(with_explorer, { "src/a.txt", "src/b.txt", "notes.txt", "old.txt" }, function(p, root, x)
+    local ex = require("config.explorer")
+    local lwin = p.list.win.win
+    -- the keys: the list's own, and one for every window that is Neovim's own anywhere but over a tree
+    local own = vim.api.nvim_buf_call(p.list.win.buf, function() return vim.fn.maparg("<RightMouse>", "n", false, true) end)
+    assert(own.buffer == 1 and own.desc == "gk_context_menu", "the list's <RightMouse>: " .. vim.inspect(own))
+    vim.api.nvim_win_call(p.main, function()
+      local global = vim.fn.maparg("<RightMouse>", "n", false, true)
+      assert(global.expr == 1 and global.callback, "no global <RightMouse>: " .. vim.inspect(global))
+      assert(global.callback() == "<RightMouse>", "not over a tree: not Neovim's own right-click")
+    end)
+    -- the menu, all entries in order, each one an explorer action
+    ex.define_menu()
+    local want, got = {}, {}
+    for _, e in ipairs(ex.menu_entries) do
+      if e ~= "-" then want[#want + 1] = e[1] end
+    end
+    for _, m in ipairs(vim.fn.menu_get("GKExplorer", "n")[1].submenus) do
+      if not m.name:match("^%-") then got[#got + 1] = m.name end
+    end
+    assert(vim.deep_equal(got, want), "GKExplorer: " .. vim.inspect(got))
+    -- the clicked row: the cursor goes there (as a left click would)
+    local function pos(row) return { winid = lwin, winrow = row + (vim.fn.getwininfo(lwin)[1].winbar or 0), line = row } end
+    local function row_of(rel)
+      for i = 1, p.list:count() do
+        if p.list:get(i).file == root .. "/" .. rel then return p.list:idx2row(i) end
+      end
+      error("not shown: " .. rel)
+    end
+    x.on("notes.txt")
+    assert(ex.menu_target(p, pos(row_of("src/b.txt"))) == false, "src/b.txt's row: taken for empty space")
+    assert(p:current().file == root .. "/src/b.txt", "cursor on " .. x.rel(p:current().file) .. ", not src/b.txt")
+    -- the mouse elsewhere (the keyboard): the cursor stays
+    ex.menu_target(p, { winid = p.main, winrow = 1, line = 1 })
+    assert(p:current().file == root .. "/src/b.txt", "moved without a click on the list")
+    local shown = ex.menu_shown(p, false)
+    assert(shown["Open"] and shown["Rename…"] and shown["Delete"] and shown["Copy"], "on a row: " .. vim.inspect(shown))
+    assert(shown["Show hidden files"] ~= shown["Hide hidden files"], "Show and Hide hidden files: " .. vim.inspect(shown))
+    -- below the rows: the tree's folder; nothing that needs a row of its own (Delete: unless items are marked)
+    assert(ex.menu_target(p, pos(p.list:count() + 2)) == true, "below the rows: not empty space")
+    assert(p:current().file == root, "below the rows: cursor on " .. x.rel(p:current().file) .. ", not the root")
+    shown = ex.menu_shown(p, true)
+    assert(not shown["Open"] and not shown["Rename…"] and not shown["Delete"] and shown["New file or folder…"] and shown["Paste"],
+      "below the rows: " .. vim.inspect(shown))
+    p.list:select(x.item("old.txt"))
+    assert(ex.menu_shown(p, true)["Delete"], "below the rows, items marked: no Delete")
+    p.list:set_selected()
+    -- the menu as :popup shows it, disabled entries left out
+    ex.context_menu(p, { popup = false })
+    local enabled = {}
+    for _, m in ipairs(vim.fn.menu_get("GKExplorer", "n")[1].submenus) do enabled[m.name] = m.mappings.n.enabled == 1 end
+    assert(enabled["New file or folder…"] and enabled["Delete"], "on the root row's menu: " .. vim.inspect(enabled))
+    -- the entries
+    x.on("src/a.txt")
+    ex.menu("gk_copy_relative_path")
+    assert(vim.fn.getreg(vim.v.register) == "src/a.txt", "Copy relative path: " .. vim.fn.getreg(vim.v.register))
+    ex.menu("gk_copy_path")
+    assert(vim.fn.getreg(vim.v.register) == root .. "/src/a.txt", "Copy path: " .. vim.fn.getreg(vim.v.register))
+    p.list:select(x.item("src/a.txt"))
+    p.list:select(x.item("notes.txt"))
+    ex.menu("gk_copy_relative_path") -- the marked, one per line
+    assert(vim.fn.getreg(vim.v.register) == "src/a.txt\nnotes.txt", "Copy relative path, marked: " .. vim.fn.getreg(vim.v.register))
+    p.list:set_selected()
+    x.on("notes.txt")
+    ex.menu("explorer_yank") -- Copy
+    assert(vim.trim(vim.fn.getreg(vim.v.register)) == root .. "/notes.txt", "Copy: " .. vim.fn.getreg(vim.v.register))
+    x.on("src")
+    ex.menu("explorer_paste") -- Paste: into the folder under the cursor
+    assert(H.wait(3000, function() return vim.uv.fs_stat(root .. "/src/notes.txt") ~= nil end), "Paste: no src/notes.txt")
+    x.on("old.txt")
+    answer = "new.txt"
+    ex.menu("explorer_rename") -- Rename…
+    assert(H.wait(3000, function() return vim.uv.fs_stat(root .. "/new.txt") and not vim.uv.fs_stat(root .. "/old.txt") end), "Rename: not renamed")
+    x.on("new.txt")
+    ex.menu("explorer_del") -- Delete
+    assert(H.wait(3000, function() return not vim.uv.fs_stat(root .. "/new.txt") end), "Delete: still there")
+    local hidden = p.opts.hidden
+    ex.menu("toggle_hidden")
+    assert(p.opts.hidden ~= hidden, "Show / Hide hidden files: no change")
+    ex.menu("toggle_hidden")
+    x.on("src/a.txt")
+    ex.menu("confirm") -- Open
+    assert(H.wait(3000, function()
+      return vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(p.main))) == root .. "/src/a.txt"
+    end), "Open: not in the editor")
+    x.on("src")
+    ex.menu("gk_cd_here") -- Make working directory
+    assert(H.wait(3000, function() return vim.fs.normalize(vim.fn.getcwd()) == root .. "/src" end), "cwd: " .. vim.fn.getcwd())
+  end, { open = { "src" } })
+  util.confirm, config.trash, Snacks.input = saved.confirm, saved.trash, saved.input
+  assert(ok, err)
+end)
+
 -- 2026-10-21: once loaded (- or <leader>o once) oil took every folder buffer - the same :e opened the explorer or oil
 test("Explorer: a folder opened as a file (nvim <folder>, :e <folder>) opens the explorer there, also once oil is loaded", function()
   local tmp = vim.fn.tempname()

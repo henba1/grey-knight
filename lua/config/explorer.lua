@@ -13,6 +13,7 @@
 --   d           delete the marked, else this one - the cursor stays where it was
 --   /  D  S     search files / folders / the current view (in the search box too, after <Esc>); <a-s> while
 --               typing: the next of the three; <Esc> steps back: box -> list -> tree -> closed
+--   right-click a file menu on the clicked row (open, new, rename, delete, copy, paste, paths, ...)
 local M = {}
 
 local WIN = vim.fn.has("win32") == 1
@@ -637,6 +638,7 @@ end
 --- no error behind (below).
 function M.setup(opts)
   guard_watch()
+  M.map_right_click() -- right-click on the tree with the focus elsewhere (2026-10-23)
   opts = require("snacks.picker.source.explorer").setup(opts)
   local transform = opts.filter.transform
   opts.filter.transform = function(picker, filter)
@@ -1127,6 +1129,164 @@ function M.mark_matches(picker)
   end
   picker.list:set_selected(selected)
   notify(("%s %d match%s - m / c / d act on the marked"):format(all and "Unmarked" or "Marked", #hits, #hits == 1 and "" or "es"))
+end
+
+-- ── Right-click menu (2026-10-23) ──────────────────────────────────────────────────────────────────────────────
+-- A right-click in the tree showed Neovim's own PopUp menu - in normal mode only Inspect / Paste / Select All /
+-- How-to disable mouse (its Copy is for a visual selection): no Copy, nothing about files, so entries looked
+-- missing. <RightMouse> in the list (plugins/snacks.lua) puts the cursor on the clicked row, as a left click
+-- would, and shows a file menu of the explorer's own actions instead; editor windows keep Neovim's. Below the
+-- last row the menu is about the tree's folder: the cursor goes to the root, and what needs a row of its own
+-- (open, rename, delete, ...) is left out - Delete stays when items are marked, it acts on those.
+local MENU = "GKExplorer"
+-- { label, action } in order, "-" a separator. item: needs a row of its own (left out below the last row);
+-- marked: ... unless items are marked; hidden: shown when snacks' hidden files are (not) shown. Actions are the
+-- explorer's (snacks' or ours, plugins/snacks.lua), else LOCAL's below.
+local ENTRIES = {
+  { "Open", "confirm", item = true },
+  { "Open to the side", "edit_vsplit", item = true },
+  { "Open below", "edit_split", item = true },
+  "-",
+  { "New file or folder…", "explorer_add" },
+  { "Rename…", "explorer_rename", item = true },
+  { "Delete", "explorer_del", item = true, marked = true },
+  "-",
+  { "Copy", "explorer_yank" },
+  { "Paste", "explorer_paste" },
+  { "Copy to…", "gk_copy_to", item = true },
+  { "Copy path", "gk_copy_path" },
+  { "Copy relative path", "gk_copy_relative_path" },
+  "-",
+  { "Open with system app", "explorer_open" },
+  { "Make working directory", "gk_cd_here" },
+  { "Send to agent as @path", "gk_mention" },
+  { "Show hidden files", "toggle_hidden", hidden = false },
+  { "Hide hidden files", "toggle_hidden", hidden = true },
+}
+M.MENU, M.menu_entries = MENU, ENTRIES
+
+-- a menu path: spaces and dots escaped (a dot would start a submenu)
+local function menu_path(label) return MENU .. "." .. (label:gsub("([ .\\])", "\\%1")) end
+
+--- The menu, defined once (:popup shows it)
+function M.define_menu()
+  local ok, menu = pcall(vim.fn.menu_get, MENU, "n") -- E329 while there is none
+  if ok and menu[1] then return end
+  local sep = 0
+  for _, e in ipairs(ENTRIES) do
+    if e == "-" then
+      sep = sep + 1
+      vim.cmd(("nnoremenu %s <Nop>"):format(menu_path("-" .. sep .. "-")))
+    else
+      vim.cmd(("nnoremenu %s <Cmd>lua require('config.explorer').menu('%s')<CR>"):format(menu_path(e[1]), e[2]))
+    end
+  end
+end
+
+--- "Copy path" / "Copy relative path": the marked (else the item under the cursor), one per line - relative to the
+--- working directory (as the prompts and the agent's @paths are) - into the register y uses (+ with 'clipboard'
+--- unnamedplus). Marks stay.
+function M.copy_path(picker, relative)
+  local cwd, paths = vim.fs.normalize(vim.fn.getcwd()), {}
+  for _, it in ipairs(picker:selected({ fallback = true })) do
+    local path = vim.fs.normalize(path_of(it))
+    if relative then path = eq(path, cwd) and "." or inside(path, cwd) and path:sub(#cwd + 2) or path end
+    paths[#paths + 1] = path
+  end
+  if #paths == 0 then return notify("Nothing to copy") end
+  vim.fn.setreg(vim.v.register, table.concat(paths, "\n"))
+  notify(#paths == 1 and ("Copied " .. paths[1]) or ("Copied %d paths"):format(#paths))
+end
+
+local LOCAL = {
+  gk_copy_path = function(picker) M.copy_path(picker, false) end,
+  gk_copy_relative_path = function(picker) M.copy_path(picker, true) end,
+}
+
+--- What the menu acts on: the cursor to the row under the mouse (as snacks' CursorMoved moves it); below the last
+--- row to the root's row - returns true then. From the keyboard (the mouse not over the list) the cursor stays.
+function M.menu_target(picker, pos)
+  pos = pos or vim.fn.getmousepos()
+  local list = picker.list
+  local win = list.win and list.win.win
+  if not win or pos.winid ~= win then return false end
+  local info = vim.fn.getwininfo(win)[1]
+  local row = pos.winrow - (info and info.winbar or 0) -- a winbar takes the window's first row
+  local idx = (pos.line > 0 and row >= 1) and list:row2idx(row) or 0
+  if idx >= 1 and idx <= list:count() then
+    list:_move(idx, true, true)
+    return false
+  end
+  for i = 1, list:count() do -- below the rows: the tree's folder
+    if eq(list:get(i).file, picker:cwd()) then
+      list:_move(i, true, true)
+      break
+    end
+  end
+  return true
+end
+
+--- Which entries the menu shows, by label: below the rows (`empty`) none that need a row of their own (Delete:
+--- when items are marked); Show or Hide hidden files, as they are now.
+function M.menu_shown(picker, empty)
+  local marked, shown = #picker:selected() > 0, {}
+  for _, e in ipairs(ENTRIES) do
+    if e ~= "-" then
+      local on = not (empty and e.item and not (e.marked and marked))
+      if e.hidden ~= nil then on = (picker.opts.hidden == true) == e.hidden end
+      shown[e[1]] = on
+    end
+  end
+  return shown
+end
+
+--- <RightMouse> in the list: the cursor to the clicked row, then the menu. opts.popup = false: not shown (tests -
+--- :popup waits for a choice).
+function M.context_menu(picker, opts)
+  M.define_menu()
+  local empty = M.menu_target(picker)
+  for label, on in pairs(M.menu_shown(picker, empty)) do
+    vim.cmd(("nmenu %s %s"):format(on and "enable" or "disable", menu_path(label)))
+  end
+  if not (opts and opts.popup == false) then vim.cmd.popup(MENU) end
+  return empty
+end
+
+--- The explorer whose list window is `win`, if any
+local function explorer_in(win)
+  for _, picker in ipairs(Snacks.picker.get({ source = "explorer" })) do
+    if not picker.closed and picker.list.win and picker.list.win.win == win then return picker end
+  end
+end
+
+--- A right-click while another window has the focus: the list's own <RightMouse> is buffer-local, so Neovim
+--- (mousemodel=popup_setpos) moved the cursor into the tree and showed its PopUp menu there. This one, for any
+--- window: over an explorer's list, into it and its menu; anywhere else "<RightMouse>" unmapped - Neovim's own,
+--- untouched. Set once, with the first explorer (setup).
+function M.map_right_click()
+  if M.right_click_mapped then return end
+  M.right_click_mapped = true
+  vim.keymap.set("n", "<RightMouse>", function()
+    local win = vim.fn.getmousepos().winid
+    if not explorer_in(win) then return "<RightMouse>" end
+    return ("<Cmd>lua require('config.explorer').right_click(%d)<CR>"):format(win)
+  end, { expr = true, desc = "Right-click: the explorer's file menu over the tree, else Neovim's PopUp menu" })
+end
+
+--- The menu of the explorer in `win`, the focus moved there
+function M.right_click(win)
+  local picker = explorer_in(win)
+  if not picker then return end
+  vim.api.nvim_set_current_win(win)
+  M.context_menu(picker)
+end
+
+--- A menu entry: the explorer's action `name`, or LOCAL's
+function M.menu(name)
+  local picker = Snacks.picker.get({ source = "explorer" })[1]
+  if not picker or picker.closed then return end
+  if LOCAL[name] then return LOCAL[name](picker) end
+  picker:action(name)
 end
 
 return M

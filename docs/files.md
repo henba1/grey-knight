@@ -67,6 +67,25 @@ again opens a file; the next `/` is a file search again. Lowercase text ignores 
 | `y` | Yank the paths of the marked items (else the one under the cursor) to the clipboard |
 | `p` | Paste yanked files into the folder under the cursor (copies) |
 
+**Right-click** an item for a file menu, as in an IDE - the cursor goes to the clicked row first (the focus too,
+when another window had it):
+
+| Entry | Same as |
+|-------|---------|
+| Open / Open to the side / Open below | `Enter` / a vertical / a horizontal split |
+| New file or folder… / Rename… / Delete | `a` / `r` / `d` (Delete: the marked, else this one) |
+| Copy / Paste | `y` / `p` - the paths to the clipboard; the copied files into the folder under the cursor |
+| Copy to… | `C` |
+| Copy path / Copy relative path | The path (the marked: one per line) to the clipboard, absolute or from the working directory |
+| Open with system app | The file (a folder: the file manager) in the desktop's app for it |
+| Make working directory | `.` |
+| Send to agent as @path | `@` |
+| Show / Hide hidden files | `H` |
+
+Below the last row the menu is about the tree's folder: the cursor goes to the root, and Open, Rename, Delete and
+Copy to are left out (Delete stays when items are marked - it deletes those). Outside the explorer a right-click
+shows Neovim's own menu as before.
+
 **Moving with the tree**: `m` on a file marks it; go to the target folder (or any file in it) and press `m`
 again - it moves there after a yes, open buffers and language servers follow (for a folder: those of the files
 in it). `c` instead copies it. Mark more with `<Tab>` first to move them together; `m` in the file's own folder
