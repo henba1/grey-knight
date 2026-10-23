@@ -110,14 +110,22 @@ function M.attention(event, id)
   if term and term.window and vim.api.nvim_win_is_valid(term.window) and vim.api.nvim_get_current_win() == term.window then
     return
   end
-  if event == "permission" and require("integrations.agent_ide").current() then return end
+  local ide = require("integrations.agent_ide")
+  if event == "permission" and ide.current() then return end
   local who = term and term.display_name or M.backend().name
   if event == "stop" then
     vim.notify(who .. " is done", vim.log.levels.INFO, { title = who })
   elseif event == "permission" then
-    vim.notify(who .. " waits for your answer", vim.log.levels.WARN, { title = who })
+    -- an edit it asks about opens as a diff a moment later (its own word): then this one says nothing more
+    vim.defer_fn(function()
+      if ide.current() or next(ide.views) then return end
+      vim.notify(who .. " waits for your answer", vim.log.levels.WARN, { title = who })
+    end, M.PERMISSION_DELAY)
   end
 end
+
+-- ms the word "waits for your answer" waits for a diff of the same question (agent_ide.lua)
+M.PERMISSION_DELAY = 600
 
 -- What the project was like when an agent started: <leader>ad lists what changed since (agent_changes.lua)
 local function note_start(dir)
