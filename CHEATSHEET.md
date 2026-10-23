@@ -346,7 +346,7 @@ Debugging (DAP)](docs/run-debug.md#debugging-dap). C/C++'s `:Codelldb*` surface 
 | Key | Action |
 |-----|--------|
 | `<C-h/j/k/l>` | Navigate windows - from a terminal too (clear the shell with `clear` / `cls`) |
-| `<C-Up/Down/Left/Right>` | Resize windows - a terminal too |
+| `<C-Up/Down/Left/Right>` | Resize windows - a terminal too, not an agent's (there they are the agent's: word by word in its prompt) |
 | `<M-Up/Down/Left/Right>` | Resize windows in the editor (Alt+arrows: for PuTTY's default keys, which send Ctrl+arrows as plain arrows) |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
 | `<leader><Tab>` | Recent buffers (IntelliJ's Ctrl+Tab): starts on the one before this - `Enter` goes back, `Tab` / `Shift+Tab` further back / forward. `Ctrl+Tab` too where the terminal passes it on |
@@ -354,7 +354,9 @@ Debugging (DAP)](docs/run-debug.md#debugging-dap). C/C++'s `:Codelldb*` surface 
 | `<C-o>` / `<C-i>` | Back / forward through the places you jumped to, file to file (IntelliJ's Navigate Back / Forward) |
 | `<Esc><Esc>` | Leave terminal mode (back to normal mode); going to a terminal window (shell, REPL, agent, a run's output) enters it again |
 
-In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `Ctrl+W/U/R` work as typed.
+In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `Ctrl+W/U/R` work as typed. In an
+agent's window (Claude Code, OpenCode, Qwen Code) only the ways out stay Neovim's - `<C-h/j/k/l>`, `<Esc><Esc>`,
+`<C-\><C-n>`; every other key, Ctrl+arrows too, is the agent's.
 
 > Over SSH from **PuTTY**: its default keys send Ctrl+arrows as plain arrows and Shift/Ctrl+F11 as F11. In PuTTY set
 > Terminal → Keyboard: arrow keys *xterm-style bitmap*, function keys *Xterm 216+*; Connection → Data: terminal type

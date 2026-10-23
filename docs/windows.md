@@ -35,6 +35,8 @@ Works for **all** windows: editor splits, explorer, terminal, Qwen agent.
 | `Ctrl+↑` | Taller |
 | `Ctrl+↓` | Shorter |
 
+In a terminal too - but not in an agent's window, where they are the agent's ([Terminal](#terminal)).
+
 `Alt+←` `Alt+→` `Alt+↑` `Alt+↓` (`<M-Left>` …) do the same in the editor - for a terminal that sends Ctrl+arrows as
 plain arrows, as PuTTY does by default ([Over SSH (PuTTY)](ssh.md#over-ssh-putty)). In a terminal they stay the shell's.
 
@@ -85,6 +87,12 @@ In a terminal, `Ctrl+h` / `Ctrl+j` / `Ctrl+k` / `Ctrl+l` jump to the next window
 resize it, as everywhere else. Every other key is the program's: the shell's own `Ctrl+A` / `Ctrl+E`, `Alt+B` /
 `Alt+F`, `Ctrl+W`, `Ctrl+U`, `Ctrl+R` work as typed. To clear the shell type `clear` (`cls` in cmd.exe) - `Ctrl+L`
 is the window on the right.
+
+**An agent's window** (Claude Code, OpenCode, Qwen Code - `<leader>tt`, `t1` ...) has a keyboard of its own: only the
+ways out stay GreyKnight's - `Ctrl+h` / `Ctrl+j` / `Ctrl+k` / `Ctrl+l` (the next window) and `Esc Esc` (normal mode;
+Neovim's own `Ctrl+\ Ctrl+n` as well). Every other key is the agent's: `Ctrl+←` / `Ctrl+→` move through its prompt
+word by word instead of resizing the window. To resize it: `Esc Esc`, then `Ctrl+arrows` - or from the window next
+to it.
 
 Going to a terminal window - a shell, the REPL, an agent, a run's output, the debug console, `:terminal` - puts
 you in terminal mode right away, also when you left it in normal mode; not when its program has exited (a key
