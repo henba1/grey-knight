@@ -15,9 +15,12 @@ local WIN = vim.fn.has("win32") == 1
 M.INSTRUCTIONS = table.concat({
   "These tools work in the user's editor, Neovim (GreyKnight); you run in a terminal next to the code.",
   "When the user asks where something is, find it, then show it: show_in_file_tree reveals a file or folder in the",
-  "file tree, highlighted (or runs a search there); open_file shows code at a line; show_locations lists several",
-  "places (hits, usages, errors) in the quickfix list. editor_state tells what the user has open and selected.",
-  "diagnostics, find_symbol, goto_definition and find_references ask the language servers running in Neovim.",
+  "file tree, highlighted (or runs a search there); mark_in_file_tree marks several files there for the user to act",
+  "on; open_file shows code at a line; show_locations lists several places (hits, usages, errors) in the quickfix",
+  "list. editor_state tells what the user has open and selected, what is marked in the file tree, and which of",
+  "your edits the user still reviews or reverted - the user reviews each of your edits in the editor and may revert",
+  "parts of it: do not redo a reverted change unless asked. diagnostics, find_symbol, goto_definition and",
+  "find_references ask the language servers running in Neovim.",
 }, " ")
 
 -- ── Paths ──────────────────────────────────────────────────────
@@ -140,6 +143,44 @@ function T.show_in_file_tree(args, reply)
   end)
 end
 
+--- Mark files and folders in the tree (snacks' selection - m / c / d act on it, @ hands it back to the agent): each
+--- revealed in turn (its folders open), then marked; `add`: the marks of before stay
+function T.mark_in_file_tree(args, reply)
+  local list, missing = {}, {}
+  for _, p in ipairs(type(args.paths) == "table" and args.paths or {}) do
+    local path = M.resolve(p)
+    if path and vim.uv.fs_stat(path) then list[#list + 1] = path elseif type(p) == "string" then missing[#missing + 1] = p end
+  end
+  if #list == 0 then return reply(error_result("mark_in_file_tree needs paths of files or folders that exist")) end
+  local i = 0
+  local function finish()
+    local p = explorer()
+    if not p then return reply(error_result("The file tree did not open")) end
+    local want, selected = {}, args.add == true and vim.list_slice(p.list.selected) or {}
+    for _, path in ipairs(list) do want[key(path)] = true end
+    local marked = {}
+    for item in p:iter() do
+      if item.file and want[key(vim.fs.normalize(item.file))] and not marked[key(vim.fs.normalize(item.file))] then
+        marked[key(vim.fs.normalize(item.file))] = true
+        selected[#selected + 1] = item
+      end
+    end
+    p.list:set_selected(selected)
+    local names = {}
+    for _, path in ipairs(list) do if marked[key(path)] then names[#names + 1] = rel(path) end end
+    local text = ("The file tree marks %d item%s: %s - the user can move (m), copy (c) or delete (d) them there, or hand them to you with @")
+      :format(#names, #names == 1 and "" or "s", table.concat(names, ", "))
+    if #missing > 0 then text = text .. "\nNot found: " .. table.concat(missing, ", ") end
+    reply(text_result(text))
+  end
+  local function step()
+    i = i + 1
+    if i > #list then return finish() end
+    reveal(list[i], 5000, step)
+  end
+  step()
+end
+
 local ns = vim.api.nvim_create_namespace("greyknight_agent_show")
 vim.api.nvim_set_hl(0, "GreyKnightAgentShow", { default = true, link = "IncSearch" })
 
@@ -209,6 +250,20 @@ function T.editor_state(_, reply)
     state.selected_text = link.selection(active.buf)
     state.unsaved_changes = vim.bo[active.buf].modified
   end
+  -- the file tree: where its cursor is, what the user marked there
+  local tree = explorer()
+  if tree then
+    local item = tree:current()
+    state.file_tree = { open = true, cursor = item and item.file and rel(item.file) or nil, marked = {} }
+    for _, it in ipairs(tree.list.selected or {}) do
+      if it.file then state.file_tree.marked[#state.file_tree.marked + 1] = rel(it.file) end
+    end
+  else
+    state.file_tree = { open = false }
+  end
+  -- the review of the agent's edits (agent_review.lua): what waits, what the user reverted
+  local ok, review = pcall(require, "integrations.agent_review")
+  if ok then state.review_of_your_edits = review.state() end
   reply(text_result(vim.json.encode(state)))
 end
 
@@ -435,6 +490,12 @@ local DEFS = {
       regex = bool("search is a regex or glob (default: fuzzy)"),
       folders = bool("Search folders instead of files"),
     }) },
+  { name = "mark_in_file_tree", impl = T.mark_in_file_tree,
+    description = "Mark files or folders in Neovim's file tree (their folders open) - e.g. the files a task touches, or candidates to move or delete: the user then acts on the marked there (m moves, c copies, d deletes) or hands them back to you. Returns what is marked.",
+    inputSchema = schema({
+      paths = { type = "array", items = { type = "string" }, description = "Files or folders - absolute, or relative to the project" },
+      add = bool("Keep the marks there are (default: they are replaced)"),
+    }, { "paths" }) },
   { name = "open_file", impl = T.open_file,
     description = "Open a file in the user's editor window, at a line, and light up lines line..end_line - to show the user the code you talk about.",
     inputSchema = schema({
@@ -453,7 +514,7 @@ local DEFS = {
       }, { "path", "line" }) },
     }, { "locations" }) },
   { name = "editor_state", impl = T.editor_state,
-    description = "What the user has open in Neovim: the current file, cursor, visible lines, selected text, unsaved changes, the open files (most recent first), the project folder.",
+    description = "What the user has open in Neovim: the current file, cursor, visible lines, selected text, unsaved changes, the open files (most recent first), the project folder; the file tree (open, its cursor, the files the user marked there); the review of your edits (changes still waiting per file, the ones the user reverted).",
     inputSchema = { type = "object" } },
   { name = "diagnostics", impl = T.diagnostics,
     description = "Errors and warnings from Neovim's language servers and linters - of one file (it is loaded and checked), or of all files open in Neovim.",

@@ -1093,6 +1093,16 @@ function M.show(path)
   return picker
 end
 
+--- @ - the marked (else the item under the cursor) to the agent: @path mentions typed into its prompt
+function M.mention(picker)
+  local paths = {}
+  for _, item in ipairs(picker:selected({ fallback = true })) do
+    if item.file then paths[#paths + 1] = item.file end
+  end
+  if #paths == 0 then return notify("Nothing to hand to the agent") end
+  require("integrations.agent").mention(paths)
+end
+
 --- Ctrl+a - in a search: marks its matches, the files of a file search, the folders of a folder search; not the
 --- folders above them - snacks' select_all marked those too, and d deleted them whole. Again: unmarks them. Marks
 --- of before stay. Outside a search: snacks' own (every row).

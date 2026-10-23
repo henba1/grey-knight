@@ -228,6 +228,23 @@ function M.send(text, name, direction)
   if not prompt_flag(M.backend()) then when_ready(term, function() submit(term, text) end) end
 end
 
+--- Files as @path mentions in the agent's input - typed there, not sent: the user goes on with the prompt (the
+--- tree's @). Both CLIs read a file (or folder) named so.
+function M.mention(paths)
+  local refs = {}
+  for _, p in ipairs(paths or {}) do
+    local r = vim.fn.fnamemodify(p, ":.")
+    refs[#refs + 1] = "@" .. (r:gsub(" ", "\\ "))
+  end
+  if #refs == 0 then return end
+  local text = table.concat(refs, " ") .. " "
+  local term, new = agent("agent", "vertical")
+  if not term then return end
+  show(term, "vertical")
+  local function paste() vim.fn.chansend(term.job_id, "\27[200~" .. text .. "\27[201~") end
+  if new then when_ready(term, paste) else paste() end
+end
+
 --- Ask about the file or the selection (read-only); asks for the question first.
 function M.ask()
   local ctx = M.context()

@@ -92,11 +92,12 @@ return {
               gk_regex_toggle   = { action = function(p) require("config.explorer").regex_toggle(p) end,   desc = "Regex / fuzzy for the file and folder search" },
               gk_mark_matches   = { action = function(p) require("config.explorer").mark_matches(p) end,   desc = "Mark the search's matches (again: unmark)" },
               gk_rename_regex   = { action = function(p, item) require("config.explorer").rename_regex(p, item) end, desc = "Rename the marked by regex: s/regex/replacement/" },
+              gk_mention        = { action = function(p) require("config.explorer").mention(p) end,        desc = "To the agent: the marked (or this) as @path in its prompt" },
             },
             win = {
               list = { keys = { ["."] = "gk_cd_here", ["<BS>"] = "gk_cd_up", ["-"] = "gk_cd_up", ["C"] = "gk_copy_to",
                 ["/"] = "gk_search_files", ["D"] = "gk_search_folders", ["S"] = "gk_search_view", ["<Esc>"] = "gk_search_leave",
-                ["R"] = "gk_search_regex", ["<c-a>"] = "gk_mark_matches", ["%"] = "gk_rename_regex" } },
+                ["R"] = "gk_search_regex", ["<c-a>"] = "gk_mark_matches", ["%"] = "gk_rename_regex", ["@"] = "gk_mention" } },
               -- the search box: keys in normal mode (after <Esc>), so typing stays typing; <a-s>, <a-r> and <c-a>
               -- while typing too
               input = { keys = { ["<a-s>"] = { "gk_search_next", mode = { "i", "n" } },
