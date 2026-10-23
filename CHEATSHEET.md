@@ -55,8 +55,8 @@
 **The agent works in the editor** (both agents, started with `<leader>t*`): ask "where is the bookmarks code?" and
 it opens the file tree on it (or a search there), marks files there, shows code at a line, lists places in the
 quickfix list, asks the language servers (definitions, usages, symbols, diagnostics) - `/mcp` shows `greyknight`.
-**Its edits show in your buffers** - the old lines red above the new green ones - to keep (`<leader>ay`) or revert
-(`<leader>an`); `<leader>af` makes a window follow it from edit to edit. Qwen Code also gets the
+**Its edits show in your buffers** - the old lines red above the new green ones - to keep (`<leader>ay`, or click
+**✓ Accept** under the change) or revert (`<leader>an`, **✗ Reject**); `<leader>af` makes a window follow it from edit to edit. Qwen Code also gets the
 open files, cursor and selection as context (`/ide status`: Neovim) and shows **each edit as a diff** before it
 writes it (when it asks for permission: `/approval-mode default`):
 

@@ -1291,9 +1291,12 @@ local function review_marks(buf)
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     local d = m[4]
     for _, l in ipairs(d.virt_lines or {}) do
-      local t = {}
-      for _, chunk in ipairs(l) do t[#t + 1] = chunk[1] end
-      old[#old + 1] = vim.trim(table.concat(t))
+      local t, bar = {}, false
+      for _, chunk in ipairs(l) do
+        t[#t + 1] = chunk[1]
+        bar = bar or (chunk[2] or ""):find("^GreyKnightReview[AH]") ~= nil -- the Accept / Reject bar: not an old line
+      end
+      if not bar then old[#old + 1] = vim.trim(table.concat(t)) end
     end
     if d.line_hl_group then lit[#lit + 1] = (m[2] + 1) .. ":" .. d.line_hl_group end
     if d.hl_group == "GreyKnightReviewText" then
@@ -1322,8 +1325,15 @@ test("Agent review: an edit shows in its buffer - the old line in red above, the
     assert(vim.fn.line(".") == 3, "]c went to " .. vim.fn.line("."))
     keys("[c")
     assert(vim.fn.line(".") == 2, "[c went to " .. vim.fn.line("."))
-    local hint = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().greyknight_agent_review_hint, 0, -1, { details = true })
-    assert(#hint == 1 and hint[1][2] == 1 and hint[1][4].virt_text[1][1]:find("<leader>ay keeps", 1, true), vim.inspect(hint))
+    -- one Accept / Reject bar under the two changes one after the other, who made them on it
+    local bars = review.entry(file).bars
+    assert(#bars == 1 and bars[1].first == 2 and bars[1].last == 3, vim.inspect(bars))
+    local bar = {}
+    for _, line in ipairs((review.bar("Test agent", 80))) do
+      for _, chunk in ipairs(line) do bar[#bar + 1] = chunk[1] end
+    end
+    bar = table.concat(bar)
+    assert(bar:find("Accept", 1, true) and bar:find("Reject", 1, true) and bar:find("Test agent", 1, true), bar)
     -- the user edits the buffer: the review follows; their edit back to the old text ends that change
     vim.api.nvim_buf_set_lines(buf, 2, 3, false, {})
     review.render(buf)
@@ -1370,6 +1380,54 @@ test("Agent review: <leader>an reverts the change at the cursor - buffer and dis
     keys("<leader>aN")
     assert(not vim.uv.fs_stat(new) and not vim.api.nvim_buf_is_valid(nb), "the new file is still there")
     assert(table.concat(notes, " | "):find("made.py: the agent made it - it is deleted", 1, true), table.concat(notes, " | "))
+  end)
+  vim.notify = saved
+  review.stop(file)
+  assert(ok, err)
+end)
+
+test("Agent review: the Accept / Reject bar under each change - a click on Reject reverts it, on Accept keeps it; in a narrow window it wraps, nothing cut off", function()
+  local review, file, buf = review_file("clicked.py", { "a = 1", "b = 2", "c = 3", "d = 4", "e = 5", "f = 6", "g = 7" })
+  local saved = vim.notify
+  vim.notify = function() end
+  local ok, err = pcall(function()
+    agent_writes(review, file, { "a = 1", "b = 20", "c = 3", "d = 4", "e = 5", "f = 60", "g = 7" })
+    -- a narrow window: each of the bar's lines fits it
+    vim.cmd("vsplit | vertical resize 24")
+    review.render(buf)
+    assert(vim.fn.maparg("<LeftMouse>", "n", false, true).desc == "Agent review: a click on Accept / Reject", "no click on the bar")
+    local text = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
+    for _, line in ipairs((review.bar("Test agent", text.width - text.textoff))) do
+      local t = {}
+      for _, chunk in ipairs(line) do t[#t + 1] = chunk[1] end
+      assert(vim.fn.strdisplaywidth(table.concat(t)) <= text.width - text.textoff, "cut off: " .. table.concat(t))
+    end
+    vim.cmd("only")
+    review.render(buf)
+    vim.cmd("redraw!")
+    -- the buttons where they show on the screen: clicked as the mouse does
+    local function click(mark)
+      for row = 1, vim.o.lines do
+        for col = 1, vim.o.columns do
+          if vim.fn.screenstring(row, col) == mark then
+            -- as <LeftMouse> does it (a mouse event fed here waits for the test to end): where it is, then the act
+            local win = vim.api.nvim_get_current_win()
+            local at = vim.fn.win_screenpos(win)
+            local which, b, bar = review.button_at({ winid = win, screenrow = row, wincol = col - at[2] + 1 })
+            assert(which, ("no button at %d,%d"):format(row, col))
+            review.act(which == "accept", false, bar.first, bar.last, b)
+            return
+          end
+        end
+      end
+      error("no " .. mark .. " on the screen")
+    end
+    click("✗") -- the first change's Reject
+    assert(vim.fn.readfile(file)[2] == "b = 2", "Reject: on disk " .. table.concat(vim.fn.readfile(file), ","))
+    assert(#review.entry(file).hunks == 1, vim.inspect(review.entry(file).hunks))
+    vim.cmd("redraw!")
+    click("✓") -- the one left: Accept
+    assert(vim.fn.readfile(file)[6] == "f = 60" and not review.active(buf), "Accept: the review is still on")
   end)
   vim.notify = saved
   review.stop(file)
