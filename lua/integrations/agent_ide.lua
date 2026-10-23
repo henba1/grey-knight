@@ -43,7 +43,7 @@ local function tell(view, method, params) link.send(view.chan, "notify", { metho
 -- ── Colors: the old side red, the new side green ───────────────
 -- As VS Code's and GitHub's reviews show it: removed red, added green, the changed words within a line in a stronger
 -- shade of it. Vim colors both sides alike (DiffChange, DiffText); the windows of a review get colors of their own,
--- derived from the colorscheme's DiffDelete / DiffAdd (and again when it changes).
+-- tinted from the colorscheme's red and green (and again when it changes).
 
 local function rgb(n) return math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256 end
 local function pack(r, g, b)
@@ -55,24 +55,26 @@ local function mix(a, b, t) -- t of the way from a to b
   local r2, g2, b2 = rgb(b)
   return pack(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t)
 end
-local function stronger(a, f)
-  local r, g, b = rgb(a)
-  return pack(r * f, g * f, b * f)
-end
 local function bg(name) return vim.api.nvim_get_hl(0, { name = name, link = false }).bg end
 
---- The review's colors from the colorscheme's
+--- The review's colors from the colorscheme's: tints of its bright red and green (Removed / Added), so they show on
+--- true black (OLED) too - DiffDelete / DiffAdd there are all but black
 function M.colors()
   local base = bg("Normal") or 0x16181a -- a transparent background: cyberdream's
-  local red, green = bg("DiffDelete") or 0x442927, bg("DiffAdd") or 0x24462a
+  local function fg(name) return vim.api.nvim_get_hl(0, { name = name, link = false }).fg end
+  local red = fg("Removed") or fg("DiffDelete") or bg("DiffDelete") or 0xff6e5e
+  local green = fg("Added") or fg("DiffAdd") or bg("DiffAdd") or 0x5eff6c
   local function set(name, spec) vim.api.nvim_set_hl(0, name, spec) end
-  set("GreyKnightDiffRemoved", { bg = red })
-  set("GreyKnightDiffChangedOld", { bg = mix(base, red, 0.6) })
-  set("GreyKnightDiffTextOld", { bg = stronger(red, 1.7) })
-  set("GreyKnightDiffAdded", { bg = green })
-  set("GreyKnightDiffChangedNew", { bg = mix(base, green, 0.6) })
-  set("GreyKnightDiffTextNew", { bg = stronger(green, 1.7) })
+  set("GreyKnightDiffRemoved", { bg = mix(base, red, 0.26) })
+  set("GreyKnightDiffChangedOld", { bg = mix(base, red, 0.2) })
+  set("GreyKnightDiffTextOld", { bg = mix(base, red, 0.5) })
+  set("GreyKnightDiffAdded", { bg = mix(base, green, 0.24) })
+  set("GreyKnightDiffChangedNew", { bg = mix(base, green, 0.18) })
+  set("GreyKnightDiffTextNew", { bg = mix(base, green, 0.45) })
   set("GreyKnightDiffFiller", { fg = vim.api.nvim_get_hl(0, { name = "LineNr", link = false }).fg, bg = base })
+  -- the review's buttons (agent_review.lua): keep / revert, the color itself
+  set("GreyKnightDiffKeep", { fg = base, bg = green, bold = true })
+  set("GreyKnightDiffRevert", { fg = base, bg = red, bold = true })
 end
 
 --- Each side's colors ('winhighlight'): on the old side DiffAdd is what only it has - removed lines

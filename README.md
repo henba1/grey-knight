@@ -22,7 +22,8 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 - **A coding agent that works in the editor** — Qwen Code, OpenCode or Claude Code in a terminal next to the code
   (`GREYKNIGHT_AGENT`). Asked where something is, it opens the file tree on it or marks files there; it shows code at
   a line and asks Neovim's language servers. **Its edits show in your buffers** as in Zed or Cursor - the old lines
-  red, the new green - to keep or revert, each change or the whole file (`<leader>ay` / `<leader>an`, `<leader>ar`);
+  red, the new green - to keep or revert, each change (a click on Accept / Reject under it) or the whole file
+  (`<leader>ay` / `<leader>an`, `<leader>ar`);
   a window **follows the agent** to each edit as it lands (`<leader>af`); `@` in the tree hands files to it. Qwen Code
   sees the open files and the selection, and in its ask mode each edit opens as a diff first; `<leader>ad` lists what
   the agent changed; one you are not looking at says when it is done ([the coding agent](docs/agent.md))

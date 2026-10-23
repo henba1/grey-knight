@@ -4,7 +4,8 @@
 -- ║  agent's hook notes the file; after it, the buffer shows the ║
 -- ║  change - the old lines in red above, the new ones green,    ║
 -- ║  the changed words stronger - until each change is kept or   ║
--- ║  reverted: <leader>ay / <leader>an (the file: aY / aN),      ║
+-- ║  reverted: <leader>ay / <leader>an (the file: aY / aN) or a  ║
+-- ║  click on the Accept / Reject bar under each change,         ║
 -- ║  ]c / [c between them, <leader>ar lists all of them.         ║
 -- ║  A window following the agent (<leader>af) goes to each edit ║
 -- ║  as it lands - the file tree, when open, shows the file too. ║
@@ -15,7 +16,6 @@ local M = {}
 
 local WIN = vim.fn.has("win32") == 1
 local ns = vim.api.nvim_create_namespace("greyknight_agent_review")
-local ns_hint = vim.api.nvim_create_namespace("greyknight_agent_review_hint")
 
 --- The files under review: key -> { path, ref = the lines to compare with (the file before the agent's first edit,
 --- with what the user kept since), new = the file did not exist, agent = who edited it, edits = how many edits came }
@@ -123,19 +123,25 @@ local function colors()
   set("GreyKnightReviewChangeSign", "Changed")
   set("GreyKnightReviewDeleteSign", "Removed")
   set("GreyKnightReviewHint", "Comment")
+  set("GreyKnightReviewAccept", "GreyKnightDiffKeep")
+  set("GreyKnightReviewReject", "GreyKnightDiffRevert")
   set("GreyKnightFollow", "IncSearch")
 end
 
 -- ── Showing a review ───────────────────────────────────────────
 
--- The width of the text area of the windows showing `buf` (the old lines' red runs across it)
+-- The width of the text area of the windows showing `buf`: the widest (the old lines' red runs across it), the
+-- narrowest (the bar under a change fits it)
 local function width(buf)
-  local w = 0
+  local w, narrow = 0, math.huge
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     local info = vim.fn.getwininfo(win)[1]
-    if info then w = math.max(w, info.width - info.textoff) end
+    if info then
+      w = math.max(w, info.width - info.textoff)
+      narrow = math.min(narrow, info.width - info.textoff)
+    end
   end
-  return w > 0 and w or 100
+  return w > 0 and w or 100, narrow < math.huge and math.max(narrow, 1) or 100
 end
 
 --- The lines of a change in the buffer: first, last (a change that only removed lines: the line its old ones show at)
@@ -146,22 +152,68 @@ local function span_of(h)
 end
 M.span_of = span_of
 
+local function leader()
+  local l = vim.g.mapleader
+  return (l == nil or l == "") and "\\" or l == " " and "␣" or l
+end
+
+--- The bar under a change, fitted to `w` columns: the buttons, then who made it and the keys - on lines of their own
+--- when the window is narrow, never cut off. Returns its virtual lines and the buttons' columns { from, to }
+function M.bar(agent, w)
+  local lead = leader()
+  local dw = vim.fn.strdisplaywidth
+  local accept, reject -- the widest that fits: with the keys, without, the marks alone
+  for _, b in ipairs({ { (" ✓ Accept %say "):format(lead), (" ✗ Reject %san "):format(lead) },
+    { " ✓ Accept ", " ✗ Reject " }, { " ✓ ", " ✗ " } }) do
+    accept, reject = b[1], b[2]
+    if dw(accept .. " " .. reject) <= w then break end
+  end
+  local aw, rw = dw(accept), dw(reject)
+  local lines = { { { accept, "GreyKnightReviewAccept" }, { " " }, { reject, "GreyKnightReviewReject" } } }
+  local cols = { accept = { 0, aw }, reject = { aw + 1, aw + 1 + rw } }
+  -- then who made it and the keys: a part that does not fit goes on a line of its own, one longer than the window in
+  -- pieces of its width
+  local used, sep = aw + 1 + rw, "   "
+  for _, part in ipairs({ agent or "agent", "]c next", lead .. "ar lists all" }) do
+    if used > 0 and used + dw(sep .. part) > w then
+      lines[#lines + 1] = {}
+      used, sep = 0, ""
+    end
+    while dw(part) > w - used do
+      local piece = vim.fn.strcharpart(part, 0, math.max(w - used, 1))
+      table.insert(lines[#lines], { piece, "GreyKnightReviewHint" })
+      lines[#lines + 1] = {}
+      part, used = vim.fn.strcharpart(part, vim.fn.strchars(piece)), 0
+    end
+    table.insert(lines[#lines], { sep .. part, "GreyKnightReviewHint" })
+    used, sep = used + dw(sep .. part), " · "
+  end
+  return lines, cols
+end
+
 --- Draws the review of `buf`; returns its changes (none: nothing drawn)
 function M.render(buf)
   if not vim.api.nvim_buf_is_valid(buf) then return {} end
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  vim.api.nvim_buf_clear_namespace(buf, ns_hint, 0, -1)
   local f = file_of(buf)
   if not f then return {} end
   colors()
   local cur = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local hunks = M.hunks(f.ref, cur)
-  f.hunks = hunks
-  local w, ts, count = width(buf), vim.bo[buf].tabstop, #cur
+  f.hunks, f.bars = hunks, {}
+  local w, narrow = width(buf)
+  local ts, count = vim.bo[buf].tabstop, #cur
   local function expand(s) return (s:gsub("\t", string.rep(" ", ts))) end
-  for _, h in ipairs(hunks) do
+  local from -- the first line of the changes one after the other: one bar under them all
+  for i, h in ipairs(hunks) do
     local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
     local paired = math.min(ca, cb) -- old and new lines side by side: a changed line, its words compared
+    local bar, cols = M.bar(f.agent, narrow)
+    local first, last = span_of(h)
+    from = from or first
+    local nxt = hunks[i + 1]
+    local block = not nxt or span_of(nxt) > last + 1 -- the last of them: the bar goes here
+    local on_old = false -- the bar goes with the old lines when they show under the same line
     if ca > 0 then
       local virt = {}
       for i = 0, ca - 1 do
@@ -186,6 +238,11 @@ function M.render(buf)
       else
         row, above = math.min(sb, count) - 1, false
       end
+      if block and not above and row == last - 1 then
+        f.bars[#f.bars + 1] = { line = last, offset = #virt, first = from, last = last, cols = cols }
+        vim.list_extend(virt, bar)
+        on_old = true
+      end
       vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { virt_lines = virt, virt_lines_above = above, priority = 200 })
       if cb == 0 then
         vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { sign_text = "-", sign_hl_group = "GreyKnightReviewDeleteSign", priority = 200 })
@@ -208,8 +265,12 @@ function M.render(buf)
         end
       end
     end
+    if block and not on_old and last <= count then
+      f.bars[#f.bars + 1] = { line = last, offset = 0, first = from, last = last, cols = cols }
+      vim.api.nvim_buf_set_extmark(buf, ns, last - 1, 0, { virt_lines = bar, priority = 199 })
+    end
+    if block then from = nil end
   end
-  M.hint(buf)
   return hunks
 end
 
@@ -222,20 +283,30 @@ local function hunk_at(f, first, last)
   return list
 end
 
---- The keys, at the end of the change the cursor is in
-function M.hint(buf)
-  vim.api.nvim_buf_clear_namespace(buf, ns_hint, 0, -1)
+--- The bar's button under the mouse: "accept" / "reject", its window's buffer and the bar ({ first, last }) - or nil
+function M.button_at(pos)
+  pos = pos or vim.fn.getmousepos()
+  local win = pos.winid
+  if not win or win == 0 or not vim.api.nvim_win_is_valid(win) then return nil end
+  local buf = vim.api.nvim_win_get_buf(win)
   local f = file_of(buf)
-  local win = vim.api.nvim_get_current_win()
-  if not f or vim.api.nvim_win_get_buf(win) ~= buf then return end
-  local line = vim.api.nvim_win_get_cursor(win)[1]
-  local h = hunk_at(f, line, line)[1]
-  if not h then return end
-  local first = span_of(h)
-  vim.api.nvim_buf_set_extmark(buf, ns_hint, first - 1, 0, {
-    virt_text = { { ("  %s: <leader>ay keeps · <leader>an reverts · ]c next"):format(f.agent or "agent"), "GreyKnightReviewHint" } },
-    virt_text_pos = "eol", priority = 10,
-  })
+  if not f or not f.bars or #f.bars == 0 then return nil end
+  local info = vim.fn.getwininfo(win)[1]
+  local col = pos.wincol - 1 - info.textoff -- 0-based, in the text area (where virtual lines start)
+  for _, b in ipairs(f.bars) do
+    local at = vim.fn.screenpos(win, b.line, 1).row
+    if at > 0 then
+      -- the line's own screen rows: from its first column to its end, not the virtual lines around it
+      local eol = vim.api.nvim_win_call(win, function() return vim.fn.virtcol({ b.line, "$" }) end) - 1
+      local rows = vim.api.nvim_win_text_height(win, { start_row = b.line - 1, end_row = b.line - 1, start_vcol = 0, end_vcol = eol }).all
+      if pos.screenrow == at + math.max(rows, 1) + b.offset then
+        for which, c in pairs(b.cols) do
+          if col >= c[1] and col < c[2] then return which, buf, b end
+        end
+        return nil
+      end
+    end
+  end
 end
 
 -- ]c / [c in a buffer under review where gitsigns has none (a file outside git): the review's own
@@ -291,7 +362,6 @@ function M.jump(dir)
   vim.cmd("normal! m'")
   vim.api.nvim_win_set_cursor(0, { target, 0 })
   vim.cmd("normal! zv")
-  M.hint(buf)
   return true
 end
 
@@ -302,7 +372,6 @@ function M.stop(path)
   local buf = buf_of(path)
   if buf then
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-    vim.api.nvim_buf_clear_namespace(buf, ns_hint, 0, -1)
     unmap(buf)
   end
 end
@@ -717,10 +786,27 @@ vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     end, 150)
   end,
 })
-vim.api.nvim_create_autocmd("CursorMoved", {
+-- a window resized: the old lines' red and the bars fitted again
+vim.api.nvim_create_autocmd("WinResized", {
   group = group,
-  callback = function(ev) if file_of(ev.buf) then M.hint(ev.buf) end end,
+  callback = function()
+    local seen = {}
+    for _, win in ipairs(vim.v.event.windows or {}) do
+      local buf = vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win)
+      if buf and not seen[buf] and file_of(buf) then
+        seen[buf] = true
+        M.render(buf)
+      end
+    end
+  end,
 })
+-- a click on a bar's Accept / Reject: that change kept / reverted (after the click: no edits in a mapping's <expr>)
+vim.keymap.set("n", "<LeftMouse>", function()
+  local which, buf, bar = M.button_at()
+  if not which then return "<LeftMouse>" end
+  vim.schedule(function() M.act(which == "accept", false, bar.first, bar.last, buf) end)
+  return ""
+end, { expr = true, desc = "Agent review: a click on Accept / Reject" })
 vim.api.nvim_create_autocmd("WinClosed", {
   group = group,
   callback = function(ev) M.followers[tonumber(ev.match)] = nil end,

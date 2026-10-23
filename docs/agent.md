@@ -113,8 +113,9 @@ mcp list` shows `greyknight connected` when they arrived.
 ## Reviewing the agent's edits
 
 Every edit the agent makes shows **in the file's own buffer**, as in Zed or Cursor: the old lines in red above the new
-ones, the new lines green, the words that changed within a line stronger, `+` / `~` / `-` in the sign column. Each
-change waits for you to keep or revert it:
+ones, the new lines green, the words that changed within a line stronger, `+` / `~` / `-` in the sign column - tints
+of the theme's bright red and green, so they show on true black (OLED) too. Each change waits for you to keep or revert
+it: a click on **✓ Accept** / **✗ Reject** in the bar under it, or the keys:
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -124,7 +125,8 @@ change waits for you to keep or revert it:
 | `<leader>aY` / `<leader>aN` | n | Keep / revert all of the agent's changes in the file (a file it made, reverted: deleted) |
 | `<leader>ar` | n | Every change waiting, in all files - `Enter` goes there, `Ctrl+y` keeps it, `Ctrl+x` reverts it |
 
-The cursor on a change shows these keys at its end. A file's review compares with the file before the agent's first
+The bar under each change (changes one after the other share one) names the agent that made it and the keys; in a
+narrow window it wraps onto more lines rather than being cut off. A file's review compares with the file before the agent's first
 edit of it: a second edit adds to the same review, and what you keep is the new base. Your own edits in the buffer
 count along (typed back to the old text, that change is gone). An edit of a file with unsaved changes of yours does not
 overwrite them: a warning - `:e!` takes the agent's version (and shows its review), `:w` keeps yours. An edit you
