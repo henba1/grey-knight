@@ -71,6 +71,37 @@ end
 
 local T = {}
 
+--- fn(picker) once the tree is open and listed. A tree just opened puts its cursor on the current buffer's file when
+--- its first listing is done - a reveal before that was undone (2026-10-23, Windows: the listing takes longer there)
+local function with_tree(fn)
+  local function listed()
+    local p = explorer()
+    return p and not p:is_active() and p.list:count() > 0 and p or nil
+  end
+  if listed() then return fn(listed()) end
+  if not explorer() then Snacks.explorer() end
+  when(listed, 10000, function() fn(explorer()) end)
+end
+
+--- The tree's cursor to `path`: revealed, again once when it is not there after 2 s; done(true) when it got there
+local function reveal(path, ms, done)
+  with_tree(function(p)
+    if not p then return done(false) end
+    require("config.explorer").show(path)
+    local again = true
+    local start = vim.uv.now()
+    when(function()
+      local q = explorer()
+      local item = q and q:current()
+      if item and same(item.file, path) then return true end
+      if again and vim.uv.now() - start > 2000 then
+        again = false
+        require("config.explorer").show(path)
+      end
+    end, ms, done)
+  end)
+end
+
 function T.show_in_file_tree(args, reply)
   local search = type(args.search) == "string" and vim.trim(args.search) or ""
   if search ~= "" then
@@ -101,12 +132,7 @@ function T.show_in_file_tree(args, reply)
   local path = M.resolve(args.path)
   if not path then return reply(error_result("show_in_file_tree needs a path or a search")) end
   if not vim.uv.fs_stat(path) then return reply(error_result("No such file or folder: " .. path)) end
-  require("config.explorer").show(path)
-  when(function()
-    local p = explorer()
-    local item = p and p:current()
-    return item and same(item.file, path)
-  end, 8000, function(ok)
+  reveal(path, 8000, function(ok)
     local p = explorer()
     if p then p:focus("list") end
     if ok then return reply(text_result(("The file tree shows %s, the cursor on it"):format(rel(path)))) end
