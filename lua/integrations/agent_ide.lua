@@ -124,6 +124,8 @@ local function finish(view, outcome, quiet)
   end
   close(view)
   if outcome == "accepted" then
+    -- reviewed here: the edit needs no second review in its buffer (agent_review.lua)
+    pcall(function() require("integrations.agent_review").accept_content(view.path, view.final) end)
     -- Qwen Code writes the file now: a buffer of it takes the new text (autoread)
     for _, ms in ipairs({ 500, 2000, 5000 }) do vim.defer_fn(function() pcall(vim.cmd, "checktime") end, ms) end
   end

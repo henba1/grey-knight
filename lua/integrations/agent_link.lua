@@ -63,8 +63,12 @@ function M.ready(chan, role)
   if mod.ready then mod.ready(chan) end
 end
 
---- An agent's hook (agent_server.lua, role "hook"): done or waiting - a word unless the user looks at that agent
+--- An agent's hook (agent_server.lua, role "hook"): before / after an edit - its review in the buffer
+--- (agent_review.lua); done or waiting - a word unless the user looks at that agent
 function M.hook(event, agent_id, payload)
+  if event == "before" or event == "after" then
+    return require("integrations.agent_review").hook(event, tonumber(agent_id), payload)
+  end
   require("integrations.agent").attention(event, tonumber(agent_id), payload)
 end
 
@@ -354,38 +358,82 @@ function M.qwen_settings()
   -- done (Stop: after it answered) or waiting for the user (PermissionRequest: its question shows): a word in Neovim.
   -- Hooks of every settings level run, these after the user's own
   data.hooks = type(data.hooks) == "table" and data.hooks or {}
-  for event, what in pairs({ Stop = "stop", PermissionRequest = "permission" }) do
+  local function add(event, what, matcher)
     local list = type(data.hooks[event]) == "table" and data.hooks[event] or {}
     local shell = table.concat(vim.tbl_map(function(a) return vim.fn.shellescape(a) end, M.hook_command(what)), " ")
-    list[#list + 1] = { hooks = { { type = "command", command = shell } } }
+    list[#list + 1] = { matcher = matcher, hooks = { { type = "command", command = shell } } }
     data.hooks[event] = list
   end
+  add("Stop", "stop")
+  add("PermissionRequest", "permission")
+  -- its edits: before (the file as it is - the review compares with it), after (the buffer shows the change)
+  add("PreToolUse", "before", M.EDIT_TOOLS)
+  add("PostToolUse", "after", M.EDIT_TOOLS)
   return data
 end
 
+--- Qwen Code's tools that change files (its runtime ids)
+M.EDIT_TOOLS = "^(edit|write_file|notebook_edit)$"
+
 --- OpenCode's word when it is done or waits for the user: a plugin of GreyKnight's, in a config folder of this
 --- Neovim's own ($OPENCODE_CONFIG_DIR adds its plugins to the user's - a user's own folder there stays: no plugin then)
-local PLUGIN = [[
-// GreyKnight: tells the Neovim that started this OpenCode when it is done or waits for an answer
+local PLUGIN = [==[
+// GreyKnight: tells the Neovim that started this OpenCode when it is done or waits for an answer, and about its
+// edits - before one (the file as it is: the review in Neovim compares with it) and after (the buffer shows it)
 // (lua/integrations/agent_link.lua wrote this file into that Neovim's temp folder; it goes when Neovim quits)
 import { spawn } from "node:child_process"
 const COMMAND = %s
-function tell(event) {
-  try {
-    // stdin a pipe that ends at once: the hook reads nothing (not /dev/null - see agent_server.lua)
-    const child = spawn(COMMAND[0], [...COMMAND.slice(1), event], { stdio: ["pipe", "ignore", "ignore"], windowsHide: true })
-    child.on("error", () => {})
-    child.stdin.on("error", () => {})
-    child.stdin.end()
-  } catch (e) {}
+const EDITS = new Set(["edit", "write", "patch", "apply_patch", "multiedit"])
+// The hook (nvim -l agent_server.lua hook ...) with its JSON on stdin - a pipe, not /dev/null (see agent_server.lua).
+// Ends when the hook does, at most after 3 s: an edit never waits longer.
+function tell(event, payload) {
+  return new Promise((resolve) => {
+    try {
+      const timer = setTimeout(resolve, 3000)
+      const done = () => { clearTimeout(timer); resolve() }
+      const child = spawn(COMMAND[0], [...COMMAND.slice(1), event], { stdio: ["pipe", "ignore", "ignore"], windowsHide: true })
+      child.on("error", done)
+      child.on("exit", done)
+      child.stdin.on("error", () => {})
+      child.stdin.end(payload ? JSON.stringify(payload) : "")
+    } catch (e) { resolve() }
+  })
 }
-export const GreyKnight = async () => ({
+// The files of an edit: its filePath, or the paths of a patch (*** Add File: / Update File: / Delete File: / Move to:)
+// (not exported: OpenCode calls every export of a plugin file as a plugin)
+function files(args) {
+  if (!args) return []
+  if (typeof args.filePath === "string") return [args.filePath]
+  const text = [args.patchText, args.patch, args.input].find((t) => typeof t === "string")
+  if (!text) return []
+  const out = []
+  for (const m of text.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)) out.push(m[1].trim())
+  return out
+}
+const pending = new Map() // callID -> its files, from before to after
+export const GreyKnight = async ({ directory }) => ({
   event: async ({ event }) => {
     if (event.type === "session.idle") tell("stop")
     else if (event.type === "permission.asked" || event.type === "permission.updated") tell("permission")
+    else if (event.type === "file.edited" && event.properties && typeof event.properties.file === "string") {
+      tell("after", { files: [event.properties.file], cwd: directory })
+    }
+  },
+  "tool.execute.before": async (input, output) => {
+    if (!EDITS.has(input.tool)) return
+    const list = files(output && output.args)
+    if (list.length === 0) return
+    pending.set(input.callID, list)
+    await tell("before", { files: list, cwd: directory })
+  },
+  "tool.execute.after": async (input) => {
+    const list = pending.get(input.callID)
+    if (!list) return
+    pending.delete(input.callID)
+    await tell("after", { files: list, cwd: directory })
   },
 })
-]]
+]==]
 
 function M.opencode_dir()
   local dir = private_dir() .. "/opencode"

@@ -179,9 +179,11 @@ return {
           local a, b = vim.fn.line("."), vim.fn.line("v")
           return { math.min(a, b), math.max(a, b) }
         end
-        -- in diff mode (Diffview) ]c / [c stay Vim's
-        map("n", "]c", function() if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) else gs.nav_hunk("next") end end, "Git: Next change")
-        map("n", "[c", function() if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else gs.nav_hunk("prev") end end, "Git: Previous change")
+        -- in diff mode (Diffview) ]c / [c stay Vim's; in a file with the agent's edits to review they go to those
+        -- (integrations/agent_review.lua), else to git's changes
+        local function review(dir) return package.loaded["integrations.agent_review"] and require("integrations.agent_review").jump(dir) end
+        map("n", "]c", function() if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) elseif not review(1) then gs.nav_hunk("next") end end, "Git: Next change (the agent's to review first)")
+        map("n", "[c", function() if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) elseif not review(-1) then gs.nav_hunk("prev") end end, "Git: Previous change (the agent's to review first)")
         map("n", "<leader>gs", gs.stage_hunk, "Git: Stage the change (again: unstage)")
         map("v", "<leader>gs", function() gs.stage_hunk(lines()) end, "Git: Stage the selected lines")
         map("n", "<leader>gr", gs.reset_hunk, "Git: Undo the change (u brings it back)")

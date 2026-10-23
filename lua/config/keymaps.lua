@@ -186,6 +186,18 @@ map("n", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask a
 map("v", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about selection" })
 map("v", "<leader>ae", function() agent().edit() end,        { desc = "AI: Edit selection" })
 map("n", "<leader>ad", function() require("integrations.agent_changes").pick() end, { desc = "AI: What changed since the agent started (diff, take back)" })
+-- The agent's edits, reviewed in their buffers (lua/integrations/agent_review.lua): ]c / [c go between them; a
+-- window following the agent goes to each edit as it lands
+local function review() return require("integrations.agent_review") end
+local function sel() local a, b = vim.fn.line("v"), vim.fn.line("."); return math.min(a, b), math.max(a, b) end
+map("n", "<leader>ay", function() review().act(true) end,  { desc = "AI: Keep the agent's change here" })
+map("n", "<leader>an", function() review().act(false) end, { desc = "AI: Revert the agent's change here" })
+map("v", "<leader>ay", function() local a, b = sel(); review().act(true, false, a, b) end,  { desc = "AI: Keep the agent's changes in the selection" })
+map("v", "<leader>an", function() local a, b = sel(); review().act(false, false, a, b) end, { desc = "AI: Revert the agent's changes in the selection" })
+map("n", "<leader>aY", function() review().act(true, true) end,  { desc = "AI: Keep all of the agent's changes in this file" })
+map("n", "<leader>aN", function() review().act(false, true) end, { desc = "AI: Revert all of the agent's changes in this file" })
+map("n", "<leader>ar", function() review().pick() end,           { desc = "AI: The agent's edits to review (keep, revert)" })
+map("n", "<leader>af", function() review().toggle_follow() end,  { desc = "AI: This window follows the agent's edits (again: stops)" })
 -- Speech to text on this machine (lua/integrations/voice.lua): press to start, again to stop
 local function voice() return require("integrations.voice") end
 map("n", "<leader>av", function() voice().toggle("agent") end,  { desc = "AI: Speak a prompt to the agent (again: stop)" })
