@@ -1,14 +1,15 @@
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  Agents reach into this Neovim. The MCP server they start    ║
 -- ║  (agent_server.lua, run by nvim -l) relays to here:          ║
--- ║  - both agents get the editor's tools (agent_tools.lua):     ║
+-- ║  - every agent gets the editor's tools (agent_tools.lua):    ║
 -- ║    show in the file tree, open at a line, LSP, diagnostics;  ║
 -- ║  - Qwen Code also its IDE mode (agent_ide.lua): its edits as ║
 -- ║    diffs to accept or reject, the open files as context.     ║
 -- ║  Only agents started here: their terminals get the settings  ║
 -- ║  in their environment - the agents' own settings files stay  ║
 -- ║  as they are (Qwen Code: system defaults, the lowest level;  ║
--- ║  OpenCode: inline config).                                   ║
+-- ║  OpenCode: inline config; Claude Code: --mcp-config and      ║
+-- ║  --settings, next to its own).                               ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local M = {}
 
@@ -339,6 +340,23 @@ local function read_json_file(path)
   return ok and type(data) == "table" and data or nil
 end
 
+--- The hooks of a Qwen Code or Claude Code started here, after the user's own in `data.hooks`: done (Stop), waiting
+--- for the user (PermissionRequest), its edits (`edit_tools`) before - the file as it is: the review compares with
+--- it - and after (the buffer shows the change)
+local function add_hooks(data, edit_tools)
+  data.hooks = type(data.hooks) == "table" and data.hooks or {}
+  local function add(event, what, matcher)
+    local list = type(data.hooks[event]) == "table" and data.hooks[event] or {}
+    local shell = table.concat(vim.tbl_map(function(a) return vim.fn.shellescape(a) end, M.hook_command(what)), " ")
+    list[#list + 1] = { matcher = matcher, hooks = { { type = "command", command = shell } } }
+    data.hooks[event] = list
+  end
+  add("Stop", "stop")
+  add("PermissionRequest", "permission")
+  add("PreToolUse", "before", edit_tools)
+  add("PostToolUse", "after", edit_tools)
+end
+
 --- Settings for a Qwen Code started here (its "system defaults": its own settings files win). A system defaults file
 --- of the user's ($QWEN_CODE_SYSTEM_DEFAULTS_PATH) stays: these go on top of a copy.
 function M.qwen_settings()
@@ -357,23 +375,30 @@ function M.qwen_settings()
   }
   -- done (Stop: after it answered) or waiting for the user (PermissionRequest: its question shows): a word in Neovim.
   -- Hooks of every settings level run, these after the user's own
-  data.hooks = type(data.hooks) == "table" and data.hooks or {}
-  local function add(event, what, matcher)
-    local list = type(data.hooks[event]) == "table" and data.hooks[event] or {}
-    local shell = table.concat(vim.tbl_map(function(a) return vim.fn.shellescape(a) end, M.hook_command(what)), " ")
-    list[#list + 1] = { matcher = matcher, hooks = { { type = "command", command = shell } } }
-    data.hooks[event] = list
-  end
-  add("Stop", "stop")
-  add("PermissionRequest", "permission")
-  -- its edits: before (the file as it is - the review compares with it), after (the buffer shows the change)
-  add("PreToolUse", "before", M.EDIT_TOOLS)
-  add("PostToolUse", "after", M.EDIT_TOOLS)
+  add_hooks(data, M.EDIT_TOOLS)
   return data
 end
 
 --- Qwen Code's tools that change files (its runtime ids)
 M.EDIT_TOOLS = "^(edit|write_file|notebook_edit)$"
+
+--- Claude Code's tools that change files
+M.CLAUDE_EDIT_TOOLS = "^(Edit|MultiEdit|Write|NotebookEdit)$"
+
+--- Settings for a Claude Code started here (--settings: on top of the user's own, whose hooks run as well): the
+--- hooks as Qwen Code's - their JSON has the same tool_input.file_path - and its GreyKnight tools allowed without a
+--- question each time (they show things in the editor and read what it knows; they change no file and run nothing)
+function M.claude_settings()
+  local data = { permissions = { allow = { "mcp__greyknight" } } }
+  add_hooks(data, M.CLAUDE_EDIT_TOOLS)
+  return data
+end
+
+--- Claude Code's MCP servers for one started here (--mcp-config: next to the user's own)
+function M.claude_mcp()
+  local cmd = M.server_command("tools")
+  return { mcpServers = { greyknight = { type = "stdio", command = cmd[1], args = vim.list_slice(cmd, 2) } } }
+end
 
 --- OpenCode's word when it is done or waits for the user: a plugin of GreyKnight's, in a config folder of this
 --- Neovim's own ($OPENCODE_CONFIG_DIR adds its plugins to the user's - a user's own folder there stays: no plugin then)
@@ -456,12 +481,13 @@ function M.opencode_config()
   return vim.json.encode(data)
 end
 
---- The environment of an agent's terminal: what connects it to this Neovim. `backend`: "qwen" | "opencode";
---- `dir`: where it starts; `id`: its terminal (the hooks name it). Only the backend's own: no ~/.qwen folder on a
---- machine with OpenCode only.
+--- The environment of an agent's terminal: what connects it to this Neovim. `backend`: "qwen" | "opencode" |
+--- "claude"; `dir`: where it starts; `id`: its terminal (the hooks name it). Only the backend's own: no ~/.qwen folder
+--- on a machine with OpenCode only. Claude Code gets the rest as arguments (M.args).
 function M.env(backend, dir, id)
   if dir and dir ~= "" then dirs[#dirs + 1] = vim.fn.fnamemodify(dir, ":p"):gsub("[/\\]$", "") end
   local env = { GREYKNIGHT_AGENT_ID = id and tostring(id) or nil }
+  if backend == "claude" then return env end
   if backend == "opencode" then
     env.OPENCODE_CONFIG_CONTENT = M.opencode_config()
     local own = vim.env.OPENCODE_CONFIG_DIR
@@ -476,6 +502,16 @@ function M.env(backend, dir, id)
   env.QWEN_CODE_IDE_WORKSPACE_PATH = M.workspaces()
   env.QWEN_CODE_SYSTEM_DEFAULTS_PATH = settings
   return env
+end
+
+--- The arguments of an agent's command line that connect it to this Neovim: Claude Code's --mcp-config and
+--- --settings (files in this Neovim's temp folder); none for the others.
+function M.args(backend)
+  if backend ~= "claude" then return {} end
+  local mcp, settings = private_dir() .. "/claude-mcp.json", private_dir() .. "/claude-settings.json"
+  write_json(mcp, M.claude_mcp())
+  write_json(settings, M.claude_settings())
+  return { "--mcp-config", mcp, "--settings", settings }
 end
 
 --- The lock file goes with Neovim

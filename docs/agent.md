@@ -1,6 +1,6 @@
 # GreyKnight - The coding agent
 
-> Qwen Code or OpenCode in a terminal next to the code - and in the editor: it shows you files and marks them in the tree, its edits show in your buffers to keep or revert, a window follows it, you can speak to it.
+> Qwen Code, OpenCode or Claude Code in a terminal next to the code - and in the editor: it shows you files and marks them in the tree, its edits show in your buffers to keep or revert, a window follows it, you can speak to it.
 > [All topics](README.md) · every key on one page: [CHEATSHEET](../CHEATSHEET.md) · Leader = `Space`
 
 **In this file:** [AI Assistant (Qwen Code)](#ai-assistant-qwen-code) · [The agent in your editor](#the-agent-in-your-editor)
@@ -18,12 +18,15 @@ llama.cpp, zero cloud. For coding, start a coding launcher on the AI Dashboard's
 (the uncensored "alternative" build), both without a chat persona, thinking on, 128k context.
 `<leader>am` shows which model the rig is running ([The model](#the-model)).
 
-**Qwen Code or OpenCode.** The agent is Qwen Code by default. The environment variable
-`GREYKNIGHT_AGENT=opencode` switches to OpenCode (`qwen` pins Qwen Code); unset, GreyKnight takes
-Qwen Code where it is installed, else OpenCode, so kali and the pi keep Qwen Code without any setting.
-The keys, `@path` references, ask/edit and `<leader>rf` work the same with both. A new OpenCode agent
-gets its first prompt pasted once it has started; `<leader>ac` sends `/new` there, and `<leader>am`
-points to `/models` (OpenCode picks its model itself).
+**Qwen Code, OpenCode or Claude Code.** The agent is Qwen Code by default. The environment variable
+`GREYKNIGHT_AGENT=opencode` switches to OpenCode, `GREYKNIGHT_AGENT=claude` to Claude Code (`qwen` pins
+Qwen Code); unset, GreyKnight takes Qwen Code where it is installed, else OpenCode, else Claude Code, so
+kali and the pi keep Qwen Code without any setting. The keys, `@path` references, ask/edit and `<leader>rf`
+work the same with all three. A new OpenCode agent gets its first prompt pasted once it has started;
+`<leader>ac` sends `/new` there, and `<leader>am` points to `/models` (OpenCode picks its model itself).
+Claude Code takes its first prompt as an argument (`claude -- <prompt>`), `<leader>ac` sends `/clear`, and
+`<leader>am` points to `/model`; it is found as `$CLAUDE_BIN`, `~/.local/bin/claude` (its native installer's),
+else `claude` on the `PATH`.
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -96,7 +99,10 @@ The agent sees them as the MCP server **`greyknight`** (`/mcp` lists it): Neovim
 (`nvim -l lua/integrations/agent_server.lua`), no Node or Python needed. Only agents started from this Neovim get it,
 in their terminal's environment - the agents' settings files stay as they are: Qwen Code reads it as its *system
 defaults* (`QWEN_CODE_SYSTEM_DEFAULTS_PATH`, the lowest level: your `~/.qwen/settings.json` wins), OpenCode as inline
-config (`OPENCODE_CONFIG_CONTENT`, merged with your config). A Qwen Code started in a shell outside Neovim stays as it
+config (`OPENCODE_CONFIG_CONTENT`, merged with your config). Claude Code gets them as arguments of its command line:
+`--mcp-config` (the `greyknight` server, next to your own servers) and `--settings` (the hooks, and the `greyknight`
+tools allowed without a question each time - on top of your `~/.claude/settings.json`, whose hooks run as well); both
+files are in this Neovim's temp folder and go with it. A Qwen Code started in a shell outside Neovim stays as it
 is. `vim.g.greyknight_agent_link = false` (in `init.lua`) connects no agent.
 
 A launcher that starts the agent with an environment of its own - a company's OpenCode wrapper that resets
@@ -127,7 +133,8 @@ accepted in Qwen Code's diff ([IDE mode](#qwen-codes-ide-mode)) is reviewed alre
 
 How: Qwen Code's hooks before and after its edit tools (`PreToolUse` / `PostToolUse` on `edit`, `write_file`,
 `notebook_edit` - in the same system defaults as its other hooks) and GreyKnight's OpenCode plugin (before / after
-`edit`, `write`, `patch`, `apply_patch`, and `file.edited`) tell Neovim the file: before the edit, the file as it is
+`edit`, `write`, `patch`, `apply_patch`, and `file.edited`) - and Claude Code's hooks (on `Edit`, `MultiEdit`,
+`Write`, `NotebookEdit`, in its `--settings`) - tell Neovim the file: before the edit, the file as it is
 becomes what the review compares with. A file the agent changed another way (a shell command) and then edits again
 compares with the project's snapshot from when the agent started ([What the agent changed](#what-the-agent-changed)).
 `vim.g.greyknight_agent_review = false` (in `init.lua`) turns the review off.

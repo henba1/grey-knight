@@ -1,12 +1,14 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Coding agent in toggleterm: Qwen Code or OpenCode          ║
--- ║  Per machine: $GREYKNIGHT_AGENT = qwen | opencode; unset =  ║
--- ║  Qwen Code where it is installed, else OpenCode.            ║
--- ║  A new agent gets its first prompt on start (qwen -i) or    ║
--- ║  pasted once its TUI is up (opencode); a running one gets   ║
--- ║  it as one bracketed paste + Enter (multi-line safe).       ║
--- ║  Ask/edit capture file + selection before the agent window  ║
--- ║  opens and reference the file as @path (both CLIs read it). ║
+-- ║  Coding agent in toggleterm: Qwen Code, OpenCode or Claude   ║
+-- ║  Code. Per machine: $GREYKNIGHT_AGENT = qwen | opencode |    ║
+-- ║  claude; unset = Qwen Code where it is installed, else       ║
+-- ║  OpenCode, else Claude Code.                                 ║
+-- ║  A new agent gets its first prompt on start (qwen -i,        ║
+-- ║  claude --) or pasted once its TUI is up (opencode); a       ║
+-- ║  running one gets it as one bracketed paste + Enter          ║
+-- ║  (multi-line safe). Ask/edit capture file + selection before ║
+-- ║  the agent window opens and reference the file as @path      ║
+-- ║  (all three CLIs read it).                                   ║
 -- ╚══════════════════════════════════════════════════════════════╝
 local util = require("devsuite.util")
 local M = {}
@@ -42,20 +44,38 @@ M.BACKENDS = {
     bin = function() return executable(vim.env.OPENCODE_BIN) and vim.env.OPENCODE_BIN or "opencode" end,
     first_prompt = nil, -- pasted once the TUI is up: multi-line prompts survive every shell, cmd.exe too
     new_session = "/new",
+    models = "/models",
+  },
+  claude = {
+    name = "Claude Code",
+    short = "Claude",
+    --- $CLAUDE_BIN, ~/.local/bin/claude (its native installer's), else claude on the PATH
+    bin = function()
+      if executable(vim.env.CLAUDE_BIN) then return vim.env.CLAUDE_BIN end
+      local own = vim.fn.expand("~/.local/bin/claude")
+      if executable(own) then return own end
+      return "claude"
+    end,
+    -- the first prompt an argument after "--" (one starting with - is no option); pasted, it could land in the
+    -- question whether to trust the folder that a first start in one asks
+    first_prompt = "--",
+    new_session = "/clear",
+    models = "/model",
   },
 }
 
 --- The agent of this machine: $GREYKNIGHT_AGENT (or vim.g.greyknight_agent), else Qwen Code where it is
---- installed, else OpenCode where that is - kali and the pi keep Qwen Code without any setting.
+--- installed, else OpenCode, else Claude Code where that is - kali and the pi keep Qwen Code without any setting.
 function M.backend_id()
   local wanted = vim.g.greyknight_agent or vim.env.GREYKNIGHT_AGENT
   if wanted and wanted ~= "" then
     if M.BACKENDS[wanted] then return wanted end
-    vim.notify_once(("GREYKNIGHT_AGENT=%s is not an agent (qwen, opencode) - choosing by what is installed"):format(wanted),
+    vim.notify_once(("GREYKNIGHT_AGENT=%s is not an agent (qwen, opencode, claude) - choosing by what is installed"):format(wanted),
       vim.log.levels.WARN)
   end
-  if executable(M.BACKENDS.qwen.bin()) then return "qwen" end
-  if executable(M.BACKENDS.opencode.bin()) then return "opencode" end
+  for _, id in ipairs({ "qwen", "opencode", "claude" }) do
+    if executable(M.BACKENDS[id].bin()) then return id end
+  end
   return "qwen"
 end
 
@@ -105,10 +125,12 @@ local function prompt_flag(backend) return not util.WIN and backend.first_prompt
 
 --- The command line that starts the agent. The binary by its full path: cmd.exe gives a quoted .cmd it found on
 --- the PATH the current directory as its own folder (%~dp0), so on Windows opencode.cmd did not find its launcher.
+--- An agent that takes its link to Neovim as arguments (Claude Code) gets them before the first prompt.
 function M.command(first_prompt)
   local backend = M.backend()
   local bin = backend.bin()
   local cmd = vim.fn.shellescape(vim.fn.exepath(bin) ~= "" and vim.fn.exepath(bin) or bin)
+  for _, arg in ipairs(M.link_args()) do cmd = cmd .. " " .. vim.fn.shellescape(arg) end
   if first_prompt and prompt_flag(backend) then
     cmd = cmd .. " " .. prompt_flag(backend) .. " " .. vim.fn.shellescape(first_prompt)
   end
@@ -123,6 +145,17 @@ function M.link_env(id)
   if ok then return env end
   vim.notify_once(("%s: not connected to Neovim - its tools and diffs are off (%s)"):format(M.backend().short, tostring(env)),
     vim.log.levels.WARN)
+end
+
+--- The same as arguments of its command line, for an agent that takes them so (Claude Code: --mcp-config,
+--- --settings); none for the others. Fails: the agent starts without them.
+function M.link_args()
+  if vim.g.greyknight_agent_link == false then return {} end
+  local ok, args = pcall(function() return require("integrations.agent_link").args(M.backend_id()) end)
+  if ok then return args end
+  vim.notify_once(("%s: not connected to Neovim - its tools are off (%s)"):format(M.backend().short, tostring(args)),
+    vim.log.levels.WARN)
+  return {}
 end
 
 --- The agent says it is done ("stop") or waits for an answer ("permission") - its hooks (agent_link.lua). A word
@@ -299,7 +332,7 @@ function M.edit()
   end)
 end
 
---- Fresh conversation in the main agent (/clear for Qwen Code, /new for OpenCode), or a new agent. One that works in
+--- Fresh conversation in the main agent (/clear for Qwen Code and Claude Code, /new for OpenCode), or a new agent. One that works in
 --- another folder (started before a cd) starts anew in Neovim's - its conversation ends anyway, its folder cannot change.
 function M.new_session()
   local old = require("toggleterm.terminal").get(M.AGENTS.agent, true)
@@ -333,10 +366,10 @@ end
 
 --- Which model the server runs right now (llama-server /props): name and context size.
 --- Several launchers share the port, so this is how you know who Qwen Code talks to.
---- OpenCode picks its model itself (/models in the agent).
+--- OpenCode and Claude Code pick their model themselves (/models, /model in the agent).
 function M.model_info(done)
   if M.backend_id() ~= "qwen" then
-    local msg = M.backend().name .. " picks its model itself: /models in the agent shows and switches it"
+    local msg = ("%s picks its model itself: %s in the agent shows and switches it"):format(M.backend().name, M.backend().models)
     vim.notify(msg, vim.log.levels.INFO, { title = M.backend().short })
     if done then done(msg) end
     return
