@@ -134,6 +134,7 @@ explorer pane once focused.
 | `a` | New file or dir (trailing `/` = dir; absolute paths too) |
 | `d` | Delete the marked, else this one (system trash; where it refuses, e.g. `/tmp`: asks to delete for good) — the cursor stays put |
 | `y`/`p` | Yank paths / paste them as copies into the folder |
+| Right-click | File menu on the clicked row: open (split), new, rename, delete, copy / paste, copy (relative) path, system app, cwd, to the agent, hidden files |
 | `Z` | Collapse all folders |
 | `u` | Refresh tree |
 | `]g`/`[g` | Next / prev git-changed |
