@@ -68,6 +68,29 @@ local function running(term)
   return term ~= nil and term.job_id ~= nil and vim.fn.jobwait({ term.job_id }, 0)[1] == -1
 end
 
+--- Whether two folders are the same (Windows: in any case)
+function M.same_dir(a, b)
+  if not a or not b then return false end
+  local function n(p)
+    p = vim.fs.normalize(vim.fn.fnamemodify(p, ":p"))
+    if #p > 1 and not p:match("^%a:/$") then p = p:gsub("/$", "") end
+    return util.WIN and p:lower() or p
+  end
+  return n(a) == n(b)
+end
+
+--- The running agents that work in another folder than Neovim's: a program keeps the folder it started in - a cd
+--- later (the tree's ., :cd) moves only Neovim. Their terminals, by number.
+function M.elsewhere()
+  local T, cwd, list = require("toggleterm.terminal"), vim.fn.getcwd(-1, -1), {}
+  for _, id in pairs(M.AGENTS) do
+    local term = T.get(id, true)
+    if term and term.gk_agent and running(term) and term.dir and not M.same_dir(term.dir, cwd) then list[#list + 1] = term end
+  end
+  table.sort(list, function(a, b) return a.id < b.id end)
+  return list
+end
+
 local function size(direction)
   if direction == "vertical" then return math.floor(vim.o.columns / 2) end
   if direction == "horizontal" then return 15 end
@@ -276,8 +299,16 @@ function M.edit()
   end)
 end
 
---- Fresh conversation in the main agent (/clear for Qwen Code, /new for OpenCode), or a new agent.
+--- Fresh conversation in the main agent (/clear for Qwen Code, /new for OpenCode), or a new agent. One that works in
+--- another folder (started before a cd) starts anew in Neovim's - its conversation ends anyway, its folder cannot change.
 function M.new_session()
+  local old = require("toggleterm.terminal").get(M.AGENTS.agent, true)
+  if old and old.gk_agent and running(old) and old.dir and not M.same_dir(old.dir, vim.fn.getcwd(-1, -1)) then
+    pcall(old.shutdown, old)
+    vim.notify(("%s starts anew in %s"):format(M.backend().name, vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
+      vim.log.levels.INFO, { title = M.backend().short })
+    return M.launch("agent", "vertical")
+  end
   local term, new = agent("agent", "vertical")
   if not term then return end
   show(term, "vertical")
@@ -327,6 +358,23 @@ function M.model_info(done)
     end)
   end)
 end
+
+-- Neovim's folder changed (the tree's ., :cd) while agents run in the old one: a word - they keep working there
+vim.api.nvim_create_autocmd("DirChanged", {
+  group = vim.api.nvim_create_augroup("greyknight_agent_dir", { clear = true }),
+  callback = function(ev)
+    if ev.match ~= "global" then return end -- a window's or tab's own directory: not the one agents start in
+    local list = M.elsewhere()
+    if #list == 0 then return end
+    local names = {}
+    for _, t in ipairs(list) do
+      names[#names + 1] = ("%s in %s"):format(t.display_name or M.backend().name, vim.fn.fnamemodify(t.dir, ":~"))
+    end
+    vim.notify(("%s - %s started there, a running program keeps its folder. <leader>ac: a new conversation in %s")
+      :format(table.concat(names, ", "), #list == 1 and "it" or "they", vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
+      vim.log.levels.WARN, { title = M.backend().short })
+  end,
+})
 
 --- Open (or focus) an agent.
 function M.launch(name, direction)
