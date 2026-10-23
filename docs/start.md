@@ -18,6 +18,11 @@ On first launch:
 - Mason auto-installs LSP servers when you open a file
 - Treesitter auto-compiles parsers on first file open per language
 
+Started in Neovim's own program folder - a Windows shortcut whose *Start in* is `C:\dev\tools\nvim\bin`, a
+double-click on `nvim.exe` - GreyKnight works in your home folder instead: terminals and agents start in Neovim's
+folder, and nobody works in that one. Open a project from there (`<leader>e`, `.` on its folder) before you start an
+agent, or `<leader>ac` afterwards ([the agent keeps its folder](agent.md#context)).
+
 ---
 
 ## Dashboard

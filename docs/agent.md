@@ -57,6 +57,10 @@ points to `/models` (OpenCode picks its model itself).
 
 - The agent inherits the **current working directory** and any project
   `QWEN.md` / `AGENTS.md` context files **automatically**.
+- **It keeps that folder.** A running program cannot change its folder: after a `cd` - the tree's `.` on another
+  project, `:cd` - a running agent still works where it started. A warning says so, the statusline shows it
+  (`OpenCode - in C:\dev\tools\nvim\bin`), and `<leader>ac` starts it anew in Neovim's folder (a new conversation; your
+  OpenCode launcher asks for its mode again). Agents started after the `cd` start in the new folder.
 - `<leader>aa` / `<leader>ae` ask for your question / instruction, then send one prompt with
   the file as `@path` (Qwen Code reads it itself) plus the selected lines and their line
   numbers. A running agent gets it as one bracketed paste (multi-line safe); a new agent
@@ -235,6 +239,33 @@ OpenAI-compatible provider pointed at your local LLM):
 The default on this rig is `http://192.168.2.173:8000/v1` (llama.cpp). Works with any OpenAI-compatible API:
 llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, etc. OpenCode picks its model itself (`/models` in
 the agent).
+
+**OpenCode with the local model** (`GREYKNIGHT_AGENT=opencode`; kali has it since 2026-10-23): a provider for the
+llama.cpp server in `~/.config/opencode/opencode.json`. `small_model` keeps the session titles on it too - else OpenCode
+asks a cloud model (gpt-5-nano on its Zen) for them - and `enabled_providers` lets no other provider in:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "rig": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Rig (llama.cpp, local)",
+      "options": { "baseURL": "http://YOUR_LLM_HOST:PORT/v1", "apiKey": "local", "timeout": 600000 },
+      "models": {
+        "qwen38-official": { "name": "Qwen3.8-27B official", "tool_call": true, "reasoning": true,
+                             "limit": { "context": 131072, "output": 32768 } }
+      }
+    }
+  },
+  "enabled_providers": ["rig"],
+  "model": "rig/qwen38-official",
+  "small_model": "rig/qwen38-official"
+}
+```
+
+`opencode models` lists what it offers. An OpenCode from before 1.0 had `"provider": { "type": "openai", ... }` - 1.x
+does not start with that ("Expected ProviderConfig").
 
 For coding, start one of the two coding launchers on the AI Dashboard's Models page. Both have no chat persona in
 the template, thinking on (effort medium), MTP and 128k context, and both passed the same Qwen Code checks (tool calls,

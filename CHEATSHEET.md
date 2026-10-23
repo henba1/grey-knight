@@ -26,7 +26,7 @@
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
-| `<leader>ac` | n | New AI session (`/clear` in Qwen Code, `/new` in OpenCode) |
+| `<leader>ac` | n | New AI session (`/clear` in Qwen Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
 | `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
@@ -379,6 +379,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── switcher.lua          ← recent buffers in the order of use (<leader><Tab>, IntelliJ's Ctrl+Tab)
 │   ├── putty.lua             ← over SSH from PuTTY with its default keys: once a word on the settings
 │   ├── gitdiff.lua           ← git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff), else Diffview
+│   ├── termname.lua          ← a terminal's name in the statusline: an agent's, else its program and number
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest

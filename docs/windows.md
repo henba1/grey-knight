@@ -90,6 +90,9 @@ Going to a terminal window - a shell, the REPL, an agent, a run's output, the de
 you in terminal mode right away, also when you left it in normal mode; not when its program has exited (a key
 would close the window then).
 
+The statusline names a terminal by what runs in it: an agent by its name (`OpenCode`, `Qwen Code #2` - with
+`- in <folder>` when it works elsewhere than Neovim), any other by its program and number (`pwsh #2`, `bash`).
+
 **Example workflow:**
 1. `:2ToggleTerm` → open shell terminal #2 (e.g. ssh into a target)
 2. Navigate to your notes / script

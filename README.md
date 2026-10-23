@@ -153,6 +153,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── switcher.lua        recent buffers in the order of use, the previous one preselected (<leader><Tab>)
 │   ├── putty.lua           over SSH from PuTTY with its default keys: once a word on the settings that fix them
 │   ├── gitdiff.lua         git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff) where its library is, else Diffview
+│   ├── termname.lua        a terminal's name in the statusline: an agent's (and where it works), else its program
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
