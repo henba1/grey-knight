@@ -257,7 +257,11 @@ return {
       sections = {
         lualine_a = { "mode" },
         lualine_b = { "branch", "diff", "diagnostics" },
-        lualine_c = { { "filename", path = 1 } },
+        -- a terminal by its name, not its buffer's - term://<cwd>//<pid>:<the whole command line> (2026-10-23)
+        lualine_c = { { "filename", path = 1, fmt = function(name)
+          if vim.bo.buftype == "terminal" then return require("config.termname").name(0) end
+          return name
+        end } },
         lualine_x = { "overseer", "filetype" }, -- overseer: running / done / failed tasks
         lualine_y = { "progress" },
         lualine_z = { "location" },
