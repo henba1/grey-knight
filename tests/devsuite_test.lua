@@ -708,6 +708,8 @@ test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is inst
     assert(agent.backend_id() == "opencode" and agent.backend().new_session == "/new", "opencode: " .. agent.backend_id())
     vim.env.GREYKNIGHT_AGENT = "qwen"
     assert(agent.backend_id() == "qwen" and agent.bin() == fake, "qwen: " .. agent.bin())
+    vim.env.GREYKNIGHT_AGENT = "claude"
+    assert(agent.backend_id() == "claude" and agent.backend().new_session == "/clear", "claude: " .. agent.backend_id())
   end)
   vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2]
   assert(ok, err)
@@ -763,6 +765,39 @@ test("Agent: a first prompt never goes through cmd.exe - Windows pastes it, else
     end
   end)
   vim.g.greyknight_agent = saved
+  assert(ok, err)
+end)
+
+-- 2026-10-23: Claude Code as the agent. It takes its link to Neovim as arguments - the GreyKnight tools (--mcp-config)
+-- and the hooks (--settings), next to the user's own settings - and its first prompt after "--"
+test("Agent (Claude Code): its command line - --mcp-config with the tools, --settings with the hooks, the prompt after --", function()
+  local agent, link = require("integrations.agent"), require("integrations.agent_link")
+  local saved = { vim.g.greyknight_agent, vim.g.greyknight_agent_link }
+  vim.g.greyknight_agent = "claude"
+  local function read(path) return vim.json.decode(table.concat(vim.fn.readfile(path), "\n")) end
+  local ok, err = pcall(function()
+    local prompt = "-explain this"
+    local cmd = agent.command(prompt)
+    if not WIN then assert(vim.endswith(cmd, " -- " .. vim.fn.shellescape(prompt)), cmd) end
+    local args = link.args("claude")
+    assert(args[1] == "--mcp-config" and args[3] == "--settings" and cmd:find(vim.fn.shellescape(args[2]), 1, true)
+      and cmd:find(vim.fn.shellescape(args[4]), 1, true), cmd)
+    local server = read(args[2]).mcpServers.greyknight
+    assert(server.command == vim.v.progpath and server.args[1] == "-l" and server.args[3] == "tools", vim.inspect(server))
+    local settings = read(args[4])
+    assert(vim.tbl_contains(settings.permissions.allow, "mcp__greyknight"), vim.inspect(settings.permissions))
+    assert(settings.hooks.Stop[1].hooks[1].command:find("agent_server.lua", 1, true)
+      and settings.hooks.PermissionRequest[1].hooks[1].command:find("permission", 1, true)
+      and settings.hooks.PreToolUse[1].matcher == link.CLAUDE_EDIT_TOOLS and settings.hooks.PostToolUse[1].hooks[1].command:find("after", 1, true),
+      vim.inspect(settings.hooks))
+    -- nothing of Qwen Code's or OpenCode's in its environment; none of this for the others, nor with the link off
+    local env = link.env("claude", nil, 4)
+    assert(env.GREYKNIGHT_AGENT_ID == "4" and env.QWEN_CODE_SYSTEM_DEFAULTS_PATH == nil and env.OPENCODE_CONFIG_CONTENT == nil, vim.inspect(env))
+    assert(#link.args("qwen") == 0 and #link.args("opencode") == 0, "arguments for another agent")
+    vim.g.greyknight_agent_link = false
+    assert(not agent.command():find("--mcp-config", 1, true), agent.command())
+  end)
+  vim.g.greyknight_agent, vim.g.greyknight_agent_link = saved[1], saved[2]
   assert(ok, err)
 end)
 

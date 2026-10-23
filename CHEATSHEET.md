@@ -4,7 +4,7 @@
 > On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
 > How it all works, a file per topic: [the guide](docs/README.md).
 
-**Contents:** [General](#general) · [AI](#ai-qwen-code-or-opencode-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
+**Contents:** [General](#general) · [AI](#ai-qwen-code-opencode-or-claude-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
 
 ## General
 
@@ -18,7 +18,7 @@
 | `<C-d>` / `<C-u>` | Half a page down / up, cursor centered |
 | `n` / `N` | Next / previous search hit, centered |
 
-## AI (Qwen Code or OpenCode) — `<leader>a`
+## AI (Qwen Code, OpenCode or Claude Code) — `<leader>a`
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -27,8 +27,8 @@
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
-| `<leader>ac` | n | New AI session (`/clear` in Qwen Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
-| `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`) |
+| `<leader>ac` | n | New AI session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
+| `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`, Claude Code: `/model`) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
 | `<leader>ad` | n | What changed since the agent started: the files, their diffs; `Enter` side by side, `Ctrl+x` / `dd` take one back |
@@ -41,8 +41,9 @@
 | `<leader>aV` | n | Dictate at the cursor - again stops (in a terminal: typed in) |
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
 
-> **Which agent:** Qwen Code by default; the environment variable `GREYKNIGHT_AGENT=opencode` switches to OpenCode.
-> Unset, GreyKnight takes Qwen Code where it is installed, else OpenCode.
+> **Which agent:** Qwen Code by default; the environment variable `GREYKNIGHT_AGENT=opencode` switches to OpenCode,
+> `GREYKNIGHT_AGENT=claude` to Claude Code. Unset, GreyKnight takes Qwen Code where it is installed, else OpenCode,
+> else Claude Code.
 >
 > The agent runs the local **Qwen Code** CLI in a persistent terminal. It inherits the
 > project's cwd and any `QWEN.md`/`AGENTS.md` context automatically. `aa`/`ae` send the file
@@ -394,7 +395,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── debug.lua             ← Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua              ← venv, #!, cells, dedent
 ├── lua/integrations/
-│   ├── agent.lua             ← coding agent terminals: Qwen Code or OpenCode
+│   ├── agent.lua             ← coding agent terminals: Qwen Code, OpenCode or Claude Code
 │   ├── agent_link.lua        ← agents reach into this Neovim: their settings, the servers attached, context
 │   ├── agent_server.lua      ← the MCP server agents start (nvim -l): relays to this Neovim
 │   ├── agent_tools.lua       ← the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics

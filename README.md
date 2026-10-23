@@ -1,12 +1,17 @@
 # ⚔️ Grey Knight Neovim
 
+> **GreyKnight is the work of [Nix0](https://gitlab.com/nix02).** The original project lives at
+> **[gitlab.com/nix02/grey-knight](https://gitlab.com/nix02/grey-knight)** - all credit for the editor goes there.
+> This repository carries it on GitHub, with an OLED look by default and Claude Code as a third agent.
+
 A curated, agentic Neovim IDE built for security researchers and developers who run local LLMs.
 
-**38 plugins • OLED black (or Cyberdream's grey) • AI agent (Qwen Code or OpenCode) • Bash + Python dev suite • Zero cloud dependencies**
+**38 plugins • OLED black (or Cyberdream's grey) • AI agent (Qwen Code, OpenCode or Claude Code) • Bash + Python dev suite • Zero cloud dependencies**
 
 ![Stack](https://img.shields.io/badge/Neovim-0.12%2B-57A143?logo=neovim)
 ![Theme](https://img.shields.io/badge/Theme-Cyberdream-ff00ff)
 ![AI](https://img.shields.io/badge/AI-Qwen%20Code%20(local%20LLM)-00d4ff)
+![Claude Code](https://img.shields.io/badge/AI-Claude%20Code-D97757?logo=claude&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## Features
@@ -14,7 +19,7 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 - **OLED look** — cyberdream's neon on true black, so an OLED screen's pixels stay off;
   cyberdream's own grey is `:GreyKnightStyle greyknight` away ([the look](docs/start.md#the-look-oled-or-greyknight))
 
-- **A coding agent that works in the editor** — Qwen Code or OpenCode in a terminal next to the code
+- **A coding agent that works in the editor** — Qwen Code, OpenCode or Claude Code in a terminal next to the code
   (`GREYKNIGHT_AGENT`). Asked where something is, it opens the file tree on it or marks files there; it shows code at
   a line and asks Neovim's language servers. **Its edits show in your buffers** as in Zed or Cursor - the old lines
   red, the new green - to keep or revert, each change or the whole file (`<leader>ay` / `<leader>an`, `<leader>ar`);
@@ -79,7 +84,7 @@ cd grey-knight-nvim
 | **gcc** | Yes | Treesitter parser compilation |
 | **curl** | Yes | Downloads |
 | **Rust/cargo** | Auto-installed | tree-sitter CLI |
-| **Qwen Code** or **OpenCode** | Yes | The coding agent (Qwen Code needs Node 22+; `GREYKNIGHT_AGENT=opencode` picks OpenCode) |
+| **Qwen Code**, **OpenCode** or **Claude Code** | Yes | The coding agent (Qwen Code needs Node 22+; `GREYKNIGHT_AGENT=opencode` / `claude` picks the others) |
 | **ripgrep** | Auto-installed | Live grep |
 | **fd** | Auto-installed | File finder |
 | **lazygit** | Auto-installed | Git TUI |
@@ -179,7 +184,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── debug.lua           Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua            venv, #!, cells, dedent, pytest node ids
 ├── lua/integrations/
-│   ├── agent.lua           coding agent terminals: Qwen Code or OpenCode (ask/edit prompts, own sessions)
+│   ├── agent.lua           coding agent terminals: Qwen Code, OpenCode or Claude Code (ask/edit prompts, own sessions)
 │   ├── agent_link.lua      agents reach into this Neovim: the settings of the agents started here (Qwen Code's
 │   │                       system defaults and lock file, OpenCode's inline config), the servers attached
 │   ├── agent_server.lua    the MCP server agents start - Neovim runs it (nvim -l): stdio, relays to this Neovim
@@ -256,7 +261,7 @@ See [CHEATSHEET.md](CHEATSHEET.md) for every key on one page, the [guide](docs/R
 
 | Key | Action |
 |-----|--------|
-| `Space+tt` | Agent toggle (Qwen Code or OpenCode) |
+| `Space+tt` | Agent toggle (Qwen Code, OpenCode or Claude Code) |
 | `Space+ff` | Find files |
 | `Space+fg` | Live grep |
 | `Space+e` | File explorer |
