@@ -115,7 +115,8 @@ vim.api.nvim_create_autocmd("VimEnter", {
     end
     table.sort(active)
     if #active > 0 then
-      vim.notify("Grey Knight | " .. table.concat(active, ", ") .. " | AI: Qwen Code @ rig", vim.log.levels.INFO)
+      local ok, agent = pcall(function() return require("integrations.agent").backend().name end)
+      vim.notify("Grey Knight | " .. table.concat(active, ", ") .. " | AI: " .. (ok and agent or "?"), vim.log.levels.INFO)
     end
   end,
 })

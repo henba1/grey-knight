@@ -2,7 +2,7 @@
 
 A curated, agentic Neovim IDE built for security researchers and developers who run local LLMs.
 
-**38 plugins • Cyberdream theme • AI agent (Qwen Code) • Bash + Python dev suite • Zero cloud dependencies**
+**38 plugins • OLED black (or Cyberdream's grey) • AI agent (Qwen Code or OpenCode) • Bash + Python dev suite • Zero cloud dependencies**
 
 ![Stack](https://img.shields.io/badge/Neovim-0.12%2B-57A143?logo=neovim)
 ![Theme](https://img.shields.io/badge/Theme-Cyberdream-ff00ff)
@@ -10,6 +10,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## Features
+
+- **OLED look** — cyberdream's neon on true black, so an OLED screen's pixels stay off;
+  cyberdream's own grey is `:GreyKnightStyle greyknight` away ([the look](docs/start.md#the-look-oled-or-greyknight))
 
 - **A coding agent that works in the editor** — Qwen Code or OpenCode in a terminal next to the code
   (`GREYKNIGHT_AGENT`). Asked where something is, it opens the file tree on it or marks files there; it shows code at
@@ -53,6 +56,7 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 | [Running and debugging](docs/run-debug.md) | Tasks, the REPL, errors, debugging |
 | [Git](docs/git.md) | Lazygit, codediff, gitsigns |
 | [Remote](docs/ssh.md) | SSH, PuTTY, the clipboard, the dashboard's Dev Environment |
+| [Testbook](docs/testbook.md) | Workflows to try by hand: what to do, what you should see |
 | [G3 development](G3-DEVELOPMENT.md) | Java, ngx-his, html5 clients - with or without IntelliJ |
 | [CHEATSHEET](CHEATSHEET.md) | Every key on one page |
 
@@ -154,10 +158,11 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── putty.lua           over SSH from PuTTY with its default keys: once a word on the settings that fix them
 │   ├── gitdiff.lua         git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff) where its library is, else Diffview
 │   ├── termname.lua        a terminal's name in the statusline: an agent's (and where it works), else its program
+│   ├── style.lua           the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
-│   ├── colorscheme.lua     Cyberdream (neon cyberpunk)
+│   ├── colorscheme.lua     Cyberdream - on true black, or its own grey (config/style.lua)
 │   ├── completion.lua      blink.cmp v1 (Rust-powered)
 │   ├── devsuite.lua        overseer.nvim (task engine of the dev suite)
 │   ├── editor.lua          flash, harpoon, oil, surround, trouble, etc.

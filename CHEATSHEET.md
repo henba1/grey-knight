@@ -13,6 +13,7 @@
 | `<leader>w` | Save |
 | `<leader>Q` | Quit all **without saving** (`:qa!`) |
 | `<leader>;` | Dashboard |
+| `:GreyKnightStyle oled` / `greyknight` | The look: neon on true black (OLED) or on cyberdream's grey - kept for this machine |
 | `<Esc>` | Clear the search highlight |
 | `<C-d>` / `<C-u>` | Half a page down / up, cursor centered |
 | `n` / `N` | Next / previous search hit, centered |
@@ -277,6 +278,9 @@ Python/bash REPL use `<leader>ri`).
 | `[d` / `]d` | Prev/next diagnostic |
 | `<leader>fm` | Format buffer / selection (IntelliJ projects: like its Reformat Code, see [docs/code.md](docs/code.md#java-and-angular)) |
 
+> A server this machine's security software blocks (a company laptop's Defender): `GREYKNIGHT_LSP_OFF=lua_ls`
+> (comma-separated) leaves it out there - [docs/code.md](docs/code.md#code-intelligence-lsp).
+>
 > Neovim's own LSP keys work too: `grn` rename, `grr` references, `gra` code action, `gO` symbols.
 > Because of them `gr` waits a moment before it runs; `grr` is the instant one. The keys come only with a server
 > that can do them: where none finds definitions, `gd` (and `K`) stay Vim's.
@@ -380,6 +384,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── putty.lua             ← over SSH from PuTTY with its default keys: once a word on the settings
 │   ├── gitdiff.lua           ← git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff), else Diffview
 │   ├── termname.lua          ← a terminal's name in the statusline: an agent's, else its program and number
+│   ├── style.lua             ← the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
@@ -404,7 +409,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   └── web.lua               ← Angular / AngularJS servers
 ├── lua/plugins/
 │   ├── ai.lua                ← toggleterm (agents, REPLs)
-│   ├── colorscheme.lua       ← Cyberdream
+│   ├── colorscheme.lua       ← Cyberdream - on true black, or its own grey (config/style.lua)
 │   ├── completion.lua        ← blink.cmp
 │   ├── devsuite.lua          ← overseer.nvim (task engine)
 │   ├── editor.lua            ← flash, harpoon, oil, mini, trouble, etc

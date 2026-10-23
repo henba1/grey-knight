@@ -15,6 +15,7 @@
 | [Running and debugging](run-debug.md) | Scripts as tasks in a real terminal, the REPL, errors marked in the code; debugging Python and bash |
 | [Git](git.md) | Lazygit, reviews with codediff (VS Code's diff), gitsigns in the files |
 | [Remote](ssh.md) | Over SSH from PuTTY or Windows Terminal, the clipboard, the project dashboard's Dev Environment |
+| [Testbook](testbook.md) | Workflows to try by hand - the agent's edits reviewed, debugging, renaming, git, speech to text - what to do, what you should see |
 | [G3 development](../G3-DEVELOPMENT.md) | Java (jdtls, TestNG, debugging), ngx-his (Angular), html5 clients (AngularJS) - with or without IntelliJ |
 
 Installing GreyKnight, the machines it runs on, the languages and the tests: [the README](../README.md).

@@ -1,5 +1,8 @@
 -- Grey Knight smoke tests: config, plugins, parsers, tools. Run all suites with tests/run.sh
 local H = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h") .. "/harness.lua")
+-- this file's full path, taken while Neovim is still in the folder it was started from: run as tests/smoke_test.lua
+-- (relative), a :p later went from wherever the tests had left Neovim (2026-10-23)
+local SELF = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p")
 local test = H.test
 
 -- T1: Config loads
@@ -23,6 +26,56 @@ test("Cyberdream colorscheme active from the start - also the first one (an empt
     local cache = vim.fn.stdpath("cache") .. "/cyberdream_cache.json"
     assert(not vim.uv.fs_stat(cache), "cyberdream built its cache (the theme comes a second later): " .. cache)
   end
+end)
+
+-- 2026-10-23: the OLED look (config/style.lua) by default - cyberdream's neon on true black; cyberdream's own grey a
+-- switch away. No "Qwen 3.8 27B · <address>" under the header any more
+test("Style: OLED by default - true black, the GREY KNIGHT start screen (no model, no address); :GreyKnightStyle greyknight switches and keeps it", function()
+  local style = require("config.style")
+  local saved = { style.FILE, vim.g.greyknight_style, vim.env.GREYKNIGHT_STYLE }
+  -- the start screen opens a window of its own: it goes again, the test's window is current as before (a window
+  -- left over had later tests' cd's stay - the docs tests then read their files from a temp folder, 2026-10-23)
+  local home, wins = vim.api.nvim_get_current_win(), {}
+  for _, w in ipairs(vim.api.nvim_list_wins()) do wins[w] = true end
+  style.FILE = vim.fn.tempname() .. "-style" -- not this machine's choice
+  vim.g.greyknight_style, vim.env.GREYKNIGHT_STYLE = nil, nil
+  local function bg() return vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg end
+  local function screen()
+    Snacks.dashboard()
+    local buf
+    H.wait(5000, function()
+      buf = vim.api.nvim_get_current_buf()
+      return vim.bo[buf].filetype == "snacks_dashboard" and #vim.api.nvim_buf_get_lines(buf, 0, -1, false) > 8
+    end)
+    return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+  end
+  local ok, err = pcall(function()
+    assert(style.current() == "oled", "the style: " .. style.current())
+    style.apply()
+    assert(bg() == 0x000000, ("the OLED background: %06x"):format(bg() or 0))
+    local s = screen()
+    assert(s:find("╚██████╔╝██║  ██║███████╗", 1, true), "the start screen:\n" .. s)
+    -- the header: no model, no address (its entries name the agent: "AI (Qwen Code)" on kali)
+    local header = s:sub(1, (s:find("Find File", 1, true) or #s + 1) - 1)
+    assert(not header:find("Qwen", 1, true) and not header:find("%d+%.%d+%.%d+%.%d+"), "a model or address in the header:\n" .. header)
+    vim.cmd("GreyKnightStyle greyknight")
+    assert(vim.fn.readfile(style.FILE)[1] == "greyknight", "the choice was not kept")
+    assert(bg() == 0x16181a, ("greyknight's background: %06x"):format(bg() or 0))
+    s = screen()
+    assert(s:find("╚██████╔╝██║  ██║███████╗", 1, true), "GreyKnight's start screen:\n" .. s)
+    -- before the kept choice: vim.g.greyknight_style, then $GREYKNIGHT_STYLE
+    vim.env.GREYKNIGHT_STYLE = "oled"
+    assert(style.current() == "oled", "$GREYKNIGHT_STYLE")
+    vim.g.greyknight_style = "greyknight"
+    assert(style.current() == "greyknight", "vim.g.greyknight_style")
+  end)
+  style.FILE, vim.g.greyknight_style, vim.env.GREYKNIGHT_STYLE = saved[1], saved[2], saved[3]
+  style.apply()
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if not wins[w] then pcall(vim.api.nvim_win_close, w, true) end
+  end
+  if vim.api.nvim_win_is_valid(home) then vim.api.nvim_set_current_win(home) end
+  assert(ok, err)
 end)
 
 -- T4: Language toggles
@@ -1131,6 +1184,31 @@ test("Statusline: a terminal by its name - an agent's (and where it works, when 
   pcall(named.shutdown, named)
   pcall(plain.shutdown, plain)
   assert(ok, err)
+end)
+
+-- 2026-10-23: the work laptop's Defender (attack surface reduction) blocked lua-language-server at every start, a
+-- warning each time. $GREYKNIGHT_LSP_OFF leaves servers out on one machine (plugins/lsp.lua); others keep them. Real
+-- Neovims on a plain text file: nvim-lspconfig sets the servers up, none starts (nothing for Defender to block)
+test("LSP: $GREYKNIGHT_LSP_OFF leaves a server out on this machine - not set up; without it the server is set up", function()
+  if not (vim.g.lang or {}).lua then H.skip("Lua is off in this config") end
+  local file = H.file("plain.txt", { "x" })
+  local function enabled(off)
+    local out = {}
+    local job = vim.fn.jobstart({ vim.v.progpath, "--headless", "-i", "NONE", "-c", "edit " .. vim.fn.fnameescape(file),
+      "-c", "lua io.stdout:write('LUA_LS=' .. tostring(vim.lsp.is_enabled('lua_ls')) .. ' PYRIGHT=' .. tostring(vim.lsp.is_enabled('pyright')) .. '\\n')",
+      "-c", "qa!" }, { env = { GREYKNIGHT_LSP_OFF = off }, on_stdout = function(_, d) vim.list_extend(out, d) end })
+    assert(job > 0 and H.wait(90000, function() return vim.fn.jobwait({ job }, 0)[1] ~= -1 end), "Neovim did not end")
+    local text = table.concat(out, "")
+    return text:match("LUA_LS=(%a+)"), text:match("PYRIGHT=(%a+)")
+  end
+  local lua_ls, pyright = enabled("lua_ls, ruff")
+  assert(lua_ls == "false", "lua_ls set up although $GREYKNIGHT_LSP_OFF names it: " .. tostring(lua_ls))
+  if (vim.g.lang or {}).python then assert(pyright == "true", "pyright left out too: " .. tostring(pyright)) end
+  -- without it: set up (where it is installed - else Mason would start installing it in that Neovim)
+  if vim.fn.executable("lua-language-server") == 1 then
+    lua_ls = enabled("")
+    assert(lua_ls == "true", "lua_ls not set up without $GREYKNIGHT_LSP_OFF: " .. tostring(lua_ls))
+  end
 end)
 
 -- 2026-10-23: Neovim started in its program folder (a Windows shortcut) - OpenCode ran in C:\dev\tools\nvim\bin
@@ -4519,7 +4597,7 @@ test("Java without IntelliJ: Maven's settings as the mvn command line reads them
 end)
 
 -- T12: The docs stay in step with the config
-local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+local ROOT = vim.fn.fnamemodify(SELF, ":h:h")
 local function read(file) return table.concat(vim.fn.readfile(ROOT .. "/" .. file), "\n") end
 -- G3-DEVELOPMENT.md too: a key it names must exist (2026-10-19). The guide is a file per topic in docs/ (2026-10-23)
 local GUIDE = vim.fn.glob(ROOT .. "/docs/*.md", false, true)

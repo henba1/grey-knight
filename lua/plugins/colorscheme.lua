@@ -1,5 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Cyberdream — high-contrast futuristic theme                ║
+-- ║  Cyberdream — high-contrast futuristic theme. Its colors:   ║
+-- ║  the style's (config/style.lua) - its neon on true black    ║
+-- ║  (OLED), or on its own grey (:GreyKnightStyle greyknight)   ║
 -- ╚══════════════════════════════════════════════════════════════╝
 return {
   {
@@ -33,8 +35,7 @@ return {
       },
     },
     config = function(_, opts)
-      require("cyberdream").setup(opts)
-      vim.cmd.colorscheme("cyberdream")
+      require("config.style").apply(opts)
     end,
   },
 }

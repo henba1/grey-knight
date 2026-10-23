@@ -37,12 +37,26 @@ The Grey Knight dashboard is the start screen.
 | `r` | Recent files |
 | `c` | Edit nvim config |
 | `s` | Restore last session |
-| `a` | Open AI agent (Qwen Code) |
+| `a` | Open the AI agent (Qwen Code or OpenCode) |
 | `L` | Open Lazy plugin manager |
 | `q` | Quit |
 | `1-8` | Open numbered recent file/project |
 
 **Reopen dashboard anytime:** `<leader>;` (Space + semicolon)
+
+### The look: OLED or GreyKnight
+
+By default cyberdream's neon sits on true black `#000000` - on an OLED screen those pixels stay off. Floats, the
+cursor line and the selection are near-black so they still stand apart, and the text is a little off white
+(`#e8e8e8`) - pure white on pure black glares. Cyberdream's own look, the same neon on its grey `#16181a`, is one
+command away:
+
+| Command / setting | What |
+|-------------------|------|
+| `:GreyKnightStyle greyknight` / `:GreyKnightStyle oled` | Switch the look now (theme and start screen) and keep it for this machine (`greyknight-style` in Neovim's data folder) |
+| `:GreyKnightStyle` | Which look is on |
+| `vim.g.greyknight_style = "greyknight"` (in `init.lua`), `GREYKNIGHT_STYLE=greyknight` | Choose it before the kept choice - for every start, whatever `:GreyKnightStyle` kept |
+| `:CyberdreamToggleMode` | Light and back: cyberdream's own light look in either style |
 
 ---
 

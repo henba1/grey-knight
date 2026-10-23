@@ -1421,12 +1421,17 @@ test("Agent attention: done / waits for an answer - a word unless its window is 
       and notes[#notes].level == vim.log.levels.WARN, "permission: " .. vim.inspect(notes))
     -- the question is an edit: its diff opens a moment later (agent_ide.lua says so) - no second word (2026-10-23)
     local ide = require("integrations.agent_ide")
-    n = #notes
+    local function waits() -- only this word: another (a language server that quit) may come meanwhile
+      local c = 0
+      for _, note in ipairs(notes) do if note.msg:find("waits for your answer", 1, true) then c = c + 1 end end
+      return c
+    end
+    local before = waits()
     require("integrations.agent").attention("permission")
     ide.views["/gk/asked.py"] = { path = "/gk/asked.py" }
     vim.wait(require("integrations.agent").PERMISSION_DELAY + 400)
     ide.views["/gk/asked.py"] = nil
-    assert(#notes == n, "a word next to the diff: " .. vim.inspect(notes[#notes]))
+    assert(waits() == before, "a word next to the diff: " .. vim.inspect(notes[#notes]))
     -- a hook without stdin (/dev/null, NUL): libuv opening that as a pipe aborted the hook on Linux (2026-10-22)
     n = #notes
     vim.fn.jobstart(link.hook_command("stop"), { stdin = "null" })
@@ -2681,6 +2686,12 @@ test("Ctrl+Click with pyright: a call goes to the def; the def lists its calls",
   assert(ok, err)
 end)
 
+-- A server this machine leaves out ($GREYKNIGHT_LSP_OFF, plugins/lsp.lua): its tests skip
+local function lsp_off(name)
+  for n in (vim.env.GREYKNIGHT_LSP_OFF or ""):gmatch("[^,%s]+") do if n == name then return true end end
+  return false
+end
+
 -- 2026-10-22: each language server the config sets up starts on a file of its kind and marks its error, where it is
 -- installed - only pyright, lua_ls and ruff had tests that saw them run, a server's setup could break unnoticed
 -- (bashls' test passes with its fallback too). The file outside any project: with Neovim's own vim.lsp.config there
@@ -2703,6 +2714,8 @@ test("LSP: each server the config sets up starts on a file of its kind outside a
   for _, c in ipairs(cases) do
     if not lang[c.lang] then
       skipped[#skipped + 1] = c.server .. " (off)"
+    elseif lsp_off(c.server) then
+      skipped[#skipped + 1] = c.server .. " (off on this machine)"
     elseif vim.fn.executable(c.exe) == 0 then
       skipped[#skipped + 1] = c.server .. " (not installed)"
     else
@@ -2741,13 +2754,13 @@ end)
 -- interpreter test's scratch buffers bashls marked no bash file any more (devsuite/util.lua lsp_root).
 test("LSP: no server for a buffer without a file (a scratch buffer, a URL); a bash file outside a project is marked after it", function()
   local cases = {
-    { ft = "sh", exe = "bash-language-server" },
-    { ft = "python", exe = "pyright-langserver" },
-    { ft = "lua", exe = "lua-language-server" },
+    { ft = "sh", exe = "bash-language-server", server = "bashls" },
+    { ft = "python", exe = "pyright-langserver", server = "pyright" },
+    { ft = "lua", exe = "lua-language-server", server = "lua_ls" },
   }
   local scratches, attached = {}, {}
   for _, c in ipairs(cases) do
-    if vim.fn.executable(c.exe) == 1 then scratches[#scratches + 1] = H.scratch(c.ft, { "x = 1" }) end
+    if vim.fn.executable(c.exe) == 1 and not lsp_off(c.server) then scratches[#scratches + 1] = H.scratch(c.ft, { "x = 1" }) end
   end
   if vim.fn.executable("pyright-langserver") == 1 then -- named by a URL (netrw's scp:// ...): not a file either
     local url = vim.api.nvim_create_buf(true, false)
@@ -2849,7 +2862,11 @@ test("LSP: servers set up by Neovim's own vim.lsp.config, none through the depre
   end
   local framework = package.loaded["lspconfig.configs"]
   for _, name in ipairs(servers) do
-    assert(vim.lsp.is_enabled(name), name .. " is not enabled with vim.lsp.enable")
+    if lsp_off(name) then -- left out on this machine: not set up at all
+      assert(not vim.lsp.is_enabled(name), name .. " is enabled although $GREYKNIGHT_LSP_OFF names it")
+    else
+      assert(vim.lsp.is_enabled(name), name .. " is not enabled with vim.lsp.enable")
+    end
     assert(not (framework and rawget(framework, name)), name .. " went through require('lspconfig')")
   end
   if not lang.python or vim.fn.executable("pyright-langserver") == 0 then return end
@@ -2873,6 +2890,7 @@ end)
 
 -- The config's own files: lua_ls knows Neovim's API and Snacks (lsp.lua: globals, the runtime as library)
 test("Lua: lua_ls knows vim and Snacks - no undefined global for them, one for a name that is defined nowhere", function()
+  if lsp_off("lua_ls") then H.skip("lua_ls is off on this machine ($GREYKNIGHT_LSP_OFF)") end
   if vim.fn.executable("lua-language-server") == 0 then H.skip("lua-language-server not installed (Mason)") end
   local file = H.file("conf.lua", { "local buf = vim.api.nvim_get_current_buf()", "Snacks.notify(tostring(buf))", "print(not_defined_anywhere)" })
   vim.cmd.edit(vim.fn.fnameescape(file))
@@ -2896,6 +2914,7 @@ end)
 -- one save of this config's keymaps.lua rewrote 74 hand-aligned lines. Now Lua is saved as written unless the project
 -- formats with stylua (a stylua.toml); <leader>fm still formats.
 test("Formatting: :w keeps a hand-aligned Lua file as written (no stylua.toml); <leader>fm formats it", function()
+  if lsp_off("lua_ls") then H.skip("lua_ls is off on this machine ($GREYKNIGHT_LSP_OFF)") end
   if vim.fn.executable("lua-language-server") == 0 then H.skip("lua-language-server not installed (Mason)") end
   local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
   vim.fn.mkdir(root .. "/.git", "p") -- a project: lua_ls attaches

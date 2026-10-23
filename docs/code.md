@@ -105,6 +105,12 @@ file (a scratch buffer with a filetype) or one named by a URL (netrw's `scp://`,
 `:lsp restart` / `stop` / `enable` work too (nvim-lspconfig no longer defines the `:Lsp…` commands there; these are the
 config's).
 
+A server the machine's security software blocks - a company laptop's Microsoft Defender (attack surface reduction,
+*"Gefährliche Aktion blockiert"*) stopped `lua-language-server.exe` at every start - is left out on that machine with
+the environment variable `GREYKNIGHT_LSP_OFF`, the servers' names comma-separated (`lua_ls`, `lua_ls,ruff`): not set
+up, not installed by Mason; every other machine keeps them. On Windows, as a user variable:
+`[Environment]::SetEnvironmentVariable('GREYKNIGHT_LSP_OFF', 'lua_ls', 'User')`, then start Neovim anew.
+
 **Ctrl+Click** does what it does in IntelliJ. On a name it goes to the declaration (`Ctrl+o` comes back, as after
 `gd`). On the declaration itself it shows the usages, without the declaration: in the quickfix list, or straight there
 when there is only one. Two servers naming the same place (angularls and ts_ls in a `.ts` file) make one jump, not a

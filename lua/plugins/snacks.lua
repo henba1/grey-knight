@@ -28,17 +28,10 @@ return {
             { key = "L", desc = "Lazy",            action = ":Lazy", enabled = package.loaded.lazy ~= nil },
             { key = "q", desc = "Quit",            action = ":qa" },
           },
-          header = [[
-   ██████╗ ██████╗ ███████╗██╗   ██╗    ██╗  ██╗███╗   ██╗██╗ ██████╗ ██╗  ██╗████████╗
-  ██╔════╝ ██╔══██╗██╔════╝╚██╗ ██╔╝    ██║ ██╔╝████╗  ██║██║██╔════╝ ██║  ██║╚══██╔══╝
-  ██║  ███╗██████╔╝█████╗   ╚████╔╝     █████╔╝ ██╔██╗ ██║██║██║  ███╗███████║   ██║
-  ██║   ██║██╔══██╗██╔══╝    ╚██╔╝      ██╔═██╗ ██║╚██╗██║██║██║   ██║██╔══██║   ██║
-  ╚██████╔╝██║  ██║███████╗   ██║       ██║  ██╗██║ ╚████║██║╚██████╔╝██║  ██║   ██║
-   ╚═════╝ ╚═╝  ╚═╝╚══════╝   ╚═╝       ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝
-                            Qwen 3.8 27B · 192.168.2.173   ]],
         },
         sections = {
-          { section = "header" },
+          -- the style's header (config/style.lua) - read each time it draws, so :GreyKnightStyle shows at once
+          function() return require("config.style").dashboard_header() end,
           { section = "keys",         gap = 1, padding = 1 },
           { title = "Recent Files",  section = "recent_files", indent = 2, padding = 1 },
           { title = "Projects",      section = "projects",     indent = 2, padding = 1 },
