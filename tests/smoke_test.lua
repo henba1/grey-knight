@@ -1076,6 +1076,74 @@ test("Agent tools: open_file shows code at a line in the code window (not the ag
   assert(ok, err)
 end)
 
+-- 2026-10-23: the statusline showed a terminal's buffer name - term://C:\dev\tools\nvim\bin//35236:"C:\Users\<you>\...
+-- \opencode.CMD"&::toggleterm::1 [-] (config/termname.lua)
+test("Statusline: a terminal by its name - an agent's (and where it works, when not in Neovim's folder), else its program and number", function()
+  local tn = require("config.termname")
+  assert(tn.program([[term://C:\dev\tools\nvim\bin//35236:"C:\Users\me too\.config\opencode\bin\opencode.CMD"&::toggleterm::1]]) == "opencode", "Windows")
+  assert(tn.program("term:///home/u/p//2539904:'/home/u/.local/bin/qwen';#toggleterm#1") == "qwen", "Linux, quoted")
+  assert(tn.program("term:///tmp//123:bash -l") == "bash", "a plain :terminal")
+  assert(tn.program("term:///tmp//124:/usr/bin/python3.12") == "python3.12", "a dot of its own name")
+  assert(tn.program("/tmp/file.lua") == nil, "not a terminal")
+  require("lazy").load({ plugins = { "lualine.nvim" } })
+  require("integrations.agent") -- as when an agent was started (its word after a cd)
+  local T = require("toggleterm.terminal")
+  local named = T.Terminal:new({ id = 86, cmd = vim.o.shell, display_name = "OpenCode", direction = "horizontal" })
+  local plain = T.Terminal:new({ id = 87, cmd = vim.o.shell, direction = "horizontal" })
+  local saved, before, columns = vim.notify, vim.fn.getcwd(), vim.o.columns
+  vim.notify = function() end
+  vim.o.columns = 200 -- a headless Neovim is 80 wide: lualine cut the name off on the left ("<de - in ~/projects/...")
+  -- lualine writes the line it made into the option, on its timer and on events: the line once it shows `want`
+  local function line(win, want, absent)
+    local s = ""
+    H.wait(5000, function()
+      s = vim.api.nvim_eval_statusline(vim.o.statusline, { winid = win }).str
+      return s:find(want, 1, true) and not (absent and s:find(absent, 1, true))
+    end)
+    return s
+  end
+  local ok, err = pcall(function()
+    named:open()
+    assert(H.wait(5000, function() return named.window and vim.api.nvim_win_is_valid(named.window) end), "no window")
+    local s = line(named.window, "OpenCode")
+    assert(s:find("OpenCode", 1, true) and not s:find("term://", 1, true) and not s:find("[-]", 1, true), s)
+    -- an agent started before a cd works where it started: the statusline says so
+    named.gk_agent = true
+    local elsewhere = vim.fn.tempname()
+    vim.fn.mkdir(elsewhere, "p")
+    vim.fn.chdir(elsewhere)
+    s = line(named.window, "OpenCode - in ")
+    assert(s:find("OpenCode - in ", 1, true), "after the cd: " .. s)
+    vim.fn.chdir(before)
+    s = line(named.window, "OpenCode", " - in ")
+    assert(not s:find(" - in ", 1, true), "back in its folder: " .. s)
+    named.gk_agent = nil
+    named:close()
+    plain:open()
+    assert(H.wait(5000, function() return plain.window and vim.api.nvim_win_is_valid(plain.window) end), "no window")
+    local prog = tn.program(vim.api.nvim_buf_get_name(plain.bufnr))
+    s = line(plain.window, tostring(prog) .. " #87")
+    assert(prog and s:find(prog .. " #87", 1, true) and not s:find("term://", 1, true), s)
+  end)
+  vim.notify = saved
+  vim.o.columns = columns
+  vim.fn.chdir(before)
+  pcall(named.shutdown, named)
+  pcall(plain.shutdown, plain)
+  assert(ok, err)
+end)
+
+-- 2026-10-23: Neovim started in its program folder (a Windows shortcut) - OpenCode ran in C:\dev\tools\nvim\bin
+test("Startup: started in Neovim's own program folder (a shortcut), it works in the home folder - where terminals and agents start", function()
+  local out = {}
+  local job = vim.fn.jobstart({ vim.v.progpath, "--headless", "-i", "NONE", "-c", "lua io.stdout:write('CWD=' .. vim.fn.getcwd() .. '\\n')", "-c", "qa!" },
+    { cwd = vim.fs.dirname(vim.v.progpath), on_stdout = function(_, d) vim.list_extend(out, d) end })
+  assert(job > 0 and H.wait(90000, function() return vim.fn.jobwait({ job }, 0)[1] ~= -1 end), "Neovim did not end")
+  local cwd = table.concat(out, ""):match("CWD=([^\r\n]+)")
+  local function norm(p) p = vim.fs.normalize(vim.uv.fs_realpath(p) or p); return vim.fn.has("win32") == 1 and p:lower() or p end
+  assert(cwd and norm(cwd) == norm(vim.uv.os_homedir()), "it works in " .. tostring(cwd))
+end)
+
 -- 2026-10-23: the tree not open yet - its first listing put the cursor on the current buffer's file, after the
 -- agent's reveal (OpenCode with ChatGPT 5.4 on Windows: "The file tree opened but did not get to util/strings.py")
 test("Agent tools: show_in_file_tree with the tree closed - it opens and goes to the file, not to the current buffer's", function()

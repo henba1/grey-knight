@@ -1174,6 +1174,46 @@ test("Qwen Code (real): an edit it proposes opens as a diff in Neovim - ga, and 
   assert(ok, err)
 end)
 
+-- 2026-10-23: the tree's root set to another project while OpenCode ran - it still worked where it started (Neovim's
+-- folder then); a program keeps its folder
+test("Agent: Neovim's folder changes while it runs - a word that it works where it started; <leader>ac starts it anew in the new one", function()
+  linux_only("the fake agent (sh)")
+  local agent, T = require("integrations.agent"), require("toggleterm.terminal")
+  local fake = vim.fn.tempname() .. "-qwen"
+  vim.fn.writefile({ "#!/bin/sh", 'printf "PWD:%s|\\n" "$(pwd -P)"', "exec cat" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link, vim.fn.getcwd() }
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link = fake, "qwen", false
+  local a = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local b = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local notes, notify = {}, vim.notify
+  vim.notify = function(msg) notes[#notes + 1] = tostring(msg) end
+  local term
+  -- the lines joined as they wrapped: in the vertical split <leader>ac opens, PWD:<folder>| is longer than a line
+  local function screen() return term and table.concat(vim.api.nvim_buf_get_lines(term.bufnr, 0, -1, false), "") or "" end
+  local ok, err = pcall(function()
+    vim.fn.chdir(a)
+    agent.launch("agent", "horizontal")
+    term = T.get(agent.AGENTS.agent, true)
+    assert(wait(10000, function() return screen():find("PWD:" .. a .. "|", 1, true) end), "first: " .. screen())
+    vim.fn.chdir(b)
+    assert(wait(3000, function()
+      for _, m in ipairs(notes) do if m:find("started there", 1, true) and m:find("<leader>ac", 1, true) then return true end end
+    end), "no word: " .. vim.inspect(notes))
+    assert(#agent.elsewhere() == 1, "not elsewhere")
+    agent.new_session()
+    term = T.get(agent.AGENTS.agent, true)
+    assert(wait(10000, function() return screen():find("PWD:" .. b .. "|", 1, true) end), "anew: " .. screen())
+    assert(#agent.elsewhere() == 0, "still elsewhere")
+  end)
+  vim.notify = notify
+  term = T.get(agent.AGENTS.agent, true)
+  if term then pcall(term.shutdown, term) end
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link = saved[1], saved[2], saved[3]
+  vim.fn.chdir(saved[4])
+  assert(ok, err)
+end)
+
 -- 2026-10-23: Qwen Code writing straight away (auto-edit): its hooks before and after the edit (agent_link.lua) bring
 -- the review into the buffer (agent_review.lua), a window following the agent goes there - the real Qwen Code
 test("Qwen Code (real): auto-edit - its write lands, the buffer shows it for review, a window following the agent goes there", function()
