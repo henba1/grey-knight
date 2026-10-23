@@ -45,6 +45,27 @@ end
 
 local function on() return M.enabled and vim.g.greyknight_agent_review ~= false end
 
+-- Not the user's to review: a file in another git worktree than the editor's (a subagent's, .claude/worktrees/agent-…)
+-- or in an agent's scratch folder in the temp folder (Claude Code's /tmp/claude-<uid>/…/scratchpad). Some 20 of
+-- those filled the review list (2026-10-23).
+local function elsewhere(path)
+  local cwd = key(norm(vim.fn.getcwd(-1, -1)))
+  local function holds(root) return cwd == key(root) or vim.startswith(cwd, key(root) .. "/") end
+  local tmp = vim.uv.os_tmpdir()
+  if tmp and vim.startswith(key(path), key(norm(tmp)) .. "/claude-") then
+    local scratch = norm(tmp) .. "/" .. path:sub(#norm(tmp) + 2):match("^[^/]+")
+    if not holds(scratch) then return true end
+  end
+  local git = vim.fs.find(".git", { upward = true, path = vim.fs.dirname(path), limit = 1 })[1]
+  local stat = git and vim.uv.fs_stat(git)
+  if not stat or stat.type ~= "file" then return false end -- a repository's own folder, or none
+  local fd = io.open(git, "r")
+  local line = fd and fd:read("*l") or ""
+  if fd then fd:close() end
+  -- a linked worktree's .git: "gitdir: <repo>/.git/worktrees/<name>" (a submodule's points to .git/modules)
+  return line:match("[/\\]worktrees[/\\][^/\\]+%s*$") ~= nil and not holds(vim.fs.dirname(git))
+end
+
 --- The loaded buffer of a file, or nil
 local function buf_of(path)
   local k = key(path)
@@ -478,6 +499,7 @@ end
 function M.before(path, agent)
   if not on() or type(path) ~= "string" or path == "" then return end
   path = norm(path)
+  if elsewhere(path) then return end
   local k = key(path)
   local lines = read(path)
   if M.files[k] then
@@ -505,6 +527,7 @@ end
 function M.after(path, agent)
   if not on() or type(path) ~= "string" or path == "" then return end
   path = norm(path)
+  if elsewhere(path) then return end
   local k = key(path)
   local f = M.files[k]
   if not f then
