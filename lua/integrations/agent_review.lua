@@ -479,9 +479,12 @@ function M.before(path, agent)
   if not on() or type(path) ~= "string" or path == "" then return end
   path = norm(path)
   local k = key(path)
-  if M.files[k] then return end
   local lines = read(path)
-  M.files[k] = { path = path, ref = lines or {}, new = lines == nil, agent = agent, edits = 0 }
+  if M.files[k] then
+    M.files[k].disk = lines -- the file just before this edit (after(): unsaved changes that are none)
+    return
+  end
+  M.files[k] = { path = path, ref = lines or {}, new = lines == nil, agent = agent, edits = 0, disk = lines }
 end
 
 local last_word = {} -- key -> when the user last heard of an edit of that file (ms)
@@ -514,12 +517,18 @@ function M.after(path, agent)
   f.edits = f.edits + 1
   local accepted = M.accepted[k]
   M.accepted[k] = nil
+  local disk = f.disk
+  f.disk = nil
   local now = read(path)
   if now == nil and f.new then return M.stop(path) end -- made and gone again
   now = now or {}
   local buf = buf_of(path)
   local shown = buf and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or f.last or f.ref
   if buf then
+    -- "modified", yet the text is the file's as it was before this edit: edits undone by hand (a typed letter
+    -- deleted again) leave the flag. Those are no changes to keep - the agent's text comes in. It stayed out, the
+    -- buffer showed the file without the agent's edit and "unsaved changes" (CHEATSHEET.md, 2026-10-23).
+    if vim.bo[buf].modified and disk and vim.deep_equal(shown, disk) then vim.bo[buf].modified = false end
     if vim.bo[buf].modified then
       notify(("%s changed %s while you have unsaved changes in it - :e! takes its version, :w keeps yours")
         :format(f.agent or "The agent", rel(path)), vim.log.levels.WARN)
@@ -621,8 +630,28 @@ function M.act(keep_it, all, first, last, buf)
   if all then
     chosen = vim.list_slice(f.hunks or {})
   else
+    local at_cursor = first == nil
     first = first or vim.fn.line(".")
     chosen = hunk_at(f, first, last or first)
+    -- The cursor off the changed lines - on the line under the bar, or elsewhere in the file. The keys did nothing
+    -- but a warning, the user took it for keys that do not work (2026-10-23). One bar in the file: the keys are its
+    -- buttons. More: the cursor goes to the nearest change, the same keys again act on it.
+    if #chosen == 0 and at_cursor and #(f.bars or {}) == 1 then
+      chosen = hunk_at(f, f.bars[1].first, f.bars[1].last)
+    elseif #chosen == 0 and at_cursor and #(f.hunks or {}) > 0 and buf == vim.api.nvim_get_current_buf() then
+      local best, dist
+      for _, h in ipairs(f.hunks) do
+        local a, b = span_of(h)
+        local d = first < a and a - first or first - b
+        if not dist or d < dist then best, dist = a, d end
+      end
+      vim.cmd("normal! m'")
+      vim.api.nvim_win_set_cursor(0, { best, 0 })
+      vim.cmd("normal! zv")
+      notify(("Not on a change of the agent's - the cursor went to the nearest (line %d): %s again %s it")
+        :format(best, keep_it and "<leader>ay" or "<leader>an", keep_it and "keeps" or "reverts"), vim.log.levels.WARN)
+      return 0
+    end
   end
   if #chosen == 0 then
     notify("No change of the agent's here - ]c goes to the next", vim.log.levels.WARN)

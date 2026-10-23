@@ -1386,6 +1386,52 @@ test("Agent review: <leader>an reverts the change at the cursor - buffer and dis
   assert(ok, err)
 end)
 
+test("Agent review: <leader>ay / <leader>an with the cursor off the change (a markdown file) - one bar: its change; more: the cursor goes to the nearest, the keys again act; 'modified' with the file's own text takes the agent's edit", function()
+  local review, file, buf = review_file("notes.md", { "# Notes", "one", "two", "three", "four", "five" })
+  assert(vim.bo[buf].filetype == "markdown", "not markdown: " .. vim.bo[buf].filetype)
+  -- the keys are the review's in a markdown buffer too: no buffer-local map over them
+  assert(vim.fn.maparg("<leader>ay", "n", false, true).desc == "AI: Keep the agent's change here", vim.inspect(vim.fn.maparg("<leader>ay", "n", false, true)))
+  assert(vim.fn.maparg("<leader>an", "n", false, true).desc == "AI: Revert the agent's change here", "<leader>an is not the review's")
+  local saved, notes = vim.notify, {}
+  vim.notify = function(msg) notes[#notes + 1] = msg end
+  local ok, err = pcall(function()
+    -- one change, the cursor on the line under its bar: <leader>ay keeps it (it only warned - 2026-10-23)
+    agent_writes(review, file, { "# Notes", "one", "TWO", "three", "four", "five" })
+    vim.api.nvim_win_set_cursor(0, { 4, 0 })
+    keys("<leader>ay")
+    assert(not review.active(buf), "the change under the bar was not kept: " .. table.concat(notes, " | "))
+    assert(not vim.bo[buf].modified and vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] == "TWO", "the keys typed into the buffer")
+    -- two changes apart, the cursor on neither: the cursor goes to the nearest, nothing kept or reverted yet
+    agent_writes(review, file, { "# Notes", "ONE", "TWO", "three", "four", "FIVE" })
+    vim.api.nvim_win_set_cursor(0, { 4, 0 })
+    keys("<leader>an")
+    assert(#review.entry(file).hunks == 2, "acted with the cursor off both: " .. vim.inspect(review.entry(file).hunks))
+    assert(vim.fn.line(".") == 2, "the cursor did not go to the nearest change: " .. vim.fn.line("."))
+    assert(notes[#notes]:find("nearest (line 2)", 1, true), notes[#notes])
+    keys("<leader>an")
+    assert(vim.fn.readfile(file)[2] == "one" and vim.fn.readfile(file)[6] == "FIVE", "on disk: " .. table.concat(vim.fn.readfile(file), ","))
+    assert(review.active(buf) and #review.entry(file).hunks == 1, "the other change went too")
+    keys("<leader>aY")
+    assert(not review.active(buf), "the review is still on")
+    -- a letter typed and deleted again: 'modified', the text the file's - the agent's next edit comes in
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "# Notesx" })
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "# Notes" })
+    assert(vim.bo[buf].modified, "not modified")
+    agent_writes(review, file, { "# Notes", "one", "TWO", "three", "four", "FIVE", "six" })
+    assert(vim.api.nvim_buf_get_lines(buf, 6, 7, false)[1] == "six" and not vim.bo[buf].modified, "the agent's edit stayed out: " .. table.concat(notes, " | "))
+    assert(review.active(buf), "no review of it")
+    -- real unsaved changes stay: the agent's edit does not overwrite them
+    keys("<leader>aY")
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "# Mine" })
+    agent_writes(review, file, { "# Notes", "one", "TWO", "three", "four", "FIVE", "six", "seven" })
+    assert(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "# Mine" and vim.bo[buf].modified, "the user's change went")
+  end)
+  vim.notify = saved
+  vim.bo[buf].modified = false
+  review.stop(file)
+  assert(ok, err)
+end)
+
 test("Agent review: the Accept / Reject bar under each change - a click on Reject reverts it, on Accept keeps it; in a narrow window it wraps, nothing cut off", function()
   local review, file, buf = review_file("clicked.py", { "a = 1", "b = 2", "c = 3", "d = 4", "e = 5", "f = 6", "g = 7" })
   local saved = vim.notify

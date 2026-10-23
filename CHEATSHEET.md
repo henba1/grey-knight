@@ -33,7 +33,7 @@
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
 | `<leader>ad` | n | What changed since the agent started: the files, their diffs; `Enter` side by side, `Ctrl+x` / `dd` take one back |
 | `]c` / `[c` | n | In a file the agent edited: its next / previous change (shown in the buffer: old lines red, new green) |
-| `<leader>ay` / `<leader>an` | n/v | Keep / revert the agent's change at the cursor (visual: the selection's) - reverted on disk too |
+| `<leader>ay` / `<leader>an` | n/v | Keep / revert the agent's change at the cursor (visual: the selection's; off a change: the only one, or the cursor goes to the nearest) - reverted on disk too |
 | `<leader>aY` / `<leader>aN` | n | Keep / revert all of the agent's changes in the file |
 | `<leader>ar` | n | Every change of the agent's to review: `Enter` goes there, `Ctrl+y` keeps, `Ctrl+x` reverts |
 | `<leader>af` | n | This window follows the agent: each edit opens here as it lands (again: stops) |

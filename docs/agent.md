@@ -124,7 +124,7 @@ it: a click on **✓ Accept** / **✗ Reject** in the bar under it, or the keys:
 | Key | Mode | Action |
 |-----|------|--------|
 | `]c` / `[c` | n | Next / previous change of the agent's (in a file with git changes too: the agent's first) |
-| `<leader>ay` | n, v | Keep the change at the cursor (visual: the changes the selection touches) |
+| `<leader>ay` | n, v | Keep the change at the cursor (visual: the changes the selection touches). The cursor on no change: a file with one bar - its change; with more - the cursor goes to the nearest, the key again keeps it |
 | `<leader>an` | n, v | Revert it - the buffer and the file on disk get the old lines back |
 | `<leader>aY` / `<leader>aN` | n | Keep / revert all of the agent's changes in the file (a file it made, reverted: deleted) |
 | `<leader>ar` | n | Every change waiting, in all files - `Enter` goes there, `Ctrl+y` keeps it, `Ctrl+x` reverts it |
