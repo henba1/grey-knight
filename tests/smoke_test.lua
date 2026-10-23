@@ -1480,12 +1480,132 @@ test("Agent review: a window following the agent shows each edit as it lands - t
     assert(#review_marks(vim.api.nvim_win_get_buf(code)) == 1, "no review in the following window")
     vim.api.nvim_set_current_win(code)
     keys("<leader>af")
-    assert(not review.following(code) and vim.wo[code].winbar == "", "still following: " .. vim.wo[code].winbar)
+    -- the file window's own bar again (config/winbar.lua), not none
+    assert(not review.following(code) and vim.wo[code].winbar == require("config.winbar").BAR, "still following: " .. vim.wo[code].winbar)
   end)
   vim.notify = saved
   review.stop(b)
   for win in pairs(review.followers) do review.followers[win] = nil end
   vim.cmd("only")
+  assert(ok, err)
+end)
+
+-- 2026-10-23: a bar per file window as in an IDE (config/winbar.lua) - the file, split right / below, close. Mouse
+-- clicks sent in a test are only handled after it: the click handlers are called as Neovim calls them
+local function winbar_text(win)
+  vim.g.statusline_winid = win
+  local s = vim.api.nvim_eval_statusline(vim.wo[win].winbar, { winid = win, use_winbar = true }).str
+  vim.g.statusline_winid = nil
+  return s
+end
+
+test("Winbar: a file window has its bar (the file, ● when modified, split / close buttons); a terminal, a float, help and the explorer none", function()
+  local W = require("config.winbar")
+  local a = H.file("winbar_a.py", { "x = 1" })
+  vim.cmd("silent! only | edit! " .. vim.fn.fnameescape(a))
+  local win = vim.api.nvim_get_current_win()
+  local ok, err = pcall(function()
+    assert(vim.wo[win].winbar == W.BAR, "no bar on a file window: " .. vim.wo[win].winbar)
+    local s = winbar_text(win)
+    assert(s:find("winbar_a.py", 1, true) and s:find("◫", 1, true) and s:find("⊟", 1, true) and s:find("×", 1, true), s)
+    assert(not s:find("●", 1, true), "modified before an edit: " .. s)
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "x = 2" })
+    assert(winbar_text(win):find("●", 1, true), "no ● when modified: " .. winbar_text(win))
+    vim.cmd("silent! undo")
+    -- the buttons are click regions of this window, their handlers reachable by name
+    vim.g.statusline_winid = win
+    local raw = W.render()
+    vim.g.statusline_winid = nil
+    for _, fn in ipairs({ "split_right", "split_below", "close" }) do
+      assert(raw:find(("%%%d@v:lua.GreyKnightWinbar.%s@"):format(win, fn), 1, true), "no " .. fn .. " button: " .. raw)
+      assert(GreyKnightWinbar[fn] == W[fn], fn .. " not reachable from v:lua")
+    end
+    vim.cmd("botright split | terminal")
+    local term = vim.api.nvim_get_current_win()
+    assert(vim.wo[term].winbar == "", "a bar on a terminal: " .. vim.wo[term].winbar)
+    vim.api.nvim_win_close(term, true)
+    vim.cmd("help help")
+    assert(vim.wo.winbar == "", "a bar on help: " .. vim.wo.winbar)
+    vim.cmd("close")
+    local float = vim.api.nvim_open_win(vim.api.nvim_win_get_buf(win), false, { relative = "editor", row = 1, col = 1, width = 20, height = 3 })
+    assert(vim.wo[float].winbar == "", "a bar on a float: " .. vim.wo[float].winbar)
+    vim.api.nvim_win_close(float, true)
+    close_explorers()
+    Snacks.explorer()
+    assert(H.wait(OPEN_MS, function() return #explorers() > 0 end), "explorer did not open")
+    H.wait(500, function() return false end) -- its windows set up
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      local ft = vim.bo[vim.api.nvim_win_get_buf(w)].filetype
+      if ft:match("^snacks_") then assert(vim.wo[w].winbar == "", "a bar on the explorer's " .. ft) end
+    end
+    assert(vim.wo[win].winbar == W.BAR, "the file window lost its bar")
+  end)
+  close_explorers()
+  vim.cmd("silent! only")
+  assert(ok, err)
+end)
+
+test("Winbar: split right / split below / close as clicked; the last file window loses its file, Neovim stays", function()
+  local W = require("config.winbar")
+  local a = H.file("winbar_split.py", { "x = 1" })
+  vim.cmd("silent! only | edit! " .. vim.fn.fnameescape(a))
+  local first = vim.api.nvim_get_current_win()
+  local abuf = vim.api.nvim_get_current_buf()
+  local ok, err = pcall(function()
+    -- as a click calls it: (minwid = the window, clicks, button, modifiers)
+    vim.cmd(("call v:lua.GreyKnightWinbar.split_right(%d, 1, 'l', '    ')"):format(first))
+    local right = vim.api.nvim_get_current_win()
+    assert(right ~= first and #vim.api.nvim_tabpage_list_wins(0) == 2, "no split")
+    assert(vim.api.nvim_win_get_position(right)[2] > vim.api.nvim_win_get_position(first)[2], "not to the right")
+    assert(vim.api.nvim_win_get_buf(right) == abuf and vim.wo[right].winbar == W.BAR, "the new window: no file or no bar")
+    W.split_below(right, 1, "l", "    ")
+    local below = vim.api.nvim_get_current_win()
+    assert(below ~= right and #vim.api.nvim_tabpage_list_wins(0) == 3, "no split below")
+    assert(vim.api.nvim_win_get_position(below)[1] > vim.api.nvim_win_get_position(right)[1], "not below")
+    W.close(below, 1, "l", "    ")
+    W.close(right, 1, "l", "    ")
+    assert(not vim.api.nvim_win_is_valid(below) and not vim.api.nvim_win_is_valid(right), "a window not closed")
+    assert(vim.api.nvim_win_is_valid(first) and vim.api.nvim_buf_is_valid(abuf), "the other window or the file went")
+    -- the last file window - a terminal next to it is no file window: the window stays, the file goes
+    vim.cmd("botright split | terminal")
+    local term = vim.api.nvim_get_current_win()
+    W.close(first, 1, "l", "    ")
+    assert(vim.api.nvim_win_is_valid(first) and vim.api.nvim_win_is_valid(term), "a window closed")
+    assert(vim.api.nvim_win_get_buf(first) ~= abuf and not vim.bo[abuf].buflisted, "the file is still open")
+    vim.api.nvim_win_close(term, true)
+    -- alone: still no quit
+    vim.cmd("edit! " .. vim.fn.fnameescape(a))
+    W.close(first, 1, "l", "    ")
+    assert(#vim.api.nvim_list_wins() >= 1 and vim.api.nvim_win_is_valid(first), "the last window closed")
+    assert(vim.api.nvim_win_get_buf(first) ~= vim.fn.bufnr(a), "the file is still shown")
+  end)
+  vim.cmd("silent! only")
+  assert(ok, err)
+end)
+
+test("Winbar: another bar on a window (a diff's, a run's) is left alone - neither replaced nor taken away", function()
+  local W = require("config.winbar")
+  local a = H.file("winbar_foreign_a.py", { "x = 1" })
+  vim.cmd("silent! only | edit! " .. vim.fn.fnameescape(a))
+  local win = vim.api.nvim_get_current_win()
+  local FOREIGN = "%#DiffAdd# Now %* someone else's"
+  local ok, err = pcall(function()
+    vim.wo[win].winbar = FOREIGN
+    W.update_all()
+    vim.cmd("doautocmd BufWinEnter") -- (another buffer in the window drops a window's bar anyway: its owner's to set)
+    vim.cmd("vsplit | wincmd p") -- WinNew, WinEnter
+    assert(vim.wo[win].winbar == FOREIGN, "replaced: " .. vim.wo[win].winbar)
+    vim.cmd("botright split | terminal")
+    local term = vim.api.nvim_get_current_win()
+    vim.wo[term].winbar = FOREIGN
+    W.update_all()
+    vim.cmd("wincmd p")
+    assert(vim.wo[term].winbar == FOREIGN, "taken away: " .. vim.wo[term].winbar)
+    vim.api.nvim_win_close(term, true)
+  end)
+  vim.cmd("silent! only")
+  vim.wo.winbar = "" -- the split took the other bar along
+  W.update_all()
   assert(ok, err)
 end)
 

@@ -407,7 +407,11 @@ end
 function M.unfollow(win)
   local bar = M.followers[win]
   M.followers[win] = nil
-  if vim.api.nvim_win_is_valid(win) then vim.wo[win].winbar = bar or "" end
+  if vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winbar = bar or ""
+    -- the file window's own bar again (config/winbar.lua) - also when the window had none before it followed
+    pcall(function() require("config.winbar").update(win) end)
+  end
   notify("This window no longer follows the agent")
 end
 
