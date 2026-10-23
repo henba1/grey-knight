@@ -1174,6 +1174,73 @@ test("Qwen Code (real): an edit it proposes opens as a diff in Neovim - ga, and 
   assert(ok, err)
 end)
 
+-- 2026-10-23: Qwen Code writing straight away (auto-edit): its hooks before and after the edit (agent_link.lua) bring
+-- the review into the buffer (agent_review.lua), a window following the agent goes there - the real Qwen Code
+test("Qwen Code (real): auto-edit - its write lands, the buffer shows it for review, a window following the agent goes there", function()
+  linux_only("Qwen Code in a pty")
+  local agent, link, review = require("integrations.agent"), require("integrations.agent_link"), require("integrations.agent_review")
+  local qwen = vim.fn.exepath(agent.BACKENDS.qwen.bin())
+  if qwen == "" then H.skip("Qwen Code is not installed") end
+  local proj = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
+  local target = proj .. "/hello.py"
+  vim.fn.writefile({ "print('hi')" }, target)
+  local script = vim.fn.tempname() .. "-model.py"
+  vim.fn.writefile(vim.split(FAKE_MODEL, "\n"), script)
+  vim.fn.mkdir(link.qwen_home(), "p")
+  vim.fn.writefile({ vim.json.encode({ security = { auth = { selectedType = "openai" } }, model = { name = "fake" },
+    tools = { approvalMode = "auto_edit" }, ui = { hideTips = true }, general = { enableAutoUpdate = false } }) },
+    link.qwen_home() .. "/settings.json")
+  local port = nil
+  local model = vim.fn.jobstart({ require("devsuite.util").system_python(), script, target, "print('from qwen')\n", "x\n" }, {
+    on_stdout = function(_, d)
+      for _, line in ipairs(d) do if tonumber(line) then port = port or tonumber(line) end end
+    end,
+  })
+  vim.cmd("only")
+  vim.cmd("enew!")
+  local code = vim.api.nvim_get_current_win()
+  local saved = vim.notify
+  vim.notify = function() end
+  review.toggle_follow()
+  local screen, job = "", nil
+  local ok, err = pcall(function()
+    assert(wait(10000, function() return port end), "the fake model did not start")
+    local env = vim.tbl_extend("force", link.env("qwen", proj), { OPENAI_API_KEY = "dummy", OPENAI_MODEL = "fake",
+      OPENAI_BASE_URL = ("http://127.0.0.1:%d/v1"):format(port), TERM = "xterm-256color", QWEN_CODE_SKIP_UPDATE_CHECK_ONCE = "1" })
+    job = vim.fn.jobstart({ qwen }, { pty = true, width = 160, height = 50, cwd = proj, env = env,
+      on_stdout = function(_, d)
+        local s = table.concat(d, "\n")
+        screen = (screen .. s):sub(-200000)
+        if s:find("\27[6n", 1, true) then vim.fn.chansend(job, "\27[1;1R") end
+      end })
+    assert(wait(90000, function() return screen:find("Type your message", 1, true) end), "Qwen Code did not start")
+    vim.wait(2000)
+    for ch in ("gk-step-one: update hello.py"):gmatch(".") do
+      vim.fn.chansend(job, ch)
+      vim.wait(15)
+    end
+    vim.wait(500)
+    vim.fn.chansend(job, "\r")
+    assert(wait(60000, function()
+      local f = review.entry(target)
+      return f and f.edits > 0 and vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(code))) == target
+    end), "no review in the following window: " .. vim.inspect(review.entry(target)))
+    local f = review.entry(target)
+    assert(f.ref[1] == "print('hi')" and vim.fn.readfile(target)[1] == "print('from qwen')", "before / after: " .. vim.inspect(f.ref))
+    local buf = vim.api.nvim_win_get_buf(code)
+    assert(#review.render(buf) == 1, "changes: " .. vim.inspect(f.hunks))
+    review.act(false, true, nil, nil, buf) -- reverted whole: on disk as before
+    assert(vim.fn.readfile(target)[1] == "print('hi')", "reverted: " .. vim.fn.readfile(target)[1])
+  end)
+  vim.notify = saved
+  if job then pcall(vim.fn.jobstop, job) end
+  pcall(vim.fn.jobstop, model)
+  review.stop(target)
+  for win in pairs(review.followers) do review.followers[win] = nil end
+  link.cleanup()
+  assert(ok, err)
+end)
+
 -- 2026-10-22: what changed since the agent started (integrations/agent_changes.lua) - a git repository of a test's own
 local function changes_repo()
   local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmpdir())))
@@ -1312,6 +1379,14 @@ test("Agent attention: done / waits for an answer - a word unless its window is 
     hook("permission")
     assert(wait(10000, function() return #notes > n end) and notes[#notes].msg:find("waits for your answer", 1, true)
       and notes[#notes].level == vim.log.levels.WARN, "permission: " .. vim.inspect(notes))
+    -- the question is an edit: its diff opens a moment later (agent_ide.lua says so) - no second word (2026-10-23)
+    local ide = require("integrations.agent_ide")
+    n = #notes
+    require("integrations.agent").attention("permission")
+    ide.views["/gk/asked.py"] = { path = "/gk/asked.py" }
+    vim.wait(require("integrations.agent").PERMISSION_DELAY + 400)
+    ide.views["/gk/asked.py"] = nil
+    assert(#notes == n, "a word next to the diff: " .. vim.inspect(notes[#notes]))
     -- a hook without stdin (/dev/null, NUL): libuv opening that as a pipe aborted the hook on Linux (2026-10-22)
     n = #notes
     vim.fn.jobstart(link.hook_command("stop"), { stdin = "null" })

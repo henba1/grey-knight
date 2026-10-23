@@ -1076,6 +1076,308 @@ test("Agent tools: open_file shows code at a line in the code window (not the ag
   assert(ok, err)
 end)
 
+-- 2026-10-23: the tree not open yet - its first listing put the cursor on the current buffer's file, after the
+-- agent's reveal (OpenCode with ChatGPT 5.4 on Windows: "The file tree opened but did not get to util/strings.py")
+test("Agent tools: show_in_file_tree with the tree closed - it opens and goes to the file, not to the current buffer's", function()
+  local tmp = vim.fn.tempname()
+  vim.fn.mkdir(tmp .. "/util", "p")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath(tmp)))
+  vim.fn.writefile({ "x" }, root .. "/util/strings.py")
+  vim.fn.writefile({ "x" }, root .. "/calc.py")
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  close_explorers()
+  vim.cmd("only | edit " .. vim.fn.fnameescape(root .. "/calc.py"))
+  local ok, err = pcall(function()
+    assert(not Snacks.picker.get({ source = "explorer" })[1], "a tree is open")
+    local text, failed = agent_tool("show_in_file_tree", { path = "util/strings.py" })
+    assert(not failed, text)
+    local p = Snacks.picker.get({ source = "explorer" })[1]
+    local cur = p and p:current() and vim.fs.normalize(p:current().file)
+    local want = root .. "/util/strings.py"
+    local win32 = vim.fn.has("win32") == 1
+    assert(cur and (win32 and cur:lower() == want:lower() or cur == want), "the cursor: " .. tostring(cur))
+  end)
+  close_explorers()
+  vim.fn.chdir(before)
+  assert(ok, err)
+end)
+
+test("Agent tools: mark_in_file_tree marks files in the tree, their folders opened; editor_state lists the marks and the review; @ hands the marked to the agent", function()
+  regex_world(function(w)
+    local text, err = agent_tool("mark_in_file_tree", { paths = { "scripts/sub/d.bash", "src/x.ts", "nope.txt" } })
+    assert(not err and text:find("marks 2 items", 1, true) and text:find("Not found: nope.txt", 1, true), text)
+    assert(w.marked() == "scripts/sub/d.bash src/x.ts", "marked: " .. w.marked())
+    text = agent_tool("mark_in_file_tree", { paths = { "a.sh" }, add = true })
+    assert(w.marked() == "a.sh scripts/sub/d.bash src/x.ts", "added: " .. w.marked())
+    local state = vim.json.decode((agent_tool("editor_state", {})))
+    assert(state.file_tree and state.file_tree.open and #state.file_tree.marked == 3, vim.inspect(state.file_tree))
+    assert(state.review_of_your_edits and state.review_of_your_edits.reverted_by_user, vim.inspect(state.review_of_your_edits))
+    -- @: the marked to the agent's prompt (agent.lua types them there - here only what it gets)
+    local agent, got = require("integrations.agent"), nil
+    local mention = agent.mention
+    agent.mention = function(paths) got = paths end
+    local ok, e = pcall(function() w.p:action("gk_mention") end)
+    agent.mention = mention
+    assert(ok, e)
+    table.sort(got)
+    assert(#got == 3 and got[1] == w.root .. "/a.sh" and got[3] == w.root .. "/src/x.ts", vim.inspect(got))
+    text, err = agent_tool("mark_in_file_tree", { paths = { "missing/x" } })
+    assert(err, text)
+  end)
+end)
+
+-- 2026-10-23: the agent's edits reviewed in their buffers (integrations/agent_review.lua) - as an agent's hooks do it:
+-- before (the file noted), the agent writes, after
+local function review_file(name, lines)
+  local file = vim.fs.normalize(H.file(name, lines))
+  vim.cmd("only | edit! " .. vim.fn.fnameescape(file))
+  return require("integrations.agent_review"), file, vim.api.nvim_get_current_buf()
+end
+local function agent_writes(review, file, lines)
+  review.before(file, "Test agent")
+  vim.fn.writefile(lines, file)
+  review.after(file, "Test agent")
+end
+local function review_marks(buf)
+  local ns = vim.api.nvim_get_namespaces().greyknight_agent_review
+  local old, lit, words = {}, {}, {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    local d = m[4]
+    for _, l in ipairs(d.virt_lines or {}) do
+      local t = {}
+      for _, chunk in ipairs(l) do t[#t + 1] = chunk[1] end
+      old[#old + 1] = vim.trim(table.concat(t))
+    end
+    if d.line_hl_group then lit[#lit + 1] = (m[2] + 1) .. ":" .. d.line_hl_group end
+    if d.hl_group == "GreyKnightReviewText" then
+      words[#words + 1] = vim.api.nvim_buf_get_text(buf, m[2], m[3], d.end_row or m[2], d.end_col, {})[1]
+    end
+  end
+  return old, lit, words
+end
+local function keys(k) vim.api.nvim_feedkeys(vim.keycode(k), "mx", false) end
+
+test("Agent review: an edit shows in its buffer - the old line in red above, the new ones green, the changed word marked; ]c / [c go to them", function()
+  local review, file, buf = review_file("reviewed.py", { "a = 1", "b = 2", "c = 3", "d = 4", "e = 5" })
+  local ok, err = pcall(function()
+    agent_writes(review, file, { "a = 1", "b = 20", "x = 9", "c = 3", "d = 4", "e = 5" })
+    assert(vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1] == "b = 20", "the buffer did not take the agent's text")
+    local old, lit, words = review_marks(buf)
+    assert(#old == 1 and old[1] == "b = 2", "old lines: " .. vim.inspect(old))
+    assert(vim.tbl_contains(lit, "2:GreyKnightReviewChange") and vim.tbl_contains(lit, "3:GreyKnightReviewAdd") and #lit == 2, vim.inspect(lit))
+    assert(#words == 1 and words[1] == "20", "changed words: " .. vim.inspect(words))
+    assert(review.active(buf), "no review")
+    -- ]c / [c: the review's (the test's files are in no git repository - no gitsigns there)
+    vim.api.nvim_win_set_cursor(0, { 5, 0 })
+    keys("]c")
+    assert(vim.fn.line(".") == 2, "]c (around the end) went to " .. vim.fn.line("."))
+    keys("]c")
+    assert(vim.fn.line(".") == 3, "]c went to " .. vim.fn.line("."))
+    keys("[c")
+    assert(vim.fn.line(".") == 2, "[c went to " .. vim.fn.line("."))
+    local hint = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().greyknight_agent_review_hint, 0, -1, { details = true })
+    assert(#hint == 1 and hint[1][2] == 1 and hint[1][4].virt_text[1][1]:find("<leader>ay keeps", 1, true), vim.inspect(hint))
+    -- the user edits the buffer: the review follows; their edit back to the old text ends that change
+    vim.api.nvim_buf_set_lines(buf, 2, 3, false, {})
+    review.render(buf)
+    assert(#review.entry(file).hunks == 1, "after the user's edit: " .. vim.inspect(review.entry(file).hunks))
+  end)
+  review.stop(file)
+  assert(not review.active(buf) and #review_marks(buf) == 0, "the review did not end")
+  assert(ok, err)
+end)
+
+test("Agent review: <leader>an reverts the change at the cursor - buffer and disk; <leader>ay keeps one; the whole file; a new file reverted goes", function()
+  local review, file, buf = review_file("kept.py", { "a = 1", "b = 2", "c = 3", "d = 4", "e = 5" })
+  local saved, notes = vim.notify, {}
+  vim.notify = function(msg) notes[#notes + 1] = msg end
+  local ok, err = pcall(function()
+    agent_writes(review, file, { "a = 1", "b = 20", "c = 3", "d = 4", "e = 50" })
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    keys("<leader>an")
+    assert(vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1] == "b = 2", "the buffer: " .. vim.inspect(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
+    assert(vim.fn.readfile(file)[2] == "b = 2" and vim.fn.readfile(file)[5] == "e = 50", "on disk: " .. vim.inspect(vim.fn.readfile(file)))
+    assert(not vim.bo[buf].modified, "not saved")
+    assert(review.reverted[#review.reverted].lines == "2", vim.inspect(review.reverted))
+    assert(review.active(buf), "the review ended with a change left")
+    vim.api.nvim_win_set_cursor(0, { 5, 0 })
+    keys("<leader>ay")
+    assert(not review.active(buf) and #review_marks(buf) == 0, "kept the last: the review is still on")
+    assert(vim.fn.readfile(file)[5] == "e = 50", "kept, yet changed on disk")
+    -- the whole file: <leader>aN puts it back as it was before the agent
+    agent_writes(review, file, { "A = 1", "b = 2", "c = 3", "d = 4", "e = 5" })
+    agent_writes(review, file, { "A = 1", "b = 2", "c = 3", "d = 4", "E = 5" }) -- a second edit: compared with before the first
+    assert(#review.entry(file).hunks == 2, vim.inspect(review.entry(file).hunks))
+    keys("<leader>aN")
+    assert(table.concat(vim.fn.readfile(file), ",") == "a = 1,b = 2,c = 3,d = 4,e = 50", "on disk: " .. table.concat(vim.fn.readfile(file), ","))
+    assert(not review.active(buf), "the review is still on")
+    -- a file the agent made: reverted whole, it goes
+    local new = vim.fs.normalize(vim.fn.fnamemodify(file, ":h") .. "/made.py")
+    review.before(new, "Test agent")
+    vim.fn.writefile({ "print('new')" }, new)
+    review.after(new, "Test agent")
+    vim.cmd("edit " .. vim.fn.fnameescape(new))
+    local nb = vim.api.nvim_get_current_buf()
+    local _, lit = review_marks(nb)
+    assert(review.active(nb) and #lit == 1, "the new file is not shown for review: " .. vim.inspect(lit))
+    keys("<leader>aN")
+    assert(not vim.uv.fs_stat(new) and not vim.api.nvim_buf_is_valid(nb), "the new file is still there")
+    assert(table.concat(notes, " | "):find("made.py: the agent made it - it is deleted", 1, true), table.concat(notes, " | "))
+  end)
+  vim.notify = saved
+  review.stop(file)
+  assert(ok, err)
+end)
+
+test("Agent review: unsaved changes of the user's - the agent's edit does not overwrite them; Qwen Code's diff accepted needs no second review", function()
+  local review, file, buf = review_file("mine.py", { "a = 1", "b = 2" })
+  local saved, notes = vim.notify, {}
+  vim.notify = function(msg) notes[#notes + 1] = msg end
+  local ok, err = pcall(function()
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "a = 'mine'" })
+    agent_writes(review, file, { "a = 1", "b = 'agent'" })
+    assert(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "a = 'mine'", "the user's unsaved change is gone")
+    assert(table.concat(notes, " | "):find("while you have unsaved changes", 1, true), table.concat(notes, " | "))
+    vim.cmd("edit!")
+    review.stop(file)
+    -- accepted in Qwen Code's diff (agent_ide.lua): the write that follows is reviewed already
+    review.before(file, "Qwen Code")
+    review.accept_content(file, "a = 1\nb = 3\n")
+    vim.fn.writefile({ "a = 1", "b = 3" }, file)
+    review.after(file, "Qwen Code")
+    assert(not review.active(buf) and review.entry(file) == nil, "an accepted diff came up for review again")
+    assert(vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1] == "b = 3", "the buffer did not take the accepted text")
+  end)
+  vim.notify = saved
+  review.stop(file)
+  assert(ok, err)
+end)
+
+test("Agent review: a window following the agent shows each edit as it lands - the user's window stays current; <leader>af again stops", function()
+  local review = require("integrations.agent_review")
+  local a = vim.fs.normalize(H.file("follow_a.py", { "x = 1" }))
+  local b = vim.fs.normalize(H.file("follow_b.py", { "one", "two", "three", "four", "five", "six" }))
+  vim.cmd("only | edit! " .. vim.fn.fnameescape(a))
+  local code = vim.api.nvim_get_current_win()
+  local saved = vim.notify
+  vim.notify = function() end
+  local ok, err = pcall(function()
+    keys("<leader>af")
+    assert(review.following(code) and vim.wo[code].winbar:find("follows the agent", 1, true), "not following: " .. vim.wo[code].winbar)
+    vim.cmd("botright vsplit | enew") -- the user works elsewhere
+    local mine = vim.api.nvim_get_current_win()
+    agent_writes(review, b, { "one", "two", "three", "four", "FIVE", "six" })
+    assert(vim.api.nvim_get_current_win() == mine, "the user's window lost the cursor")
+    assert(vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(code))) == b, "the following window shows "
+      .. vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(code)))
+    assert(vim.api.nvim_win_get_cursor(code)[1] == 5, "not at the change: " .. vim.inspect(vim.api.nvim_win_get_cursor(code)))
+    assert(vim.wo[code].winbar:find("follows the agent", 1, true), "the winbar went with the buffer")
+    assert(#review_marks(vim.api.nvim_win_get_buf(code)) == 1, "no review in the following window")
+    vim.api.nvim_set_current_win(code)
+    keys("<leader>af")
+    assert(not review.following(code) and vim.wo[code].winbar == "", "still following: " .. vim.wo[code].winbar)
+  end)
+  vim.notify = saved
+  review.stop(b)
+  for win in pairs(review.followers) do review.followers[win] = nil end
+  vim.cmd("only")
+  assert(ok, err)
+end)
+
+test("Agent review: in a git file ]c goes to the agent's changes first (gitsigns' ]c asks the review), once reviewed to git's", function()
+  local review = require("integrations.agent_review")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath((function() local t = vim.fn.tempname(); vim.fn.mkdir(t, "p"); return t end)())))
+  local file = root .. "/g.py"
+  local function git(...)
+    local out = vim.fn.system(vim.list_extend({ "git", "-C", root, "-c", "user.name=gk", "-c", "user.email=gk@example.invalid" }, { ... }))
+    assert(vim.v.shell_error == 0, out)
+  end
+  vim.fn.writefile({ "l1", "l2", "l3", "l4", "l5", "l6" }, file)
+  git("init", "-q")
+  git("add", ".")
+  git("commit", "-q", "-m", "init")
+  vim.fn.writefile({ "l1", "l2", "l3", "l4", "L5 mine", "l6" }, file) -- the user's own change: git's, not the review's
+  vim.cmd("only | edit! " .. vim.fn.fnameescape(file))
+  local buf = vim.api.nvim_get_current_buf()
+  local gs = require("gitsigns")
+  local ok, err = pcall(function()
+    assert(H.wait(15000, function() return vim.fn.maparg("]c", "n", false, true).buffer == 1 end), "gitsigns did not attach")
+    agent_writes(review, file, { "l1", "l2", "L3 agent", "l4", "L5 mine", "l6" })
+    assert(H.wait(10000, function() return #(gs.get_hunks(buf) or {}) == 2 end), "git's changes: " .. vim.inspect(gs.get_hunks(buf)))
+    vim.api.nvim_win_set_cursor(0, { 4, 0 })
+    keys("]c")
+    assert(vim.fn.line(".") == 3, "]c went to " .. vim.fn.line(".") .. " - not the agent's change (line 3)")
+    review.act(true, true) -- reviewed: ]c is git's again
+    vim.api.nvim_win_set_cursor(0, { 4, 0 })
+    keys("]c")
+    assert(H.wait(3000, function() return vim.fn.line(".") == 5 end), "]c went to " .. vim.fn.line(".") .. " - not git's next change (line 5)")
+  end)
+  review.stop(file)
+  assert(ok, err)
+end)
+
+test("Agent review: its hooks - Qwen Code's before / after its edit tools (JSON on stdin), OpenCode's plugin before / after its edits and patches", function()
+  local link, review = require("integrations.agent_link"), require("integrations.agent_review")
+  local s = link.qwen_settings()
+  local pre, post = s.hooks.PreToolUse[#s.hooks.PreToolUse], s.hooks.PostToolUse[#s.hooks.PostToolUse]
+  assert(pre.matcher == link.EDIT_TOOLS and post.matcher == link.EDIT_TOOLS and pre.hooks[1].command:find("before", 1, true)
+    and post.hooks[1].command:find("after", 1, true), vim.inspect({ pre, post }))
+  -- a JavaScript regex (Qwen Code's): Vim's very magic reads it the same
+  local re = vim.regex("\\v" .. link.EDIT_TOOLS)
+  assert(re:match_str("write_file") and re:match_str("edit") and re:match_str("notebook_edit") and not re:match_str("read_file")
+    and not re:match_str("edit_x"), "the matcher")
+  local file = vim.fs.normalize(H.file("hooked.py", { "x = 1" }))
+  -- as Qwen Code runs a hook: its command, the JSON on stdin; waited for without jobwait (it would hold the RPC up)
+  local function hook(event, payload)
+    local job = vim.fn.jobstart(link.hook_command(event))
+    vim.fn.chansend(job, vim.json.encode(payload))
+    vim.fn.chanclose(job, "stdin")
+    assert(H.wait(15000, function() return vim.fn.jobwait({ job }, 0)[1] ~= -1 end), "the hook did not end")
+  end
+  local ok, err = pcall(function()
+    hook("before", { hook_event_name = "PreToolUse", tool_name = "write_file", tool_input = { file_path = file, content = "x = 2\n" } })
+    vim.fn.writefile({ "x = 2" }, file)
+    hook("after", { hook_event_name = "PostToolUse", tool_name = "write_file", tool_input = { file_path = file, content = "x = 2\n" } })
+    local f = review.entry(file)
+    assert(f and f.edits == 1 and f.ref[1] == "x = 1", vim.inspect(f))
+    review.stop(file)
+    -- OpenCode's plugin, run by node as OpenCode runs it: an edit (filePath), then a patch of two files (relative)
+    local node = vim.fn.exepath("node")
+    if node == "" then return end
+    -- as an .mjs: node before 22 reads a .js with import as CommonJS (OpenCode's bun does not)
+    local js = vim.fn.tempname() .. "-greyknight.mjs"
+    vim.fn.writefile(vim.fn.readfile(link.opencode_dir() .. "/plugins/greyknight.js"), js)
+    local root = vim.fs.dirname(file)
+    vim.fn.writefile({ "x = 1" }, root .. "/p1.py")
+    local runner = vim.fn.tempname() .. "-run.mjs"
+    vim.fn.writefile({
+      ("import { pathToFileURL } from 'node:url'; import { writeFileSync } from 'node:fs'"),
+      ("const m = await import(pathToFileURL(%s).href)"):format(vim.json.encode(js)),
+      ("const h = await m.GreyKnight({ directory: %s })"):format(vim.json.encode(root)),
+      ("await h['tool.execute.before']({ tool: 'edit', callID: 'c1' }, { args: { filePath: %s } })"):format(vim.json.encode(file)),
+      ("writeFileSync(%s, 'x = 3\\n')"):format(vim.json.encode(file)),
+      "await h['tool.execute.after']({ tool: 'edit', callID: 'c1' }, {})",
+      "const patch = '*** Begin Patch\\n*** Update File: p1.py\\n@@\\n-x = 1\\n+x = 9\\n*** Add File: p2.py\\n+y = 1\\n*** End Patch'",
+      "await h['tool.execute.before']({ tool: 'apply_patch', callID: 'c2' }, { args: { patchText: patch } })",
+      ("writeFileSync(%s, 'x = 9\\n'); writeFileSync(%s, 'y = 1\\n')"):format(vim.json.encode(root .. "/p1.py"), vim.json.encode(root .. "/p2.py")),
+      "await h['tool.execute.after']({ tool: 'apply_patch', callID: 'c2' }, {})",
+      "await h['tool.execute.before']({ tool: 'read', callID: 'c3' }, { args: { filePath: 'p1.py' } })",
+    }, runner)
+    local done, out = false, {}
+    local job = vim.fn.jobstart({ node, runner }, { on_exit = function() done = true end,
+      on_stderr = function(_, d) vim.list_extend(out, d) end })
+    assert(job > 0 and H.wait(30000, function() return done end), "node did not end: " .. table.concat(out, "\n"))
+    local f1, p1, p2 = review.entry(file), review.entry(root .. "/p1.py"), review.entry(root .. "/p2.py")
+    -- before OpenCode's edit the file is as Qwen Code's left it
+    assert(f1 and f1.edits == 1 and f1.ref[1] == "x = 2" and f1.last[1] == "x = 3", "edit: " .. vim.inspect(f1) .. table.concat(out, "\n"))
+    assert(p1 and p1.edits == 1 and p1.ref[1] == "x = 1" and p2 and p2.new and p2.edits == 1, "patch: " .. vim.inspect({ p1, p2 }))
+    assert(f1.agent and p1.agent, "who edited")
+  end)
+  for _, name in ipairs({ file, vim.fs.dirname(file) .. "/p1.py", vim.fs.dirname(file) .. "/p2.py" }) do review.stop(name) end
+  assert(ok, err)
+end)
+
 -- 2026-10-21: the explorer closed right after a find (a refresh, a cd, typed text): snacks' cleanup put a new task in
 -- place of the finder's last one, which still ran once, and snacks then resumed the matcher, gone by then - "attempt
 -- to index field 'matcher' (a nil value)", a prompt that kept the test window from quitting (config/explorer.lua,
