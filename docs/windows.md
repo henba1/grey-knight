@@ -15,6 +15,25 @@
 | `:sp` | Horizontal split (top/bottom) |
 | `:vs file.py` | Open file in vertical split |
 
+### The window bar
+
+Each file window has a bar of its own on top - the statusline at the bottom is one for all windows:
+
+```
+ lua/config/winbar.lua ●                                   ◫  ⊟  ×
+```
+
+The file (relative to the working directory), `●` while it has unsaved changes, and three buttons to click:
+
+| Button | Action |
+|--------|--------|
+| `◫` | Split right - the same file in a new window beside it |
+| `⊟` | Split below |
+| `×` | Close, as in an IDE: the window; the last file window stays where it is and closes its file instead (asks first about unsaved changes) - Neovim does not quit |
+
+The window with the cursor shows it brighter. Not on the explorer, pickers, terminals, the agent, help, quickfix,
+floating windows or the start screen; a diff's or a following window's own bar (`<leader>af`) takes its place.
+
 ### Navigating Windows
 
 | Key | Action |

@@ -358,6 +358,11 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 agent's window (Claude Code, OpenCode, Qwen Code) only the ways out stay Neovim's - `<C-h/j/k/l>`, `<Esc><Esc>`,
 `<C-\><C-n>`; every other key, Ctrl+arrows too, is the agent's.
 
+Each file window has a bar on top (the statusline is one for all): the file, `●` when it has unsaved changes, and
+buttons to click - `◫` split right, `⊟` split below, `×` close. Close closes the window; the last file window stays
+and closes its file instead (asks about unsaved changes) - Neovim does not quit. Not on the tree, pickers, terminals,
+the agent, help or quickfix.
+
 > Over SSH from **PuTTY**: its default keys send Ctrl+arrows as plain arrows and Shift/Ctrl+F11 as F11. In PuTTY set
 > Terminal → Keyboard: arrow keys *xterm-style bitmap*, function keys *Xterm 216+*; Connection → Data: terminal type
 > *xterm-256color* ([docs/ssh.md → Over SSH (PuTTY)](docs/ssh.md#over-ssh-putty)). Home / End as PuTTY sends them (`<Find>` / `<Select>`) work.
@@ -388,6 +393,7 @@ agent's window (Claude Code, OpenCode, Qwen Code) only the ways out stay Neovim'
 │   ├── gitdiff.lua           ← git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff), else Diffview
 │   ├── termname.lua          ← a terminal's name in the statusline: an agent's, else its program and number
 │   ├── style.lua             ← the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
+│   ├── winbar.lua            ← a bar per file window: its name, split right / below and close buttons
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest

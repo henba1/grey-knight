@@ -165,6 +165,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── gitdiff.lua         git diffs (<leader>gv, <leader>gh) - codediff (VS Code's diff) where its library is, else Diffview
 │   ├── termname.lua        a terminal's name in the statusline: an agent's (and where it works), else its program
 │   ├── style.lua           the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
+│   ├── winbar.lua          a bar per file window: its name, split right / below and close buttons
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)
