@@ -12,10 +12,12 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
 ## Features
 
 - **A coding agent that works in the editor** — Qwen Code or OpenCode in a terminal next to the code
-  (`GREYKNIGHT_AGENT`). Asked where something is, it opens the file tree on it; it shows code at a line and asks
-  Neovim's language servers. Qwen Code sees the open files and the selection, and each edit it proposes opens as a
-  diff to accept (`ga`) or reject (`q`); `<leader>ad` lists what the agent changed; one you are not looking at says
-  when it is done ([the coding agent](docs/agent.md))
+  (`GREYKNIGHT_AGENT`). Asked where something is, it opens the file tree on it or marks files there; it shows code at
+  a line and asks Neovim's language servers. **Its edits show in your buffers** as in Zed or Cursor - the old lines
+  red, the new green - to keep or revert, each change or the whole file (`<leader>ay` / `<leader>an`, `<leader>ar`);
+  a window **follows the agent** to each edit as it lands (`<leader>af`); `@` in the tree hands files to it. Qwen Code
+  sees the open files and the selection, and in its ask mode each edit opens as a diff first; `<leader>ad` lists what
+  the agent changed; one you are not looking at says when it is done ([the coding agent](docs/agent.md))
 - **Speech to text** — `<leader>av` speaks a prompt to the agent, `<leader>aV` dictates at the cursor, written down by
   whisper.cpp on your machine (`:VoiceInstall`) ([speech to text](docs/agent.md#speech-to-text))
 - **Diffs as in a pull request** — codediff (VS Code's diff) reviews the changes live as they land, the old side red,
@@ -179,6 +181,8 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── agent_ide.lua       Qwen Code's IDE mode: its edits as diffs to accept / reject; open files as context
 │   ├── agent_changes.lua   what changed since the agent started (<leader>ad): a git snapshot then, the files
 │   │                       changed since with their diffs, a file taken back - the user's index untouched
+│   ├── agent_review.lua    the agent's edits reviewed in their buffers (its hooks: before / after each edit) -
+│   │                       keep or revert each change; a window following the agent; the list (<leader>ar)
 │   ├── voice.lua           speech to text (<leader>av to the agent, <leader>aV at the cursor): recorded on this
 │   │                       machine, whisper.cpp here (:VoiceInstall, pinned and checked) or $GREYKNIGHT_STT_URL
 │   ├── aidash.lua          AI Dashboard bridge: preview, up/download, notify —

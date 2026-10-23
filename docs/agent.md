@@ -1,11 +1,13 @@
 # GreyKnight - The coding agent
 
-> Qwen Code or OpenCode in a terminal next to the code - and in the editor: it shows you files, Qwen Code's edits come as diffs, you can speak to it.
+> Qwen Code or OpenCode in a terminal next to the code - and in the editor: it shows you files and marks them in the tree, its edits show in your buffers to keep or revert, a window follows it, you can speak to it.
 > [All topics](README.md) · every key on one page: [CHEATSHEET](../CHEATSHEET.md) · Leader = `Space`
 
 **In this file:** [AI Assistant (Qwen Code)](#ai-assistant-qwen-code) · [The agent in your editor](#the-agent-in-your-editor)
-· [Qwen Code's IDE mode](#qwen-codes-ide-mode) · [What the agent changed](#what-the-agent-changed)
-· [Speech to text](#speech-to-text) · [Done, or waiting for you](#done-or-waiting-for-you) · [The model](#the-model)
+· [Reviewing the agent's edits](#reviewing-the-agents-edits) · [Following the agent](#following-the-agent)
+· [The file tree and the agent](#the-file-tree-and-the-agent) · [Qwen Code's IDE mode](#qwen-codes-ide-mode)
+· [What the agent changed](#what-the-agent-changed) · [Speech to text](#speech-to-text)
+· [Done, or waiting for you](#done-or-waiting-for-you) · [The model](#the-model)
 
 ## AI Assistant (Qwen Code)
 
@@ -77,9 +79,10 @@ highlighted; *"show me all shell scripts"* runs a search in the tree (regex `.*\
 | Tool | What the agent does with it |
 |------|-----------------------------|
 | `show_in_file_tree` | Opens the file tree on a file or folder (the cursor on it), or runs a search there - fuzzy, regex or glob, files or folders - and reads the matches |
+| `mark_in_file_tree` | Marks files and folders in the tree (their folders open) - for you to move (`m`), copy (`c`), delete (`d`) or hand back (`@`) |
 | `open_file` | Shows code in your code window at a line, the lines it talks about lit up for a moment |
 | `show_locations` | Lists places - search hits, usages, errors - in the quickfix list: `Enter`, `]q` / `[q` |
-| `editor_state` | Reads what you have open: the file, cursor, visible lines, the selected text, unsaved changes |
+| `editor_state` | Reads what you have open: the file, cursor, visible lines, the selected text, unsaved changes; the file tree (its cursor, what you marked there); the review of its edits (what still waits, what you reverted) |
 | `diagnostics` | Reads the errors and warnings of the language servers and linters (one file, or all open ones) |
 | `find_symbol`, `goto_definition`, `find_references` | Asks the language servers running in Neovim - jdtls, pyright, ts_ls ...: precise where a text search is not (overloads, imports, libraries); `show` puts the result in front of you |
 | `notify` | A message in Neovim, e.g. that a long task is done |
@@ -96,6 +99,54 @@ A launcher that starts the agent with an environment of its own - a company's Op
 `OPENCODE_*` for its modes - has to let two of them through when `GREYKNIGHT_AGENT_ID` is set (the agent was started
 from GreyKnight): `OPENCODE_CONFIG_CONTENT` (the tools) and `OPENCODE_CONFIG_DIR` (the word when it is done). `opencode
 mcp list` shows `greyknight connected` when they arrived.
+
+## Reviewing the agent's edits
+
+Every edit the agent makes shows **in the file's own buffer**, as in Zed or Cursor: the old lines in red above the new
+ones, the new lines green, the words that changed within a line stronger, `+` / `~` / `-` in the sign column. Each
+change waits for you to keep or revert it:
+
+| Key | Mode | Action |
+|-----|------|--------|
+| `]c` / `[c` | n | Next / previous change of the agent's (in a file with git changes too: the agent's first) |
+| `<leader>ay` | n, v | Keep the change at the cursor (visual: the changes the selection touches) |
+| `<leader>an` | n, v | Revert it - the buffer and the file on disk get the old lines back |
+| `<leader>aY` / `<leader>aN` | n | Keep / revert all of the agent's changes in the file (a file it made, reverted: deleted) |
+| `<leader>ar` | n | Every change waiting, in all files - `Enter` goes there, `Ctrl+y` keeps it, `Ctrl+x` reverts it |
+
+The cursor on a change shows these keys at its end. A file's review compares with the file before the agent's first
+edit of it: a second edit adds to the same review, and what you keep is the new base. Your own edits in the buffer
+count along (typed back to the old text, that change is gone). An edit of a file with unsaved changes of yours does not
+overwrite them: a warning - `:e!` takes the agent's version (and shows its review), `:w` keeps yours. An edit you
+accepted in Qwen Code's diff ([IDE mode](#qwen-codes-ide-mode)) is reviewed already. The agent reads what you reverted
+(`editor_state`) and is asked not to do it again unless you say so.
+
+How: Qwen Code's hooks before and after its edit tools (`PreToolUse` / `PostToolUse` on `edit`, `write_file`,
+`notebook_edit` - in the same system defaults as its other hooks) and GreyKnight's OpenCode plugin (before / after
+`edit`, `write`, `patch`, `apply_patch`, and `file.edited`) tell Neovim the file: before the edit, the file as it is
+becomes what the review compares with. A file the agent changed another way (a shell command) and then edits again
+compares with the project's snapshot from when the agent started ([What the agent changed](#what-the-agent-changed)).
+`vim.g.greyknight_agent_review = false` (in `init.lua`) turns the review off.
+
+Qwen Code in its *auto-edit* mode (`Shift+Tab` in its input, or `/approval-mode auto-edit`) writes right away: this
+review is then where you see its edits, as with OpenCode. In *Ask permissions* it asks with a diff first.
+
+## Following the agent
+
+`<leader>af` makes the current window **follow the agent**: each edit opens there as it lands - the file, the cursor
+on the change, its review - while your cursor stays where you are (the agent's terminal, another window). The window's
+bar says `◉ follows the agent`. From the agent's terminal or the tree, `<leader>af` takes the code window next to them
+(none there: a new one). The file tree, when it is open, shows the file too. `<leader>af` in that window again stops.
+Without a following window, an edit of a file in no window comes as a notification (`<leader>ar` lists it).
+
+## The file tree and the agent
+
+- **`@` in the tree** (`<leader>e`): the marked files (`Tab` marks; none marked: the one under the cursor) go into the
+  agent's prompt as `@path` - typed, not sent: go on with *"... explain these"*. Both agents read files named so.
+- **The agent marks files there** (`mark_in_file_tree`): *"mark every test that uses the parser"* - then `m` / `c` /
+  `d` move, copy or delete them, or `@` hands them back.
+- **The agent reads the tree** (`editor_state`): its cursor and what you marked - *"refactor the files I marked"*.
+- Following the agent, the tree shows each file it edits ([Following the agent](#following-the-agent)).
 
 ## Qwen Code's IDE mode
 
@@ -116,12 +167,14 @@ Neovim is its IDE (`/ide status`: *Connected to Neovim (GreyKnight)*):
   The right side is a normal buffer: edit it before accepting, Qwen Code writes what you accepted. Answering in
   the agent's terminal works too, and closes the diff. Qwen Code asks before an edit only in its *Ask permissions*
   mode - `/approval-mode default`, or `"tools": { "approvalMode": "default" }` in `~/.qwen/settings.json`; in its
-  default mode (`auto`) and `auto-edit` / `yolo` it writes straight away, without a diff.
+  default mode (`auto`) and `auto-edit` / `yolo` it writes straight away, without a diff - then
+  [the review in your buffers](#reviewing-the-agents-edits) shows its edits.
 - How it finds Neovim: a lock file `~/.qwen/ide/<number>.lock` that names this Neovim's server (no web server -
   Qwen Code starts `nvim -l ... agent_server.lua ide` and talks to it over stdio); it goes when Neovim quits.
 
 OpenCode has no IDE mode: it writes its edits right away (its own permission prompt asks first when
-`"permission": { "edit": "ask" }`), with the editor tools above.
+`"permission": { "edit": "ask" }`) - they show in your buffers to keep or revert
+([Reviewing the agent's edits](#reviewing-the-agents-edits)), and it has the editor tools above.
 
 ## What the agent changed
 

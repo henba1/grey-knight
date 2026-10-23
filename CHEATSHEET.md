@@ -31,6 +31,11 @@
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
 | `<leader>ad` | n | What changed since the agent started: the files, their diffs; `Enter` side by side, `Ctrl+x` / `dd` take one back |
+| `]c` / `[c` | n | In a file the agent edited: its next / previous change (shown in the buffer: old lines red, new green) |
+| `<leader>ay` / `<leader>an` | n/v | Keep / revert the agent's change at the cursor (visual: the selection's) - reverted on disk too |
+| `<leader>aY` / `<leader>aN` | n | Keep / revert all of the agent's changes in the file |
+| `<leader>ar` | n | Every change of the agent's to review: `Enter` goes there, `Ctrl+y` keeps, `Ctrl+x` reverts |
+| `<leader>af` | n | This window follows the agent: each edit opens here as it lands (again: stops) |
 | `<leader>av` | n | Speak a prompt to the agent - again stops; you see it before it is sent (`:VoiceCancel` drops it) |
 | `<leader>aV` | n | Dictate at the cursor - again stops (in a terminal: typed in) |
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
@@ -46,8 +51,10 @@
 > you in terminal mode, as every terminal window does: type away. `Esc Esc` gives normal mode there (scroll, copy).
 
 **The agent works in the editor** (both agents, started with `<leader>t*`): ask "where is the bookmarks code?" and
-it opens the file tree on it (or a search there), shows code at a line, lists places in the quickfix list, asks the
-language servers (definitions, usages, symbols, diagnostics) - `/mcp` shows `greyknight`. Qwen Code also gets the
+it opens the file tree on it (or a search there), marks files there, shows code at a line, lists places in the
+quickfix list, asks the language servers (definitions, usages, symbols, diagnostics) - `/mcp` shows `greyknight`.
+**Its edits show in your buffers** - the old lines red above the new green ones - to keep (`<leader>ay`) or revert
+(`<leader>an`); `<leader>af` makes a window follow it from edit to edit. Qwen Code also gets the
 open files, cursor and selection as context (`/ide status`: Neovim) and shows **each edit as a diff** before it
 writes it (when it asks for permission: `/approval-mode default`):
 
@@ -120,6 +127,7 @@ explorer pane once focused.
 | `c` | Copy the marked into the folder under the cursor (nothing marked: mark this one) |
 | `r` | Rename / move to a typed path (absolute too: `/…`, `~/…`, `C:\…`) |
 | `%` | Rename the marked by regex: `s/(\d+)\.txt$/$1.md/` (as sed: `g`, `i`; `$1` `${name}` `$0`) — new names listed first |
+| `@` | To the agent: the marked (else this one) as `@path` in its prompt — typed, not sent |
 | `C` | Copy to a typed path |
 | `a` | New file or dir (trailing `/` = dir; absolute paths too) |
 | `d` | Delete the marked, else this one (system trash; where it refuses, e.g. `/tmp`: asks to delete for good) — the cursor stays put |
@@ -386,6 +394,7 @@ In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `C
 │   ├── agent_tools.lua       ← the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics
 │   ├── agent_ide.lua         ← Qwen Code's IDE mode: its edits as diffs to accept / reject, the context
 │   ├── agent_changes.lua     ← what changed since the agent started (<leader>ad): diffs, take a file back
+│   ├── agent_review.lua      ← the agent's edits in their buffers: keep / revert (<leader>ay, an), follow (<leader>af)
 │   ├── voice.lua             ← speech to text (<leader>av, <leader>aV): record here, whisper.cpp (:VoiceInstall)
 │   ├── aidash.lua            ← AI Dashboard bridge
 │   ├── intellij.lua          ← IntelliJ's settings: JDK, Maven, on save, reformat, remote debug

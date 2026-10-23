@@ -60,6 +60,7 @@ again opens a file; the next `/` is a file search again. Lowercase text ignores 
 | `c` | Copy the marked items into the folder under the cursor. Nothing marked: marks the item under the cursor |
 | `r` | Rename, or move to a typed path: relative from the working directory (as shown), absolute as typed (`/home/…`, `~/…`, `C:\…`, `\\server\share\…`) |
 | `%` | Rename the marked items by regex (else the one under the cursor): `s/regex/replacement/` on their names - see below |
+| `@` | To the agent: the marked items (else the one under the cursor) as `@path` in its prompt - typed, not sent ([The file tree and the agent](agent.md#the-file-tree-and-the-agent)) |
 | `C` | Copy to a typed path: relative from the item's folder, absolute as typed |
 | `a` | New file or dir (trailing `/` makes a directory) - in the folder under the cursor, or at an absolute path |
 | `d` | Delete the marked items, else the one under the cursor (to system trash; permanent fallback if no trash). The cursor stays on its item; when that one went, on the next one. Open files of what was deleted are closed - in a folder too |

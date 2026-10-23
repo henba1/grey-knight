@@ -158,7 +158,10 @@ The `*-html5/client` folders are AngularJS written in TypeScript:
 - Both can have the same repository open. GreyKnight never writes `.idea`; its jdtls index lives in Neovim's data
   directory, Eclipse's `.project` / `.classpath` / `.settings` there too - none of them in the repository.
 - Java files keep their line endings (CRLF in a Windows checkout).
-- The coding agent (`<leader>tt`, `<leader>aa` - OpenCode on the work laptop) works in the same repository.
+- The coding agent (`<leader>tt`, `<leader>aa` - OpenCode on the work laptop) works in the same repository. Its
+  edits show in your buffers to keep or revert, like IntelliJ's AI Assistant diff: `<leader>ay` keeps a change,
+  `<leader>an` reverts it, `]c` goes to the next; `<leader>af` makes a window follow it
+  ([the review](docs/agent.md#reviewing-the-agents-edits)). IntelliJ reloads a file the agent changed on its own.
 - IntelliJ stays the place for exact reformatting (`Ctrl+Alt+L`), refactorings across many modules and its
   Maven and database tools.
 
