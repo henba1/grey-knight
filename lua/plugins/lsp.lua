@@ -60,6 +60,14 @@ if lang.lua then
   formatters["lua"] = { "stylua" }
 end
 
+-- Servers left out on this machine: $GREYKNIGHT_LSP_OFF, their names comma-separated (lua_ls,ruff) - for a machine
+-- whose security software blocks one. The work laptop's Microsoft Defender (attack surface reduction: "advanced
+-- protection against ransomware") stopped lua-language-server at every start, a warning each time (2026-10-23). Not
+-- set up, so not installed by Mason either; every other machine keeps them.
+local lsp_off = {}
+for name in (vim.env.GREYKNIGHT_LSP_OFF or ""):gmatch("[^,%s]+") do lsp_off[name] = true end
+for name in pairs(lsp_off) do lsp_servers[name] = nil end
+
 -- shellcheck: bash-language-server runs shellcheck itself and reports its findings, so this only
 -- fills in where bashls is not attached (the binary is optional — absent means silent skip)
 if lang.bash and vim.fn.executable("shellcheck") == 1 then
