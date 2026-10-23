@@ -81,6 +81,30 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
+-- Started in Neovim's own program folder - a shortcut's "Start in", a double-click on nvim.exe: nobody works there, yet
+-- terminals and agents start in Neovim's folder (OpenCode ran in C:\dev\tools\nvim\bin, 2026-10-23). The home folder
+-- instead (a junction like C:\dev\tools\nvim -> nvim-0.12.6 counts as that folder too)
+do
+  local function real(p)
+    local r = p and vim.uv.fs_realpath(p)
+    if not r then return nil end
+    r = vim.fs.normalize(r)
+    return vim.fn.has("win32") == 1 and r:lower() or r
+  end
+  local cwd = vim.uv.cwd()
+  local here, prog = real(cwd), real(vim.fs.dirname(vim.v.progpath))
+  if here and prog and here == prog and vim.uv.os_homedir() then
+    vim.fn.chdir(vim.uv.os_homedir())
+    vim.api.nvim_create_autocmd("VimEnter", {
+      once = true,
+      callback = function()
+        vim.notify(("Started in Neovim's program folder (%s) - working in %s"):format(cwd, vim.fn.fnamemodify(vim.fn.getcwd(), ":~")),
+          vim.log.levels.INFO)
+      end,
+    })
+  end
+end
+
 -- Startup message
 vim.api.nvim_create_autocmd("VimEnter", {
   callback = function()
