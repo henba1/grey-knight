@@ -1748,6 +1748,42 @@ test("Agent review: its hooks - Qwen Code's before / after its edit tools (JSON 
   assert(ok, err)
 end)
 
+-- 2026-10-23: some 20 edits of subagents (in their git worktrees) and of the agent's scratch scripts filled the review list
+test("Agent review: edits in another git worktree or in an agent's scratch folder are not the user's to review", function()
+  local review = require("integrations.agent_review")
+  local root = vim.fs.normalize(assert(vim.uv.fs_realpath((function() local t = vim.fn.tempname(); vim.fn.mkdir(t, "p"); return t end)())))
+  local function git(...)
+    local out = vim.fn.system(vim.list_extend({ "git", "-C", root, "-c", "user.name=gk", "-c", "user.email=gk@example.invalid" }, { ... }))
+    assert(vim.v.shell_error == 0, out)
+  end
+  vim.fn.writefile({ "x = 1" }, root .. "/a.py")
+  git("init", "-q")
+  git("add", ".")
+  git("commit", "-q", "-m", "init")
+  git("worktree", "add", "-q", root .. "/.claude/worktrees/agent-1", "-b", "agent-1")
+  local tmp = vim.fs.normalize(assert(vim.uv.fs_realpath(vim.uv.os_tmpdir())))
+  local scratch = tmp .. "/claude-gktest-" .. vim.uv.hrtime() .. "/scratchpad"
+  vim.fn.mkdir(scratch, "p")
+  local mine, theirs, script = root .. "/a.py", root .. "/.claude/worktrees/agent-1/a.py", scratch .. "/probe.lua"
+  vim.fn.writefile({ "x = 1" }, script)
+  local before = vim.fn.getcwd()
+  vim.fn.chdir(root)
+  local ok, err = pcall(function()
+    for _, f in ipairs({ mine, theirs, script }) do agent_writes(review, f, { "x = 2" }) end
+    assert(review.entry(mine), "the project's own file is not under review")
+    assert(not review.entry(theirs), "a subagent's worktree is under review")
+    assert(not review.entry(script), "the agent's scratch file is under review")
+    -- the editor in the worktree itself: its files are the user's
+    vim.fn.chdir(root .. "/.claude/worktrees/agent-1")
+    agent_writes(review, theirs, { "x = 3" })
+    assert(review.entry(theirs), "the worktree the editor is in is not under review")
+  end)
+  vim.fn.chdir(before)
+  for _, f in ipairs({ mine, theirs, script }) do review.stop(f) end
+  vim.fn.delete(vim.fs.dirname(scratch), "rf")
+  assert(ok, err)
+end)
+
 -- 2026-10-21: the explorer closed right after a find (a refresh, a cd, typed text): snacks' cleanup put a new task in
 -- place of the finder's last one, which still ran once, and snacks then resumed the matcher, gone by then - "attempt
 -- to index field 'matcher' (a nil value)", a prompt that kept the test window from quitting (config/explorer.lua,
