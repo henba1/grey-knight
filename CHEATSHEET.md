@@ -4,7 +4,7 @@
 > On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
 > How it all works, a file per topic: [the guide](docs/README.md).
 
-**Contents:** [General](#general) · [AI](#ai-qwen-code-opencode-or-claude-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
+**Contents:** [General](#general) · [AI](#ai-qwen-code-opencode-or-claude-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [LaTeX](#latex-leaderl) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
 
 ## General
 
@@ -105,6 +105,17 @@ goes there while it runs and back to the code when it ends. Errors are marked in
 > an error line in the output jumps there, `<leader>xq` lists them. Python reaches the REPL as one
 > bracketed paste (blank lines in functions fine, `input()` waits for you). A venv directly in your
 > home (`~/venv`) is only used when activated before starting nvim.
+
+## LaTeX — `<leader>l`
+
+The document of the file: its `% !TEX root = ...` line, the file itself (`\documentclass`) or the
+`main.tex` above it. Errors are marked in the code and go to the quickfix list, as a failed run's do.
+
+| Key | Mode | Action |
+|-----|------|--------|
+| `<leader>lb` | n | Build once (`latexmk`, saved first) |
+| `<leader>lw` | n | Watch: `latexmk -pvc` builds on every save (toggle) |
+| `<leader>le` | n | The last build's errors (quickfix) |
 
 ## File Explorer — `<leader>e`
 
@@ -400,6 +411,7 @@ the agent, help or quickfix.
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
 │   ├── tasks.lua             ← runs as overseer tasks: output window, args, watch, fix with Qwen
 │   ├── errors.lua            ← tracebacks + bash errors -> quickfix + marks in the code
+│   ├── latex.lua             ← latexmk: build / watch, its errors -> quickfix + marks in the code
 │   ├── repl.lua              ← IPython / python / bash REPL
 │   ├── debug.lua             ← Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua              ← venv, #!, cells, dedent

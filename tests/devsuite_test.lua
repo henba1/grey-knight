@@ -98,7 +98,7 @@ test("Run/Debug/REPL keymaps present", function()
     end
   end
   for _, lhs in ipairs({ " rr", " ra", " rR", " rp", " rP", " rl", " rc", " rx", " rt", " rT", " rw", " rk", " ro", " rL", " rf",
-    " ri", " re", " rE", " dl", " dL", " dt", " de", " dc", " dh", " dq", " dR", "<F5>", "<F6>", "<F9>", "<F10>" }) do
+    " ri", " re", " rE", " lb", " lw", " le", " dl", " dL", " dt", " de", " dc", " dh", " dq", " dR", "<F5>", "<F6>", "<F9>", "<F10>" }) do
     assert(has("n", lhs), lhs .. " missing (normal)")
   end
   for _, lhs in ipairs({ " rs", " re", " aa", " ae" }) do
@@ -2423,6 +2423,69 @@ test("Errors: parser fixtures (chained, SyntaxError, library frames, set -u, das
   assert(kinds(errors.parse({ py .. ":2: DeprecationWarning: old api" }, {})) == "W2", "warning")
   local noise = errors.parse({ "Error: 404: Not Found", "10.10.10.5:8080 open", "HTTP/1.1 200 OK", "line 3: nothing", "E   not pytest" }, {})
   assert(#noise == 0, "noise matched: " .. vim.inspect(noise))
+end)
+
+test("LaTeX: errors of the last pdflatex run, each once, undefined commands named", function()
+  local latex = require("devsuite.latex")
+  local root = "/doc"
+  local items = latex.parse({
+    "Run number 1 of rule 'pdflatex'",
+    "./main.tex:47: I can't write on file `sections/a.aux'.", -- an early run's error the next run fixes
+    "./main.tex:47: Emergency stop.",
+    "Run number 1 of rule 'biber main'",
+    "Run number 2 of rule 'pdflatex'",
+    "./sections/a.tex:24: Undefined control sequence.",
+    "<recently read> \\badmacro ",
+    "",
+    "l.24 \\end{frame}",
+    "./sections/a.tex:24: Undefined control sequence.", -- the same frame again: its second overlay
+    "<recently read> \\badmacro ",
+    "./sections/a.tex:24: Undefined control sequence.", -- another command in the same frame
+    "<recently read> \\other ",
+    "./main.tex:16: LaTeX Error: File `nothere.sty' not found.",
+    "./main.tex:16:  ==> Fatal error occurred, no output PDF file produced!",
+    "Overfull \\hbox (10.0pt too wide) detected at line 42",
+    "Latexmk: Summary of warnings from last run of *latex:",
+  }, root)
+  local got = vim.tbl_map(function(i) return i.filename .. ":" .. i.lnum .. " " .. i.text end, items)
+  assert(vim.deep_equal(got, {
+    "/doc/sections/a.tex:24 Undefined control sequence. \\badmacro",
+    "/doc/sections/a.tex:24 Undefined control sequence. \\other",
+    "/doc/main.tex:16 LaTeX Error: File `nothere.sty' not found.",
+  }), vim.inspect(got))
+  assert(#latex.parse({ "Output written on build/main.pdf (12 pages).", "Latexmk: All targets are up-to-date" }, root) == 0)
+end)
+
+test("LaTeX: the document of a file - !TEX root, \\documentclass, main.tex above", function()
+  local latex = require("devsuite.latex")
+  local main = H.file("main.tex", { "\\documentclass{article}", "\\begin{document}", "\\input{sections/a}", "\\end{document}" })
+  local dir = vim.fn.fnamemodify(main, ":h")
+  vim.fn.mkdir(dir .. "/sections", "p")
+  local section = dir .. "/sections/a.tex"
+  vim.fn.writefile({ "\\section{A}" }, section)
+  assert(latex.main(section) == vim.fs.normalize(main), tostring(latex.main(section)))
+  assert(latex.main(main) == vim.fs.normalize(main), "the main file itself")
+  local other = H.file("thesis.tex", { "\\documentclass{report}" })
+  local rooted = dir .. "/sections/b.tex"
+  vim.fn.writefile({ "% !TEX root = " .. other, "\\section{B}" }, rooted)
+  assert(latex.main(rooted) == vim.fs.normalize(other), tostring(latex.main(rooted)))
+  assert(latex.main(H.file("loose.tex", { "\\section{C}" })) == nil, "no document")
+end)
+
+test("LaTeX: a build puts its error in the quickfix list and on the line", function()
+  local latex = require("devsuite.latex")
+  if not latex.latexmk() then H.skip("no latexmk on this machine") end
+  local main = H.file("doc.tex", { "\\documentclass{article}", "\\begin{document}", "Hello \\nosuchcommand", "\\end{document}" })
+  vim.cmd.edit(main)
+  latex.state.items = {}
+  latex.build()
+  assert(H.wait(60000, function() return #latex.state.items > 0 end), "no error reported")
+  local item = latex.state.items[1]
+  assert(item.filename == vim.fs.normalize(main) and item.lnum == 3 and item.text:find("\\nosuchcommand", 1, true),
+    vim.inspect(latex.state.items))
+  assert(#vim.diagnostic.get(0) == 1, "not marked on the line")
+  assert(vim.fn.getqflist({ title = 1 }).title == "LaTeX: doc.tex", vim.fn.getqflist({ title = 1 }).title)
+  vim.cmd("bwipeout!")
 end)
 
 test("Tasks: stop, hide/show the output, status bar, watch, restart", function()
