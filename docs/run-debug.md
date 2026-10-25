@@ -107,7 +107,7 @@ between snippets, `<leader>rs` / `<leader>rc` for a clean run.
 | Key | Action |
 |-----|--------|
 | `<leader>lb` | Build the document of the current file once (`latexmk`, saved first) |
-| `<leader>lw` | Watch: `latexmk -pvc` builds it again on every save (toggle) |
+| `<leader>lw` | Watch: `latexmk -pvc` builds it again on every save, and the preview shows the PDF (toggle) |
 | `<leader>le` | The last build's errors in the quickfix window |
 
 **The document** of a `.tex` file is the one its `% !TEX root = ../main.tex` line names, else the file
@@ -119,6 +119,14 @@ with its `latexmkrc`, and opens no PDF viewer (`-view=none`): over SSH there is 
 `[q`, `<leader>xq`). Only the last pdflatex run of a build counts, each error once; an undefined command is
 named (`Undefined control sequence. \badmacro`) - beamer reports every error of a frame at its
 `\end{frame}`, the name says which line it was. One notification per build says how it went.
+
+**The preview** starts with the watch's first build and stops with it: the PDF as pictures on
+http://localhost:8000, in the browser of any machine - over SSH tunnel the port to your own
+(`ssh -L 8000:localhost:8000 <host>`, PowerShell and PuTTY alike). Each build swaps the pictures in place,
+the scroll position stays; the pages that changed in it are outlined and listed in the bar at the top
+(**only changed** hides the rest). It needs `pdftoppm` (poppler-utils) and Python; another port:
+`require("devsuite.latex").preview_port = 8001`. The PDF is the one latexmk writes - with
+`$out_dir = 'build'` in the `latexmkrc`, `build/main.pdf`.
 
 **latexmk** comes from the PATH, else from TeX Live's own install folders (`~/texlive/<year>`,
 `/usr/local/texlive/<year>`, the newest year); pdflatex and biber from the same TeX Live.

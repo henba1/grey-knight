@@ -2488,6 +2488,41 @@ test("LaTeX: a build puts its error in the quickfix list and on the line", funct
   vim.cmd("bwipeout!")
 end)
 
+test("LaTeX: the watch starts the preview; the page that changed is marked, stopping ends it", function()
+  local latex = require("devsuite.latex")
+  if not latex.latexmk() then H.skip("no latexmk on this machine") end
+  if vim.fn.executable("pdftoppm") == 0 then H.skip("no pdftoppm (poppler-utils)") end
+  latex.preview_port = 0 -- a free port: not the 8000 of a preview the user runs, nor another program's
+  local function state()
+    if not latex.state.preview_url then return {} end
+    local out = vim.fn.system({ require("devsuite.util").system_python(), "-c",
+      "import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=2).read().decode())",
+      latex.state.preview_url .. "/state" })
+    local ok, decoded = pcall(vim.json.decode, out)
+    return ok and decoded or {}
+  end
+  local main = H.file("talk.tex", { "\\documentclass{article}", "\\begin{document}", "One", "\\newpage", "Two", "\\end{document}" })
+  vim.cmd.edit(main)
+  local ok, err = pcall(function()
+    latex.toggle_watch()
+    assert(H.wait(90000, function() return latex.state.preview_url end), "the preview did not start")
+    assert(H.wait(20000, function() return state().version == 1 end), "no first render: " .. vim.inspect(state()))
+    assert(state().pages == 2 and #state().changed == 0, vim.inspect(state()))
+    vim.api.nvim_buf_set_lines(0, 4, 5, false, { "Two, changed" })
+    vim.cmd("write")
+    assert(H.wait(90000, function() return state().version == 2 end), "no second render: " .. vim.inspect(state()))
+    assert(vim.deep_equal(state().changed, { 2 }), vim.inspect(state()))
+    local preview = latex.state.preview
+    latex.toggle_watch()
+    assert(latex.state.preview == nil and H.wait(5000, function() return vim.fn.jobwait({ preview }, 0)[1] ~= -1 end),
+      "the preview outlived the watch")
+  end)
+  latex.stop()
+  latex.preview_port = 8000
+  vim.cmd("bwipeout!")
+  assert(ok, err)
+end)
+
 test("Tasks: stop, hide/show the output, status bar, watch, restart", function()
   local tasks = require("devsuite.tasks")
   vim.cmd.edit(H.file("loop.py", { "import time", "print('started', flush=True)", "time.sleep(30)" }))

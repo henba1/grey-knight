@@ -175,7 +175,7 @@ map("n", "<leader>rE", function() repl().send_cell() end,          { desc = "REP
 -- Errors go to the quickfix list and onto their lines, as a failed run's do.
 local function latex() return require("devsuite.latex") end
 map("n", "<leader>lb", function() latex().build() end,             { desc = "LaTeX: Build (latexmk)" })
-map("n", "<leader>lw", function() latex().toggle_watch() end,      { desc = "LaTeX: Watch (build on save, toggle)" })
+map("n", "<leader>lw", function() latex().toggle_watch() end,      { desc = "LaTeX: Watch (build on save + preview, toggle)" })
 map("n", "<leader>le", function() latex().show_errors() end,       { desc = "LaTeX: Errors of the last build (quickfix)" })
 
 -- ── Coding agent: Qwen Code or OpenCode (lua/integrations/agent.lua) ─
