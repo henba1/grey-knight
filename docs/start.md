@@ -3,7 +3,7 @@
 > The first launch, the start screen, the modes, tips - and what to do when something goes wrong.
 > [All topics](README.md) · every key on one page: [CHEATSHEET](../CHEATSHEET.md) · Leader = `Space`
 
-**In this file:** [First Launch](#first-launch) · [Dashboard](#dashboard) · [Mode Reference](#mode-reference) · [Reading These Docs in Neovim](#reading-these-docs-in-neovim) · [Which-key](#which-key) · [Centered Scrolling](#centered-scrolling) · [Quick Save](#quick-save) · [Recovering from Mistakes](#recovering-from-mistakes) · [When Something Goes Wrong](#when-something-goes-wrong)
+**In this file:** [First Launch](#first-launch) · [Dashboard](#dashboard) · [Mode Reference](#mode-reference) · [Easy Mode](#easy-mode) · [Reading These Docs in Neovim](#reading-these-docs-in-neovim) · [Which-key](#which-key) · [Centered Scrolling](#centered-scrolling) · [Quick Save](#quick-save) · [Recovering from Mistakes](#recovering-from-mistakes) · [When Something Goes Wrong](#when-something-goes-wrong)
 
 ## First Launch
 
@@ -37,6 +37,7 @@ The Grey Knight dashboard is the start screen.
 | `r` | Recent files |
 | `c` | Edit nvim config |
 | `s` | Restore last session |
+| `e` | Easy mode on / off (below) |
 | `a` | Open the AI agent (Qwen Code or OpenCode) |
 | `L` | Open Lazy plugin manager |
 | `q` | Quit |
@@ -69,6 +70,36 @@ command away:
 | **Visual** | `v` (char), `V` (line), `Ctrl+v` (block) | Selecting text |
 | **Command** | `:` | Running ex commands |
 | **Terminal** | `:ToggleTerm` | Shell inside nvim (`<leader>t*` = Qwen agent) |
+| **Easy** | `Alt+N` (any mode), `e` on the start screen, `:EasyMode` | A plain text editor's keys ([below](#easy-mode)) |
+
+## Easy Mode
+
+`Alt+N` switches **easy mode** on and off: windows with a file behave like a plain text editor (Notepad, VS
+Code) - you are always typing, and the keys are the usual ones. **EASY** in the bar above each file window says it
+is on; a click on it switches it off. It lasts for this session; terminals, the file tree, pickers and the agent's
+pane keep their own keys.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+S` | Save (a new file: asks for a name) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Shift+arrows`, `Shift+Home/End`, `Ctrl+Shift+arrows` | Select; typing replaces the selection, an arrow ends it; the mouse selects too |
+| `Ctrl+A` | Select all |
+| `Ctrl+C` / `Ctrl+X` | Copy / cut the selection - without one, the line |
+| `Ctrl+V` | Paste (Windows Terminal pastes its own clipboard: what you copied on Windows) |
+| `Ctrl+F` | Find (`Enter` jumps there) |
+| `Ctrl+R` | Replace in this file (grug-far - as in IntelliJ) |
+| `Ctrl+G` | Go to line |
+| `Ctrl+/` | Comment / uncomment the line or the selection |
+| `Tab` / `Shift+Tab` | Indent / outdent the selection (`Shift+Tab`: the line) |
+| `Ctrl+Backspace` / `Ctrl+Del` | Delete the word before / after |
+| `Ctrl+O` / `Ctrl+N` / `Ctrl+W` | Open a file (picker) / new file / close the file (asks about unsaved changes) |
+| `Esc` | Normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
+| `F1` | These keys |
+
+In easy mode only `Ctrl+C` / `Ctrl+X` reach the clipboard - text you type over or delete does not. Over SSH a copy
+goes to your own computer's clipboard (OSC 52). `Alt+N` again (or `:EasyMode off`) brings Neovim's keys back as they
+were. `:EasyMode on` / `off` switch it from a command.
 
 ---
 

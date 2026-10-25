@@ -72,7 +72,9 @@ function M.render()
   local file = active and "GreyKnightWinbar" or "GreyKnightWinbarNC"
   local btn = active and "GreyKnightWinbarButton" or "GreyKnightWinbarButtonNC"
   local dot = vim.bo[buf].modified and "%#GreyKnightWinbarModified# ●" or ""
-  return ("%%#%s#%%< %s%s%%#%s#%%=%s%s%s"):format(file, name:gsub("%%", "%%%%"), dot, file,
+  -- easy mode on (config/easymode.lua): said on every file window, a click switches it off
+  local easy = vim.g.greyknight_easymode and button(win, "easy_off", "EASY", "GreyKnightWinbarModified") or ""
+  return ("%%#%s#%%< %s%s%%#%s#%%=%s%s%s%s"):format(file, name:gsub("%%", "%%%%"), dot, file, easy,
     button(win, "split_right", "◫", btn), button(win, "split_below", "⊟", btn), button(win, "close", "×", btn))
 end
 
@@ -105,6 +107,7 @@ local function split(win, cmd)
   vim.cmd(cmd)
 end
 
+function M.easy_off() require("config.easymode").disable() end
 function M.split_right(win) split(win, "rightbelow vsplit") end
 function M.split_below(win) split(win, "belowright split") end
 

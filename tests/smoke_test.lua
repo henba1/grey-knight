@@ -5081,4 +5081,54 @@ test("Docs: the CHEATSHEET lists every leader and F key", function()
   assert(#missing == 0, "not in the CHEATSHEET: " .. table.concat(missing, ", "))
 end)
 
+test("Easy mode: Alt+N - a plain editor's keys in file windows, typing stays on; Esc one command; off as before", function()
+  -- a GreyKnight of its own, typed into over RPC as from a terminal: this test's feedkeys end insert mode after each
+  -- key, so they cannot show that it stays (and SSH_TTY hidden: OSC 52 would write into the RPC channel)
+  local file = H.file("easy.txt", { "first line" })
+  local ch = vim.fn.jobstart({ vim.v.progpath, "--embed", "--headless", "-i", "NONE",
+    "-c", "lua local last = { { '' }, 'v' }; vim.g.clipboard = { name = 'test', copy = { ['+'] = function(l, t) last = { l, t } end,"
+      .. " ['*'] = function() end }, paste = { ['+'] = function() return last end, ['*'] = function() return { {}, 'v' } end } }",
+    file }, { rpc = true, env = { SSH_TTY = "", SSH_CONNECTION = "" } })
+  assert(ch > 0, "no child Neovim")
+  local function rpc(method, ...) return vim.rpcrequest(ch, method, ...) end
+  local function mode() return rpc("nvim_get_mode").mode end
+  local function text() return table.concat(rpc("nvim_buf_get_lines", 0, 0, -1, false), "|") end
+  local function type(keys, want_mode)
+    rpc("nvim_input", keys)
+    assert(H.wait(3000, function() return mode() == want_mode end), keys .. ": mode " .. mode() .. ", not " .. want_mode)
+  end
+  local ok, err = pcall(function()
+    assert(H.wait(20000, function() return rpc("nvim_eval", "exists(':EasyMode')") == 2 end), "the child did not start")
+    local before = rpc("nvim_call_function", "maparg", { "<C-s>", "i" })
+    type("<M-n>", "i")
+    type("<C-End> second", "i")
+    assert(text() == "first line second", text())
+    type("<S-Home>", "s")
+    type("<C-c>", "s")
+    assert(rpc("nvim_call_function", "getreg", { "+" }) == "first line second", "Ctrl+C did not copy")
+    type("<Right>", "i")
+    type("<C-a>", "s")
+    type("<C-x>", "i")
+    assert(text() == "", "Ctrl+X: " .. text())
+    type("<C-z>", "i")
+    assert(text() == "first line second", "Ctrl+Z: " .. text())
+    type("<End><S-Left><S-Left>X", "i")
+    assert(text() == "first line secoX", "typing over the selection: " .. text())
+    assert(rpc("nvim_call_function", "getreg", { "+" }) == "first line second", "typing over a selection reached the clipboard")
+    type("<C-h>", "i")
+    assert(text() == "first line ", "Ctrl+Backspace: " .. text())
+    type("<C-s>", "i")
+    assert(H.wait(2000, function() return vim.fn.readfile(file)[1] == "first line " end), "Ctrl+S did not save")
+    type("<Esc>", "niI")
+    type("0", "i")
+    type("<Esc>:botright split | enew | setlocal buftype=nofile<CR>", "n") -- a window without a file: Neovim's keys
+    type("<C-w>p", "i") -- the file again: typing
+    type("<M-n>", "n")
+    assert(rpc("nvim_call_function", "maparg", { "<C-s>", "i" }) == before, "Ctrl+S in insert mode not as before")
+    assert(rpc("nvim_get_option_value", "selection", {}) == "inclusive", "'selection' not back")
+  end)
+  pcall(vim.fn.jobstop, ch)
+  assert(ok, err)
+end)
+
 H.report("Smoke Test Results")
