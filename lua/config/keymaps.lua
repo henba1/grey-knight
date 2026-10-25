@@ -17,6 +17,7 @@ vim.api.nvim_create_autocmd("User", {
         { "<leader>f",  group = "Find (Picker)" },
         { "<leader>g",  group = "Git" },
         { "<leader>h",  group = "Harpoon/Hex" },
+        { "<leader>l",  group = "LaTeX" },
         { "<leader>m",  group = "Bookmarks" },
         { "<leader>p",  group = "Session" },
         { "<leader>r",  group = "Run/Tasks/REPL" },
@@ -168,6 +169,14 @@ map("n", "<leader>ri", function() repl().toggle() end,             { desc = "REP
 map("n", "<leader>re", function() repl().send_line() end,          { desc = "REPL: Send line" })
 map("v", "<leader>re", function() repl().send_selection() end,     { desc = "REPL: Send selection" })
 map("n", "<leader>rE", function() repl().send_cell() end,          { desc = "REPL: Send cell (# %%)" })
+
+-- ── LaTeX: latexmk builds the document of the file (lua/devsuite/latex.lua) ─
+-- The document: the file's "% !TEX root = ..." line, the file itself (\documentclass) or the main.tex above it.
+-- Errors go to the quickfix list and onto their lines, as a failed run's do.
+local function latex() return require("devsuite.latex") end
+map("n", "<leader>lb", function() latex().build() end,             { desc = "LaTeX: Build (latexmk)" })
+map("n", "<leader>lw", function() latex().toggle_watch() end,      { desc = "LaTeX: Watch (build on save, toggle)" })
+map("n", "<leader>le", function() latex().show_errors() end,       { desc = "LaTeX: Errors of the last build (quickfix)" })
 
 -- ── Coding agent: Qwen Code or OpenCode (lua/integrations/agent.lua) ─
 local function agent() return require("integrations.agent") end

@@ -5014,7 +5014,7 @@ end)
 
 test("Docs: every documented <leader> key exists", function()
   -- group prefixes in headings, LSP keys (exist once a server attaches), the AI Dashboard bridge (<leader>W*)
-  local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>m"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
+  local known = { ["<leader>a"] = 1, ["<leader>f"] = 1, ["<leader>g"] = 1, ["<leader>l"] = 1, ["<leader>m"] = 1, ["<leader>r"] = 1, ["<leader>t"] = 1,
     ["<leader>x"] = 1, ["<leader>ca"] = 1, ["<leader>rn"] = 1, ["<leader>D"] = 1, ["<leader>t1/t2/t3"] = 1,
     -- gitsigns' keys: in files of a git repository (the Git test checks them there); <leader>gu: in a codediff review
     ["<leader>gs"] = 1, ["<leader>gr"] = 1, ["<leader>gp"] = 1, ["<leader>gb"] = 1, ["<leader>gu"] = 1 }

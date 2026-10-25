@@ -33,7 +33,8 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   the new green, the changed words stronger; stage or discard a hunk right there (`<leader>gv`) ([git](docs/git.md))
 - **Bash + Python dev suite** — one-key runs as tasks in a real terminal (`input()`, `read`, `sudo` work), project
   scripts, cells, pytest; errors marked in the code; debugging Python and bash; an IPython / bash REPL; a failed run
-  goes to the agent with one key ([running and debugging](docs/run-debug.md))
+  goes to the agent with one key; LaTeX builds on save with its errors in the code
+  ([running and debugging](docs/run-debug.md))
 - **Java and Angular, the IntelliJ way** — jdtls with the project's JDK and IntelliJ's Maven settings, TestNG / JUnit
   and debugging, angularls, ESLint; no IntelliJ needed ([G3-DEVELOPMENT.md](G3-DEVELOPMENT.md): the guide for G3)
 - **A file tree that does the work** — moves and copies by the tree, searches files and folders fuzzy or by regex
@@ -182,6 +183,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── runner.lua          what to run: file / args / sudo / project scripts / selection / cell / pytest
 │   ├── tasks.lua           runs as overseer tasks: output window, args memory, watch, fix with Qwen
 │   ├── errors.lua          tracebacks + bash errors -> quickfix + marks in the code
+│   ├── latex.lua           latexmk: build / watch (-pvc), its errors -> quickfix + marks in the code
 │   ├── repl.lua            IPython / python / bash REPL, bracketed paste (exec() before 3.13)
 │   ├── debug.lua           Python (debugpy) + bash (bashdb) debugging, F5
 │   └── util.lua            venv, #!, cells, dedent, pytest node ids

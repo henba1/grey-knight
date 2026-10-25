@@ -1,6 +1,6 @@
 # GreyKnight - Running and debugging
 
-> Scripts as tasks in a real terminal, the REPL, errors marked in the code, debugging Python and bash.
+> Scripts as tasks in a real terminal, the REPL, errors marked in the code, LaTeX builds, debugging Python and bash.
 > [All topics](README.md) · every key on one page: [CHEATSHEET](../CHEATSHEET.md) · Leader = `Space`
 
 **In this file:** [Running Scripts & REPL](#running-scripts-repl) · [Debugging (DAP)](#debugging-dap)
@@ -101,6 +101,27 @@ Python code reaches the REPL as **one bracketed paste**: blank lines inside func
 the block, and a snippet with `input()` waits for you instead of being fed the next line of the
 snippet. The cursor stays in the code, so you can keep sending. Use the REPL to keep state
 between snippets, `<leader>rs` / `<leader>rc` for a clean run.
+
+### LaTeX
+
+| Key | Action |
+|-----|--------|
+| `<leader>lb` | Build the document of the current file once (`latexmk`, saved first) |
+| `<leader>lw` | Watch: `latexmk -pvc` builds it again on every save (toggle) |
+| `<leader>le` | The last build's errors in the quickfix window |
+
+**The document** of a `.tex` file is the one its `% !TEX root = ../main.tex` line names, else the file
+itself when it has a `\documentclass`, else the `main.tex` of the nearest folder above it - so `<leader>lw`
+in a section file of a thesis or a talk watches the whole document. latexmk runs in the document's folder
+with its `latexmkrc`, and opens no PDF viewer (`-view=none`): over SSH there is none.
+
+**Errors** go where a failed run's go: onto their lines in the code and into the quickfix list (`]q` /
+`[q`, `<leader>xq`). Only the last pdflatex run of a build counts, each error once; an undefined command is
+named (`Undefined control sequence. \badmacro`) - beamer reports every error of a frame at its
+`\end{frame}`, the name says which line it was. One notification per build says how it went.
+
+**latexmk** comes from the PATH, else from TeX Live's own install folders (`~/texlive/<year>`,
+`/usr/local/texlive/<year>`, the newest year); pdflatex and biber from the same TeX Live.
 
 ---
 
