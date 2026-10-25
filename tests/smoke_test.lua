@@ -3934,6 +3934,21 @@ end)
 -- ── Round 6 (2026-10-21): folders you cannot read, oil, formatting, sessions with %, small daily things ───────────
 -- The Windows error log: "Failed to watch ...\Anwendungsdaten: EPERM" - legacy junctions in the home folder that no one
 -- may list; on Linux another user's folder. Opened in the tree it stays empty, and watching it was an error each time.
+test("Explorer: the LaTeX keys in the tree act on the item under its cursor (a folder: its main.tex)", function()
+  local latex = require("devsuite.latex")
+  with_explorer({ "talk/main.tex", "talk/bib.bib", "notes.txt" }, function(p, root, x)
+    vim.fn.writefile({ "\\documentclass{beamer}", "\\begin{document}", "\\end{document}" }, root .. "/talk/main.tex")
+    vim.api.nvim_set_current_win(p.list.win.win)
+    x.on("talk/bib.bib")
+    assert(latex.current_file() == root .. "/talk/bib.bib", tostring(latex.current_file()))
+    assert(latex.main(latex.current_file()) == root .. "/talk/main.tex", "bib.bib: " .. tostring(latex.main(latex.current_file())))
+    x.on("talk")
+    assert(latex.main(latex.current_file()) == root .. "/talk/main.tex", "the folder: " .. tostring(latex.current_file()))
+    x.on("notes.txt")
+    assert(latex.main(latex.current_file()) == nil, "notes.txt has no document")
+  end, { open = { "talk" } })
+end)
+
 test("Explorer: a folder it cannot read opens empty with a word why - no error, the rest of the tree works", function()
   with_explorer({ "locked/secret.txt", "open/a.txt" }, function(p, root, x)
     local locked = root .. "/locked"

@@ -232,9 +232,31 @@ local function start(main, watch)
   return job
 end
 
+--- The file the keys act on: the current buffer's; in the file tree the item under its cursor (a folder: its
+--- main.tex); in a terminal or another window without a file, the file used before it. <leader>lw in the tree
+--- said "no document here" (2026-10-25): the tree's buffer has no file name.
+function M.current_file()
+  local buf = vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(buf)
+  if vim.bo[buf].buftype == "" and name ~= "" then return name end
+  if vim.bo[buf].filetype:match("^snacks_picker") then
+    local ok, item = pcall(function()
+      for _, p in ipairs(Snacks.picker.get({ source = "explorer" })) do
+        if not p.closed then return p:current() end
+      end
+    end)
+    if ok and item and item.file then
+      if vim.fn.isdirectory(item.file) == 0 then return item.file end
+      return vim.fs.normalize(item.file) .. "/main.tex"
+    end
+  end
+  local alt = vim.fn.bufnr("#")
+  if alt > 0 and vim.bo[alt].buftype == "" then return vim.api.nvim_buf_get_name(alt) end
+  return name
+end
+
 local function current_main()
-  local file = vim.api.nvim_buf_get_name(0)
-  local main = M.main(file)
+  local main = M.main(M.current_file())
   if not main then notify("LaTeX: no document here - a .tex file with \\documentclass, or a main.tex above it", WARN) end
   return main
 end

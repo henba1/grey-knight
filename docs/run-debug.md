@@ -112,7 +112,8 @@ between snippets, `<leader>rs` / `<leader>rc` for a clean run.
 
 **The document** of a `.tex` file is the one its `% !TEX root = ../main.tex` line names, else the file
 itself when it has a `\documentclass`, else the `main.tex` of the nearest folder above it - so `<leader>lw`
-in a section file of a thesis or a talk watches the whole document. latexmk runs in the document's folder
+in a section file of a thesis or a talk watches the whole document. In the file tree the keys act on the item under
+its cursor (a folder: its `main.tex`); in a terminal, on the file you used before it. latexmk runs in the document's folder
 with its `latexmkrc`, and opens no PDF viewer (`-view=none`): over SSH there is none.
 
 **Errors** go where a failed run's go: onto their lines in the code and into the quickfix list (`]q` /
