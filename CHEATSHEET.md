@@ -4,7 +4,7 @@
 > On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
 > How it all works, a file per topic: [the guide](docs/README.md).
 
-**Contents:** [General](#general) · [AI](#ai-qwen-code-opencode-or-claude-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [LaTeX](#latex-leaderl) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
+**Contents:** [General](#general) · [Easy mode](#easy-mode-altn) · [AI](#ai-qwen-code-opencode-or-claude-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [LaTeX](#latex-leaderl) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
 
 ## General
 
@@ -13,10 +13,34 @@
 | `<leader>w` | Save |
 | `<leader>Q` | Quit all **without saving** (`:qa!`) |
 | `<leader>;` | Dashboard |
+| `Alt+N` / `:EasyMode` | Easy mode on / off: a plain text editor's keys in file windows ([below](#easy-mode-altn)) |
 | `:GreyKnightStyle oled` / `greyknight` | The look: neon on true black (OLED) or on cyberdream's grey - kept for this machine |
 | `<Esc>` | Clear the search highlight |
 | `<C-d>` / `<C-u>` | Half a page down / up, cursor centered |
 | `n` / `N` | Next / previous search hit, centered |
+
+## Easy Mode — `Alt+N`
+
+File windows as in a plain text editor: always typing, the usual keys. **EASY** in the window bar (a click: off);
+for this session. Terminals, the tree, pickers and the agent's pane keep their keys.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+S` | Save (a new file: asks for a name) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Shift+arrows`, `Shift+Home/End`, `Ctrl+Shift+arrows` | Select; typing replaces the selection, an arrow ends it; the mouse selects too |
+| `Ctrl+A` | Select all |
+| `Ctrl+C` / `Ctrl+X` | Copy / cut the selection - without one, the line |
+| `Ctrl+V` | Paste (Windows Terminal pastes its own clipboard: what you copied on Windows) |
+| `Ctrl+F` | Find (`Enter` jumps there) |
+| `Ctrl+R` | Replace in this file (grug-far - as in IntelliJ) |
+| `Ctrl+G` | Go to line |
+| `Ctrl+/` | Comment / uncomment the line or the selection |
+| `Tab` / `Shift+Tab` | Indent / outdent the selection (`Shift+Tab`: the line) |
+| `Ctrl+Backspace` / `Ctrl+Del` | Delete the word before / after |
+| `Ctrl+O` / `Ctrl+N` / `Ctrl+W` | Open a file (picker) / new file / close the file (asks about unsaved changes) |
+| `Esc` | Normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
+| `F1` | These keys |
 
 ## AI (Qwen Code, OpenCode or Claude Code) — `<leader>a`
 
@@ -406,6 +430,7 @@ the agent, help or quickfix.
 │   ├── termname.lua          ← a terminal's name in the statusline: an agent's, else its program and number
 │   ├── style.lua             ← the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
 │   ├── winbar.lua            ← a bar per file window: its name, split right / below and close buttons
+│   ├── easymode.lua          ← easy mode (Alt+N): a plain text editor's keys in file windows
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest

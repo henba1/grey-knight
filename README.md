@@ -42,6 +42,8 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   ([files](docs/files.md))
 - **IntelliJ habits** — Ctrl+Click goes to a declaration (on it: its usages), bookmarks on lines (`<leader>mm`,
   Shift+F11 lists them), the buffers in the order you used them (`<leader><Tab>`)
+- **Easy mode** — `Alt+N`: file windows as in a plain text editor - always typing, Ctrl+S / Z / Y / C / X / V,
+  Shift+arrows select; `Esc` is Neovim's normal mode for one command ([easy mode](docs/start.md#easy-mode))
 - **Windows and terminals** — `Ctrl+H/J/K/L` between windows and terminals alike, `Ctrl+arrows` resize, a terminal
   takes your keys as soon as you go to it; sessions per project and git branch ([windows](docs/windows.md))
 - **Over SSH** — copies over OSC 52, PuTTY's keys understood ([remote](docs/ssh.md))
@@ -167,6 +169,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── termname.lua        a terminal's name in the statusline: an agent's (and where it works), else its program
 │   ├── style.lua           the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
 │   ├── winbar.lua          a bar per file window: its name, split right / below and close buttons
+│   ├── easymode.lua        easy mode (Alt+N): a plain text editor's keys in file windows - always typing
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)

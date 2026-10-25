@@ -8,6 +8,7 @@ require("config.errorlog").setup() -- warnings + errors -> ~/.local/state/nvim/g
 require("config.keymaps")   -- after plugins are loaded
 require("config.autocmds")
 require("config.winbar").setup() -- a bar per file window: its name, split / close buttons
+require("config.easymode").setup() -- Alt+N: a plain text editor's keys in file windows (this session)
 
 -- Optional: AI Dashboard bridge — only inside its Dev Environment (the session sets AIDASH_TOKEN)
 if vim.env.AIDASH_TOKEN then require("integrations.aidash").setup() end

@@ -24,6 +24,7 @@ return {
             { key = "r", desc = "Recent Files",    action = ":lua Snacks.dashboard.pick('oldfiles')" },
             { key = "c", desc = "Config",          action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
             { key = "s", desc = "Restore Session", section = "session" },
+            { key = "e", desc = "Easy Mode (plain editor keys, on / off)", action = ":EasyMode" },
             { key = "a", desc = "AI (" .. require("integrations.agent").backend().name .. ")",    action = ":lua vim.g.qwen_launch('agent', 'vertical')" },
             { key = "L", desc = "Lazy",            action = ":Lazy", enabled = package.loaded.lazy ~= nil },
             { key = "q", desc = "Quit",            action = ":qa" },
