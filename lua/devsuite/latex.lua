@@ -14,7 +14,12 @@ local function notify(msg, level)
   vim.notify(msg, level or vim.log.levels.INFO, { title = "LaTeX", id = "greyknight_latex" })
 end
 
-M.state = { job = nil, main = nil, items = {} }
+M.state = { job = nil, main = nil, items = {}, preview = nil, preview_url = nil }
+
+-- The preview a watch starts: the PDF as pictures on http://localhost:<port> (resources/latex_preview.py); 0 takes
+-- a free port (the tests)
+M.preview_port = 8000
+M.PREVIEW = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/resources/latex_preview.py"
 
 --- latexmk: on the PATH, else TeX Live's own install folders (~/texlive/<year>, /usr/local/texlive/<year>) - the
 --- newest year. TeX Live's installer leaves the PATH to you, and a Neovim started from a desktop or an SSH command
@@ -27,6 +32,16 @@ function M.latexmk()
   end
   table.sort(found)
   return found[#found]
+end
+
+--- A latexmkrc that applies to the document: in its folder, or the user's own.
+function M.has_rc(main)
+  local dir = vim.fn.fnamemodify(main, ":h")
+  local xdg = vim.env.XDG_CONFIG_HOME and vim.env.XDG_CONFIG_HOME ~= "" and vim.env.XDG_CONFIG_HOME or vim.fn.expand("~/.config")
+  for _, rc in ipairs({ dir .. "/latexmkrc", dir .. "/.latexmkrc", vim.fn.expand("~/.latexmkrc"), xdg .. "/latexmk/latexmkrc" }) do
+    if vim.fn.filereadable(rc) == 1 then return true end
+  end
+  return false
 end
 
 local function is_absolute(path) return path:match("^/") ~= nil or path:match("^%a:[/\\]") ~= nil end
@@ -128,16 +143,55 @@ local function finish(main, lines, failed)
     #items, #items == 1 and "" or "s", name, #items == 1 and "it" or "them"), WARN)
 end
 
+--- Start the preview of a watched document's PDF; the watch stops it. Over SSH the browser of your own machine
+--- shows it: ssh -L 8000:localhost:8000 <host>, then http://localhost:8000.
+function M.start_preview(pdf)
+  if M.state.preview then return end
+  if vim.fn.executable("pdftoppm") == 0 then
+    return notify("LaTeX: no preview - it needs pdftoppm (poppler-utils)", WARN)
+  end
+  local err = {}
+  local job = vim.fn.jobstart({ util.system_python(), M.PREVIEW, pdf, "--port", tostring(M.preview_port) }, {
+    on_stdout = function(id, data)
+      local port = table.concat(data):match("http://localhost:(%d+)")
+      if port and M.state.preview == id then
+        M.state.preview_url = "http://localhost:" .. port
+        vim.notify(("LaTeX: preview on %s - over SSH: ssh -L %s:localhost:%s <host>"):format(M.state.preview_url, port, port),
+          vim.log.levels.INFO, { title = "LaTeX", id = "greyknight_latex_preview" })
+      end
+    end,
+    on_stderr = function(_, data) vim.list_extend(err, data) end,
+    on_exit = function(id, code)
+      if M.state.preview == id then M.state.preview, M.state.preview_url = nil, nil end
+      -- 143: stopped (SIGTERM) - anything else is a preview that did not start: the port taken, ...
+      if code ~= 0 and code ~= 143 then
+        local msg = vim.trim(table.concat(err, " "))
+        notify("LaTeX: preview stopped - " .. (msg ~= "" and msg or ("exit " .. code)), WARN)
+      end
+    end,
+  })
+  if job > 0 then M.state.preview = job end
+end
+
+local function stop_preview()
+  if M.state.preview then vim.fn.jobstop(M.state.preview) end
+  M.state.preview, M.state.preview_url = nil, nil
+end
+
 local function start(main, watch)
   local latexmk = M.latexmk()
   if not latexmk then return notify("LaTeX: no latexmk - install TeX Live, or put its bin folder on the PATH", WARN) end
   local argv = { latexmk, "-interaction=nonstopmode", "-file-line-error" }
+  -- latexmk makes a DVI unless told otherwise: a PDF, unless a latexmkrc says how (lualatex, xelatex, $out_dir ...)
+  if not M.has_rc(main) then argv[#argv + 1] = "-pdf" end
   -- -view=none: latexmk -pvc would start a PDF viewer (there is none over SSH); the document is yours to show
   if watch then vim.list_extend(argv, { "-pvc", "-view=none" }) end
   argv[#argv + 1] = vim.fn.fnamemodify(main, ":t")
   local lines, partial = {}, ""
+  local root = vim.fn.fnamemodify(main, ":h")
+  local pdf = root .. "/" .. vim.fn.fnamemodify(main, ":t:r") .. ".pdf" -- unless latexmk says where (latexmkrc's $out_dir)
   local job = vim.fn.jobstart(argv, {
-    cwd = vim.fn.fnamemodify(main, ":h"),
+    cwd = root,
     env = {
       -- TeX wraps its messages at 79 columns: a long path or message came in two lines and was not found
       max_print_line = "10000",
@@ -148,16 +202,24 @@ local function start(main, watch)
       data[1] = partial .. data[1]
       partial = table.remove(data)
       for _, line in ipairs(data) do
+        -- where the PDF is: said when pdflatex ran, else listed when everything was up to date already
+        local out = line:match("^Latexmk: Log file says output to '(.-)'")
+          or (line:match("^Latexmk: All targets %((.-)%) are up%-to%-date") or ""):match("(%S+%.pdf)")
+        if out and out:match("%.pdf$") then pdf = vim.fs.normalize(is_absolute(out) and out or (root .. "/" .. out)) end
         if watch and line:match("^=== Watching for updated files") then
           finish(main, lines)
           lines = {}
+          if M.state.job and vim.fn.filereadable(pdf) == 1 then M.start_preview(pdf) end
         else
           lines[#lines + 1] = line
         end
       end
     end,
     on_exit = function(id, code)
-      if M.state.job == id then M.state.job, M.state.main = nil, nil end
+      if M.state.job == id then
+        M.state.job, M.state.main = nil, nil
+        stop_preview() -- latexmk ended on its own: nothing builds the PDF the preview shows
+      end
       -- a watch ends when it is stopped (its rounds reported themselves); a single build when it is done
       if not watch then
         if partial ~= "" then lines[#lines + 1] = partial end
@@ -187,7 +249,7 @@ function M.build()
 end
 
 --- Watch: latexmk -pvc builds the document again whenever one of its files changes (toggle). Each round's errors
---- replace the last round's.
+--- replace the last round's; after the first round the preview starts (M.start_preview).
 function M.toggle_watch()
   if M.state.job then
     local main = M.state.main
@@ -202,8 +264,9 @@ function M.toggle_watch()
   return start(main, true)
 end
 
---- Stop the watch (Neovim ends the job's process group: latexmk and the pdflatex it runs).
+--- Stop the watch and its preview (Neovim ends the job's process group: latexmk and the pdflatex it runs).
 function M.stop()
+  stop_preview()
   if M.state.job then vim.fn.jobstop(M.state.job) end
   M.state.job, M.state.main = nil, nil
 end
