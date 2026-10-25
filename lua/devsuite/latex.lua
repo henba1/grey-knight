@@ -192,8 +192,8 @@ local function registration(id) return M.hub_dir .. "/items/" .. id .. ".json" e
 --- Preview a PDF or an image: registered with the hub, which shows it at <url> until it is closed; done(id, url).
 function M.preview_open(path, done)
   path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
-  if path:lower():match("%.pdf$") and vim.fn.executable("pdftoppm") == 0 then
-    return notify("Preview: a PDF needs pdftoppm (poppler-utils)", WARN)
+  if path:lower():match("%.pdf$") and (vim.fn.executable("pdftoppm") == 0 or vim.fn.executable("pdfinfo") == 0) then
+    return notify("Preview: a PDF needs pdftoppm and pdfinfo (poppler-utils)", WARN)
   end
   local id = M.preview_id(path)
   vim.fn.mkdir(M.hub_dir .. "/items", "p")
