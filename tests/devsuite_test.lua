@@ -98,7 +98,7 @@ test("Run/Debug/REPL keymaps present", function()
     end
   end
   for _, lhs in ipairs({ " rr", " ra", " rR", " rp", " rP", " rl", " rc", " rx", " rt", " rT", " rw", " rk", " ro", " rL", " rf",
-    " ri", " re", " rE", " lb", " lw", " le", " dl", " dL", " dt", " de", " dc", " dh", " dq", " dR", "<F5>", "<F6>", "<F9>", "<F10>" }) do
+    " ri", " re", " rE", " lb", " lw", " le", " lo", " dl", " dL", " dt", " de", " dc", " dh", " dq", " dR", "<F5>", "<F6>", "<F9>", "<F10>" }) do
     assert(has("n", lhs), lhs .. " missing (normal)")
   end
   for _, lhs in ipairs({ " rs", " re", " aa", " ae" }) do
@@ -2492,12 +2492,12 @@ test("LaTeX: <leader>lw on an image or a PDF previews that file as it is - no bu
   local latex = require("devsuite.latex")
   assert(latex.previewable("/x/a.PNG") and latex.previewable("b.svg") and latex.previewable("c.pdf"), "previewable")
   assert(not latex.previewable("main.tex") and not latex.previewable("notes"), "a .tex / no extension: the build")
-  latex.preview_port = 0
+  latex.preview_port, latex.hub_linger = 0, 2
   local function get(path)
     local out = vim.fn.system({ require("devsuite.util").system_python(), "-c",
       "import sys, urllib.request; r = urllib.request.urlopen(sys.argv[1], timeout=2); b = r.read();"
         .. " print(r.headers['Content-Type'], len(b)); print(b.decode() if sys.argv[1].endswith('/state') else '')",
-      latex.state.preview_url .. path })
+      latex.state.preview_url .. path:gsub("^/", "") })
     return out
   end
   local function state()
@@ -2536,7 +2536,92 @@ test("LaTeX: <leader>lw on an image or a PDF previews that file as it is - no bu
     end
   end)
   latex.stop()
-  latex.preview_port = 8000
+  latex.preview_port, latex.hub_linger = 8000, 60
+  pcall(vim.cmd, "bwipeout!")
+  assert(ok, err)
+end)
+
+test("Preview hub: one port for all, at most --max (a new one closes the oldest), idle and orphaned ones close, it ends", function()
+  local latex = require("devsuite.latex")
+  local py = require("devsuite.util").system_python()
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir .. "/items", "p")
+  local png = vim.base64.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
+  local function image(name)
+    local path = dir .. "/" .. name
+    local f = assert(io.open(path, "wb")); f:write(png); f:close()
+    return path
+  end
+  local function register(id, path, owner, opened)
+    vim.fn.writefile({ vim.json.encode({ path = path, owner = owner, opened = opened }) }, dir .. "/items/" .. id .. ".json")
+  end
+  local gone = vim.fn.jobstart({ py, "-c", "pass" }) -- a process that has ended: a Neovim gone without a word
+  local gone_pid = vim.fn.jobpid(gone)
+  vim.fn.jobwait({ gone }, 5000)
+  register("a", image("a.png"), vim.fn.getpid(), 1)
+  register("b", image("b.png"), vim.fn.getpid(), 2)
+  register("c", image("c.png"), vim.fn.getpid(), 3)
+  register("orphan", image("o.png"), gone_pid, 4)
+  local hub = vim.fn.jobstart({ py, latex.PREVIEW, "--hub", dir, "--port", "0", "--max", "2", "--ttl", "3", "--linger", "2" })
+  local function port()
+    local ok, info = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(dir .. "/hub.json"), "")) end)
+    return ok and info.port or nil
+  end
+  local function get(path)
+    return vim.fn.system({ py, "-c", "import sys, urllib.request\ntry: print(urllib.request.urlopen(sys.argv[1], timeout=2).read().decode())"
+      .. "\nexcept Exception as e: print('ERR', e)", ("http://127.0.0.1:%d%s"):format(port() or 0, path) })
+  end
+  local ok, err = pcall(function()
+    assert(H.wait(10000, port), "the hub did not start")
+    local function ids()
+      local ok2, list = pcall(vim.json.decode, get("/api/items"))
+      return ok2 and type(list) == "table" and table.concat(vim.tbl_map(function(i) return i.id end, list), " ") or ""
+    end
+    assert(H.wait(5000, function() return ids() == "b c" end), "at most 2 (a, the oldest, closed; the orphan too): " .. ids())
+    assert(vim.fn.filereadable(dir .. "/items/a.json") == 0 and vim.fn.filereadable(dir .. "/items/orphan.json") == 0, "registrations left")
+    assert(get("/b/state"):find('"kind": "image"', 1, true), get("/b/state"))
+    assert(get("/a/state"):find("404", 1, true), "a closed: " .. get("/a/state"))
+    assert(H.wait(8000, function() return ids() == "" end), "idle ones not closed: " .. ids())
+    assert(H.wait(8000, function() return vim.fn.jobwait({ hub }, 0)[1] ~= -1 end), "the hub did not end")
+    assert(vim.fn.filereadable(dir .. "/hub.json") == 0, "hub.json left")
+  end)
+  pcall(vim.fn.jobstop, hub)
+  assert(ok, err)
+end)
+
+test("Preview: two at once on one port, each its own address; closing one leaves the other", function()
+  local latex = require("devsuite.latex")
+  latex.preview_port, latex.hub_linger = 0, 2
+  local a, b = H.file("one.png", {}), H.file("two.png", {})
+  for _, p in ipairs({ a, b }) do
+    local f = assert(io.open(p, "wb"))
+    f:write(vim.base64.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC"))
+    f:close()
+  end
+  local function code(url)
+    return vim.trim(vim.fn.system({ require("devsuite.util").system_python(), "-c",
+      "import sys, urllib.request\ntry: print(urllib.request.urlopen(sys.argv[1], timeout=2).status)\nexcept Exception as e: print(getattr(e, 'code', e))",
+      url .. "state" }))
+  end
+  local ok, err = pcall(function()
+    vim.cmd.edit(a)
+    latex.toggle_watch()
+    assert(H.wait(10000, function() return latex.state.preview_url end), "first preview")
+    local url_a = latex.state.preview_url
+    vim.cmd.edit(b)
+    latex.toggle_watch()
+    assert(H.wait(10000, function() return latex.state.preview_url ~= url_a and latex.state.preview_url end), "second preview")
+    local url_b = latex.state.preview_url
+    assert(url_a:match("^http://localhost:(%d+)/") == url_b:match("^http://localhost:(%d+)/"), url_a .. " / " .. url_b)
+    assert(H.wait(5000, function() return code(url_a) == "200" and code(url_b) == "200" end), code(url_a) .. " " .. code(url_b))
+    assert(vim.tbl_count(latex.previews()) == 2, vim.inspect(latex.previews()))
+    latex.toggle_watch() -- on two.png again: closes its preview only
+    assert(H.wait(5000, function() return code(url_b) == "404" end), "two.png still open: " .. code(url_b))
+    assert(code(url_a) == "200" and vim.tbl_count(latex.previews()) == 1, "one.png closed too")
+    assert(latex.preview_id(a) == latex.preview_id(a) and latex.preview_id(a):match("^one%-png%-%x%x%x%x%x%x$"), latex.preview_id(a))
+  end)
+  latex.stop()
+  latex.preview_port, latex.hub_linger = 8000, 60
   pcall(vim.cmd, "bwipeout!")
   assert(ok, err)
 end)
@@ -2545,12 +2630,12 @@ test("LaTeX: the watch starts the preview; the page that changed is marked, stop
   local latex = require("devsuite.latex")
   if not latex.latexmk() then H.skip("no latexmk on this machine") end
   if vim.fn.executable("pdftoppm") == 0 then H.skip("no pdftoppm (poppler-utils)") end
-  latex.preview_port = 0 -- a free port: not the 8000 of a preview the user runs, nor another program's
+  latex.preview_port, latex.hub_linger = 0, 2 -- a free port: not the user's 8000, nor another program's
   local function state()
     if not latex.state.preview_url then return {} end
     local out = vim.fn.system({ require("devsuite.util").system_python(), "-c",
       "import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=2).read().decode())",
-      latex.state.preview_url .. "/state" })
+      latex.state.preview_url .. "state" })
     local ok, decoded = pcall(vim.json.decode, out)
     return ok and decoded or {}
   end
@@ -2565,13 +2650,17 @@ test("LaTeX: the watch starts the preview; the page that changed is marked, stop
     vim.cmd("write")
     assert(H.wait(90000, function() return state().version == 2 end), "no second render: " .. vim.inspect(state()))
     assert(vim.deep_equal(state().changed, { 2 }), vim.inspect(state()))
-    local preview = latex.state.preview
+    local url = latex.state.preview_url
     latex.toggle_watch()
-    assert(latex.state.preview == nil and H.wait(5000, function() return vim.fn.jobwait({ preview }, 0)[1] ~= -1 end),
-      "the preview outlived the watch")
+    assert(latex.state.preview == nil and next(latex.previews()) == nil, "the watch's preview still listed")
+    assert(H.wait(5000, function()
+      return vim.fn.system({ require("devsuite.util").system_python(), "-c",
+        "import sys, urllib.request\ntry: urllib.request.urlopen(sys.argv[1], timeout=2); print('open')\nexcept Exception as e: print(e)",
+        url .. "state" }):find("404", 1, true)
+    end), "the preview outlived the watch")
   end)
   latex.stop()
-  latex.preview_port = 8000
+  latex.preview_port, latex.hub_linger = 8000, 60
   vim.cmd("bwipeout!")
   assert(ok, err)
 end)

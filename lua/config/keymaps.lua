@@ -176,6 +176,7 @@ map("n", "<leader>rE", function() repl().send_cell() end,          { desc = "REP
 local function latex() return require("devsuite.latex") end
 map("n", "<leader>lb", function() latex().build() end,             { desc = "LaTeX: Build (latexmk)" })
 map("n", "<leader>lw", function() latex().toggle_watch() end,      { desc = "LaTeX: Watch (build on save + preview; a PDF / image: its preview; toggle)" })
+map("n", "<leader>lo", function() latex().list_previews() end,     { desc = "Preview: the open ones and their addresses" })
 map("n", "<leader>le", function() latex().show_errors() end,       { desc = "LaTeX: Errors of the last build (quickfix)" })
 
 -- ── Coding agent: Qwen Code or OpenCode (lua/integrations/agent.lua) ─

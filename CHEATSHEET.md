@@ -140,6 +140,7 @@ The document of the file: its `% !TEX root = ...` line, the file itself (`\docum
 | `<leader>lb` | n | Build once (`latexmk`, saved first) |
 | `<leader>lw` | n | Watch: `latexmk -pvc` builds on every save, the PDF on http://localhost:8000 - changed pages marked (toggle). On a PDF or an image: that file in the browser, no build |
 | `<leader>le` | n | The last build's errors (quickfix) |
+| `<leader>lo` | n | The open previews and their addresses - all of them on http://localhost:8000/ (one port for up to 20) |
 
 ## File Explorer — `<leader>e`
 

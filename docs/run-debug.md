@@ -109,6 +109,7 @@ between snippets, `<leader>rs` / `<leader>rc` for a clean run.
 | `<leader>lb` | Build the document of the current file once (`latexmk`, saved first) |
 | `<leader>lw` | Watch: `latexmk -pvc` builds it again on every save, and the preview shows the PDF (toggle). On a PDF or an image: the preview of that file, no build |
 | `<leader>le` | The last build's errors in the quickfix window |
+| `<leader>lo` | The open previews and their addresses |
 
 **The document** of a `.tex` file is the one its `% !TEX root = ../main.tex` line names, else the file
 itself when it has a `\documentclass`, else the `main.tex` of the nearest folder above it - so `<leader>lw`
@@ -121,13 +122,18 @@ with its `latexmkrc`, and opens no PDF viewer (`-view=none`): over SSH there is 
 named (`Undefined control sequence. \badmacro`) - beamer reports every error of a frame at its
 `\end{frame}`, the name says which line it was. One notification per build says how it went.
 
-**The preview** starts with the watch's first build and stops with it: the PDF as pictures on
-http://localhost:8000, in the browser of any machine - over SSH tunnel the port to your own
-(`ssh -L 8000:localhost:8000 <host>`, PowerShell and PuTTY alike). Each build swaps the pictures in place,
+**The preview** starts with the watch's first build and stops with it: the PDF as pictures in the browser of any
+machine - over SSH tunnel port 8000 to your own (`ssh -L 8000:localhost:8000 <host>`, PowerShell and PuTTY alike).
+One server shows **every preview** of yours - from each Neovim and SSH session - on that one port, each file at an
+address of its own that stays the same (`http://localhost:8000/main-pdf-3fa2c1/`), and the list of them at
+http://localhost:8000/ (`<leader>lo` says them too). At most 20 are open: a new one closes the oldest, whose page
+then says so. One closes after 4 hours without a view (an open tab counts) or a change, and when the Neovim that
+opened it ends; the server ends a minute after its last. Port 8000 taken by another program: it takes the next free
+one up to 8019, and the notification names the tunnel for it. Each build swaps the pictures in place,
 the scroll position stays; the pages that changed in it are outlined and listed in the bar at the top
 (**only changed** hides the rest). Two views: the **overview** of all pages, and **one slide** at a time as large as the
-window, with a strip of the others below - a click on a page or `S`; `←` `→` / Space go on, `Esc` back. It needs `pdftoppm` (poppler-utils) and Python; another port:
-`require("devsuite.latex").preview_port = 8001`. The PDF is the one latexmk writes - with
+window, with a strip of the others below - a click on a page or `S`; `←` `→` / Space go on, `Esc` back. It needs `pdftoppm` (poppler-utils) and Python; other numbers:
+`require("devsuite.latex")`'s `preview_port`, `preview_ports`, `preview_max`, `preview_ttl` (seconds). The PDF is the one latexmk writes - with
 `$out_dir = 'build'` in the `latexmkrc`, `build/main.pdf`.
 
 **A PDF or an image** (png, jpg, gif, svg, webp, bmp, avif, ico): `<leader>lw` on it - in its window or in the file

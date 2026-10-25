@@ -14,11 +14,17 @@ local function notify(msg, level)
   vim.notify(msg, level or vim.log.levels.INFO, { title = "LaTeX", id = "greyknight_latex" })
 end
 
-M.state = { job = nil, main = nil, items = {}, preview = nil, preview_url = nil, previewed = nil }
+-- previews: this Neovim's open ones, id -> { path, url }; preview / preview_url: the last one opened; watch_preview:
+-- the one of the watch's PDF
+M.state = { job = nil, main = nil, items = {}, previews = {}, preview = nil, preview_url = nil, watch_preview = nil }
 
--- The preview a watch starts: the PDF as pictures on http://localhost:<port> (resources/latex_preview.py); 0 takes
--- a free port (the tests)
-M.preview_port = 8000
+-- The previews: one server (the hub, resources/latex_preview.py --hub) for every Neovim and SSH session of this user,
+-- each file at http://localhost:<port>/<id>/ and the list of them at /. One port, so one tunnel shows them all
+-- (OpenSSH forwards no port ranges). It takes the first free one of preview_port .. +preview_ports-1; at most
+-- preview_max open (a new one closes the oldest); one closes after preview_ttl seconds without a view or a change,
+-- or when its Neovim ends; the hub ends hub_linger seconds after its last. preview_port 0: any free port (tests).
+M.preview_port, M.preview_ports, M.preview_max, M.preview_ttl, M.hub_linger = 8000, 20, 20, 4 * 3600, 60
+M.hub_dir = vim.fn.stdpath("state") .. "/greyknight/preview"
 M.PREVIEW = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/resources/latex_preview.py"
 
 --- latexmk: on the PATH, else TeX Live's own install folders (~/texlive/<year>, /usr/local/texlive/<year>) - the
@@ -143,41 +149,115 @@ local function finish(main, lines, failed)
     #items, #items == 1 and "" or "s", name, #items == 1 and "it" or "them"), WARN)
 end
 
---- Start the preview of a watched document's PDF; the watch stops it. Over SSH the browser of your own machine
---- shows it: ssh -L 8000:localhost:8000 <host>, then http://localhost:8000.
-function M.start_preview(pdf)
-  if M.state.preview then return end
-  if pdf:lower():match("%.pdf$") and vim.fn.executable("pdftoppm") == 0 then
-    return notify("LaTeX: no preview - a PDF needs pdftoppm (poppler-utils)", WARN)
-  end
+-- The hub's port, when it runs (its hub.json, and its process alive)
+local function hub_port()
+  local ok, info = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(M.hub_dir .. "/hub.json"), "")) end)
+  if ok and type(info) == "table" and info.pid and vim.uv.kill(info.pid, 0) == 0 then return info.port end
+end
+
+--- The hub's port in done(port): the one running, else one started (detached - it serves the other Neovims too and
+--- ends by itself). done(nil) when it did not come up.
+function M.ensure_hub(done)
+  local port = hub_port()
+  if port then return done(port) end
   local err = {}
-  local job = vim.fn.jobstart({ util.system_python(), M.PREVIEW, pdf, "--port", tostring(M.preview_port) }, {
-    on_stdout = function(id, data)
-      local port = table.concat(data):match("http://localhost:(%d+)")
-      if port and M.state.preview == id then
-        M.state.preview_url = "http://localhost:" .. port
-        vim.notify(("Preview of %s on %s - over SSH: ssh -L %s:localhost:%s <host>"):format(
-          vim.fn.fnamemodify(pdf, ":t"), M.state.preview_url, port, port),
-          vim.log.levels.INFO, { title = "LaTeX", id = "greyknight_latex_preview" })
-      end
-    end,
-    on_stderr = function(_, data) vim.list_extend(err, data) end,
-    on_exit = function(id, code)
-      if M.state.preview == id then M.state.preview, M.state.preview_url = nil, nil end
-      -- 143: stopped (SIGTERM) - anything else is a preview that did not start: the port taken, ...
-      if code ~= 0 and code ~= 143 then
+  vim.fn.mkdir(M.hub_dir .. "/items", "p")
+  vim.fn.jobstart({ util.system_python(), M.PREVIEW, "--hub", M.hub_dir, "--port", tostring(M.preview_port),
+    "--ports", tostring(M.preview_ports), "--max", tostring(M.preview_max), "--ttl", tostring(M.preview_ttl),
+    "--linger", tostring(M.hub_linger) }, { detach = true, on_stderr = function(_, data) vim.list_extend(err, data) end })
+  local tries = 0
+  local function poll()
+    port = hub_port()
+    tries = tries + 1
+    if port or tries > 100 then
+      if not port then
         local msg = vim.trim(table.concat(err, " "))
-        notify("LaTeX: preview stopped - " .. (msg ~= "" and msg or ("exit " .. code)), WARN)
+        notify("Preview: the server did not start" .. (msg ~= "" and (" - " .. msg) or ""), WARN)
       end
-    end,
-  })
-  if job > 0 then M.state.preview = job end
+      return done(port)
+    end
+    vim.defer_fn(poll, 50)
+  end
+  poll()
+end
+
+--- A preview's id: its file's name and a hash of its path - the same address every time (a bookmark keeps working).
+function M.preview_id(path)
+  path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+  return vim.fn.fnamemodify(path, ":t"):lower():gsub("[^%w%-_]", "-") .. "-" .. vim.fn.sha256(path):sub(1, 6)
+end
+
+local function registration(id) return M.hub_dir .. "/items/" .. id .. ".json" end
+
+--- Preview a PDF or an image: registered with the hub, which shows it at <url> until it is closed; done(id, url).
+function M.preview_open(path, done)
+  path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+  if path:lower():match("%.pdf$") and vim.fn.executable("pdftoppm") == 0 then
+    return notify("Preview: a PDF needs pdftoppm (poppler-utils)", WARN)
+  end
+  local id = M.preview_id(path)
+  vim.fn.mkdir(M.hub_dir .. "/items", "p")
+  vim.fn.writefile({ vim.json.encode({ path = path, owner = vim.fn.getpid(), opened = os.time() }) }, registration(id))
+  M.ensure_hub(function(port)
+    if not port then return end
+    local url = ("http://localhost:%d/%s/"):format(port, id)
+    M.state.previews[id] = { path = path, url = url }
+    M.state.preview, M.state.preview_url = id, url
+    vim.notify(("Preview of %s on %s%s"):format(vim.fn.fnamemodify(path, ":t"), url,
+      port == 8000 and "" or (" - over SSH: ssh -L %d:localhost:%d <host>"):format(port, port)),
+      vim.log.levels.INFO, { title = "Preview", id = "greyknight_preview_" .. id })
+    if done then done(id, url) end
+  end)
+end
+
+--- Close a preview of this Neovim (its page says it is closed).
+function M.preview_close(id)
+  os.remove(registration(id))
+  M.state.previews[id] = nil
+  if M.state.preview == id then M.state.preview, M.state.preview_url = nil, nil end
+  if M.state.watch_preview == id then M.state.watch_preview = nil end
+end
+
+--- This Neovim's previews that are still open - the hub closes some by itself (too many, idle).
+function M.previews()
+  for id in pairs(M.state.previews) do
+    if vim.fn.filereadable(registration(id)) == 0 then M.preview_close(id) end
+  end
+  return M.state.previews
+end
+
+--- The open previews (all of this user's, from every Neovim) and the address of their list.
+function M.list_previews()
+  local port = hub_port()
+  local files = port and vim.fn.glob(M.hub_dir .. "/items/*.json", false, true) or {}
+  if #files == 0 then return notify("Preview: none open - <leader>lw on a .tex, a PDF or an image opens one") end
+  local lines = { ("%d open - all of them: http://localhost:%d/"):format(#files, port) }
+  for _, f in ipairs(files) do
+    local id = vim.fn.fnamemodify(f, ":t:r")
+    local ok, reg = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(f), "")) end)
+    lines[#lines + 1] = ("  %s  http://localhost:%d/%s/"):format(ok and vim.fn.fnamemodify(reg.path, ":t") or id, port, id)
+  end
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "Preview" })
+end
+
+--- The preview of a watched document's PDF; the watch closes it.
+function M.start_preview(pdf)
+  if M.state.watch_preview then return end
+  M.state.watch_preview = M.preview_id(pdf)
+  M.preview_open(pdf)
 end
 
 local function stop_preview()
-  if M.state.preview then vim.fn.jobstop(M.state.preview) end
-  M.state.preview, M.state.preview_url = nil, nil
+  if M.state.watch_preview then M.preview_close(M.state.watch_preview) end
 end
+
+-- A Neovim that ends closes its previews (the hub also notices a Neovim gone without a word)
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  group = vim.api.nvim_create_augroup("greyknight_preview", { clear = true }),
+  callback = function()
+    for id in pairs(M.state.previews) do os.remove(registration(id)) end
+  end,
+})
 
 local function start(main, watch)
   local latexmk = M.latexmk()
@@ -279,21 +359,24 @@ M.PREVIEWABLE = { pdf = true, png = true, jpg = true, jpeg = true, gif = true, s
 function M.previewable(file) return M.PREVIEWABLE[(vim.fn.fnamemodify(file or "", ":e")):lower()] == true end
 
 --- Watch: latexmk -pvc builds the document again whenever one of its files changes (toggle). Each round's errors
---- replace the last round's; after the first round the preview starts (M.start_preview). On a PDF or an image: the
---- preview of that file alone, new whenever it changes - a build's PDF from build/ too, without the build.
+--- replace the last round's; after the first round the preview of its PDF opens (M.start_preview). On a PDF or an
+--- image: the preview of that file opens - or closes, when it is open - without a build; other previews and the
+--- watch go on.
 function M.toggle_watch()
-  if M.state.job or M.state.preview then
-    local label = M.state.job and ("LaTeX: watch of " .. vim.fn.fnamemodify(M.state.main, ":t"))
-      or ("Preview of " .. vim.fn.fnamemodify(M.state.previewed or "", ":t"))
-    M.stop()
-    notify(label .. " stopped")
-    return
-  end
   local file = M.current_file()
   if M.previewable(file) then
+    local id = M.preview_id(file)
+    if M.previews()[id] then
+      M.preview_close(id)
+      return notify("Preview of " .. vim.fn.fnamemodify(file, ":t") .. " closed")
+    end
     if vim.fn.filereadable(file) == 0 then return notify("Preview: no file " .. file, WARN) end
-    M.state.previewed = file
-    return M.start_preview(file)
+    return M.preview_open(file)
+  end
+  if M.state.job then
+    local main = M.state.main
+    M.stop_watch()
+    return notify("LaTeX: watch of " .. vim.fn.fnamemodify(main, ":t") .. " stopped")
   end
   local main = current_main()
   if not main then return end
@@ -302,11 +385,17 @@ function M.toggle_watch()
   return start(main, true)
 end
 
---- Stop the watch and its preview (Neovim ends the job's process group: latexmk and the pdflatex it runs).
-function M.stop()
+--- Stop the watch and the preview of its PDF (Neovim ends the job's process group: latexmk and its pdflatex).
+function M.stop_watch()
   stop_preview()
   if M.state.job then vim.fn.jobstop(M.state.job) end
-  M.state.job, M.state.main, M.state.previewed = nil, nil, nil
+  M.state.job, M.state.main = nil, nil
+end
+
+--- Stop everything of this Neovim: the watch and every preview.
+function M.stop()
+  M.stop_watch()
+  for id in pairs(M.state.previews) do M.preview_close(id) end
 end
 
 --- The last round's errors in the quickfix window.
