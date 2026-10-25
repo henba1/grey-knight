@@ -107,7 +107,7 @@ between snippets, `<leader>rs` / `<leader>rc` for a clean run.
 | Key | Action |
 |-----|--------|
 | `<leader>lb` | Build the document of the current file once (`latexmk`, saved first) |
-| `<leader>lw` | Watch: `latexmk -pvc` builds it again on every save, and the preview shows the PDF (toggle) |
+| `<leader>lw` | Watch: `latexmk -pvc` builds it again on every save, and the preview shows the PDF (toggle). On a PDF or an image: the preview of that file, no build |
 | `<leader>le` | The last build's errors in the quickfix window |
 
 **The document** of a `.tex` file is the one its `% !TEX root = ../main.tex` line names, else the file
@@ -129,6 +129,11 @@ the scroll position stays; the pages that changed in it are outlined and listed 
 window, with a strip of the others below - a click on a page or `S`; `←` `→` / Space go on, `Esc` back. It needs `pdftoppm` (poppler-utils) and Python; another port:
 `require("devsuite.latex").preview_port = 8001`. The PDF is the one latexmk writes - with
 `$out_dir = 'build'` in the `latexmkrc`, `build/main.pdf`.
+
+**A PDF or an image** (png, jpg, gif, svg, webp, bmp, avif, ico): `<leader>lw` on it - in its window or in the file
+tree - shows that file in the preview, without a build; it is new there whenever the file changes. An image is the
+browser's own (at its size, nothing rendered); a PDF gets the overview and the one-slide view, and **Open PDF** in the
+bar opens the file itself in the browser's PDF viewer. `<leader>lw` again stops it.
 
 **latexmk** comes from the PATH, else from TeX Live's own install folders (`~/texlive/<year>`,
 `/usr/local/texlive/<year>`, the newest year); pdflatex and biber from the same TeX Live.

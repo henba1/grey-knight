@@ -138,7 +138,7 @@ The document of the file: its `% !TEX root = ...` line, the file itself (`\docum
 | Key | Mode | Action |
 |-----|------|--------|
 | `<leader>lb` | n | Build once (`latexmk`, saved first) |
-| `<leader>lw` | n | Watch: `latexmk -pvc` builds on every save, the PDF on http://localhost:8000 - changed pages marked (toggle) |
+| `<leader>lw` | n | Watch: `latexmk -pvc` builds on every save, the PDF on http://localhost:8000 - changed pages marked (toggle). On a PDF or an image: that file in the browser, no build |
 | `<leader>le` | n | The last build's errors (quickfix) |
 
 ## File Explorer — `<leader>e`

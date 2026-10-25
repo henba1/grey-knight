@@ -14,7 +14,7 @@ local function notify(msg, level)
   vim.notify(msg, level or vim.log.levels.INFO, { title = "LaTeX", id = "greyknight_latex" })
 end
 
-M.state = { job = nil, main = nil, items = {}, preview = nil, preview_url = nil }
+M.state = { job = nil, main = nil, items = {}, preview = nil, preview_url = nil, previewed = nil }
 
 -- The preview a watch starts: the PDF as pictures on http://localhost:<port> (resources/latex_preview.py); 0 takes
 -- a free port (the tests)
@@ -147,8 +147,8 @@ end
 --- shows it: ssh -L 8000:localhost:8000 <host>, then http://localhost:8000.
 function M.start_preview(pdf)
   if M.state.preview then return end
-  if vim.fn.executable("pdftoppm") == 0 then
-    return notify("LaTeX: no preview - it needs pdftoppm (poppler-utils)", WARN)
+  if pdf:lower():match("%.pdf$") and vim.fn.executable("pdftoppm") == 0 then
+    return notify("LaTeX: no preview - a PDF needs pdftoppm (poppler-utils)", WARN)
   end
   local err = {}
   local job = vim.fn.jobstart({ util.system_python(), M.PREVIEW, pdf, "--port", tostring(M.preview_port) }, {
@@ -156,7 +156,8 @@ function M.start_preview(pdf)
       local port = table.concat(data):match("http://localhost:(%d+)")
       if port and M.state.preview == id then
         M.state.preview_url = "http://localhost:" .. port
-        vim.notify(("LaTeX: preview on %s - over SSH: ssh -L %s:localhost:%s <host>"):format(M.state.preview_url, port, port),
+        vim.notify(("Preview of %s on %s - over SSH: ssh -L %s:localhost:%s <host>"):format(
+          vim.fn.fnamemodify(pdf, ":t"), M.state.preview_url, port, port),
           vim.log.levels.INFO, { title = "LaTeX", id = "greyknight_latex_preview" })
       end
     end,
@@ -270,14 +271,29 @@ function M.build()
   return start(main, false)
 end
 
+-- What the preview shows as it is - no LaTeX document, no build (resources/latex_preview.py: IMAGES)
+M.PREVIEWABLE = { pdf = true, png = true, jpg = true, jpeg = true, gif = true, svg = true, webp = true, bmp = true,
+  avif = true, ico = true }
+
+--- A file <leader>lw previews as it is: a PDF or an image.
+function M.previewable(file) return M.PREVIEWABLE[(vim.fn.fnamemodify(file or "", ":e")):lower()] == true end
+
 --- Watch: latexmk -pvc builds the document again whenever one of its files changes (toggle). Each round's errors
---- replace the last round's; after the first round the preview starts (M.start_preview).
+--- replace the last round's; after the first round the preview starts (M.start_preview). On a PDF or an image: the
+--- preview of that file alone, new whenever it changes - a build's PDF from build/ too, without the build.
 function M.toggle_watch()
-  if M.state.job then
-    local main = M.state.main
+  if M.state.job or M.state.preview then
+    local label = M.state.job and ("LaTeX: watch of " .. vim.fn.fnamemodify(M.state.main, ":t"))
+      or ("Preview of " .. vim.fn.fnamemodify(M.state.previewed or "", ":t"))
     M.stop()
-    notify("LaTeX: watch of " .. vim.fn.fnamemodify(main, ":t") .. " stopped")
+    notify(label .. " stopped")
     return
+  end
+  local file = M.current_file()
+  if M.previewable(file) then
+    if vim.fn.filereadable(file) == 0 then return notify("Preview: no file " .. file, WARN) end
+    M.state.previewed = file
+    return M.start_preview(file)
   end
   local main = current_main()
   if not main then return end
@@ -290,7 +306,7 @@ end
 function M.stop()
   stop_preview()
   if M.state.job then vim.fn.jobstop(M.state.job) end
-  M.state.job, M.state.main = nil, nil
+  M.state.job, M.state.main, M.state.previewed = nil, nil, nil
 end
 
 --- The last round's errors in the quickfix window.

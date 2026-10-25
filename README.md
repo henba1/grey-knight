@@ -216,7 +216,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   └── markdown.lua        wrap + spellcheck
 ├── resources/
 │   ├── intellij-java-format.xml   jdtls formatter profile close to IntelliJ's default Java code style
-│   └── latex_preview.py    the PDF of a LaTeX watch as pictures on localhost:8000, changed pages marked
+│   └── latex_preview.py    a PDF (a LaTeX watch's, or any) or an image on localhost:8000, changes marked
 ├── slots/                  explorer script slots (docs/files.md → Script slots)
 │   ├── 1-info.py           slot 1: path, type, size, date, permissions of the marked items
 │   └── lib/                helpers for the scripts: gk.py, gk.sh, gk.ps1

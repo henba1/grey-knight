@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
-"""Live PDF preview for headless / SSH work (GreyKnight's <leader>lw starts it, lua/devsuite/latex.lua).
+"""Live PDF / image preview for headless / SSH work (GreyKnight's <leader>lw starts it, lua/devsuite/latex.lua).
 
 Renders the PDF to PNGs whenever it changes and serves them on http://localhost:PORT. The page swaps the images in
 place (the scroll position stays) and marks the pages that changed in the last build - their outline, and links to
 them in the bar at the top. Two views: the overview (all pages) and one slide at a time with a strip of the others
 (a click on a page, or S; arrow keys / Space go on, Esc back).
 
-Usage:  python3 latex_preview.py PDF [--port 8000] [--dpi 160]     (--port 0: a free one; the URL is printed)
+An image (png, jpg, gif, svg, webp, bmp, avif, ico) is shown as it is - the browser draws it, nothing is rendered;
+it is new on the page whenever the file changes. A PDF also opens as itself in the browser's viewer (/raw).
+
+Usage:  python3 latex_preview.py FILE [--port 8000] [--dpi 160]     (--port 0: a free one; the URL is printed)
 Over SSH: ssh -L 8000:localhost:8000 <host>, then http://localhost:8000 in the local browser.
-Needs pdftoppm (poppler-utils). Standard library only.
+A PDF needs pdftoppm (poppler-utils). Standard library only.
 """
 import argparse, glob, hashlib, http.server, json, os, shutil, signal, subprocess, sys, tempfile, threading, time
+
+# what the browser shows as it is - by extension
+IMAGES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml",
+          ".webp": "image/webp", ".bmp": "image/bmp", ".avif": "image/avif", ".ico": "image/x-icon"}
 
 PAGE = """<!doctype html><meta charset=utf-8><title>PDF preview</title>
 <style>
@@ -38,12 +45,16 @@ body.only #s figure:not(.changed){display:none}
 #strip img.changed{outline-color:#f5b041}#strip img.cur.changed{opacity:1}
 body.single #s,body.single .ov{display:none}body.single #one{display:flex}
 body:not(.single) .sv{display:none}
+/* an image: its own size (no bigger than the window), on a checkerboard for transparency */
+body.image #s{display:block}body.image #s img,body.image #big{width:auto;height:auto;max-width:100%;max-height:100%}
+body.image #s img,body.image #big{background:repeating-conic-gradient(#3a3d41 0% 25%,#33363a 0% 50%) 0 0/16px 16px}
+body.image #strip,body.image .pg,body.image figcaption{display:none}
 </style>
-<div id=bar><span id=st>waiting for the PDF</span><span id=ch></span>
-<span><button id=bo onclick="overview()">Overview</button> <button id=bs onclick="single(cur)">Slide</button></span>
-<label class=ov>width <input type=range min=240 max=1600 value=520 oninput="document.body.style.setProperty('--w',this.value+'px')"></label>
-<label class=ov><input type=checkbox onchange="document.body.classList.toggle('only',this.checked)"> only changed</label>
-<span class="hint ov">click a slide or S: one slide</span><span class="hint sv">← → Space: next / back · Home End · Esc or O: overview</span></div>
+<div id=bar><span id=st>waiting for the file</span><span id=ch></span><a id=raw href=/raw target=_blank style="display:none">Open PDF</a>
+<span class=pg><button id=bo onclick="overview()">Overview</button> <button id=bs onclick="single(cur)">Slide</button></span>
+<label class="ov pg">width <input type=range min=240 max=1600 value=520 oninput="document.body.style.setProperty('--w',this.value+'px')"></label>
+<label class="ov pg"><input type=checkbox onchange="document.body.classList.toggle('only',this.checked)"> only changed</label>
+<span class="hint ov pg">click a slide or S: one slide</span><span class="hint sv pg">← → Space: next / back · Home End · Esc or O: overview</span></div>
 <div id=s></div>
 <div id=one><div id=stage><img id=big alt=""></div><div id=cap></div><div id=strip></div></div>
 <script>
@@ -80,6 +91,8 @@ async function tick(){
     const r=await (await fetch('/state')).json();
     if(r.version!==ver){
       ver=r.version;pages=r.pages;changed=new Set(r.changed);
+      document.title=r.name;document.body.classList.toggle('image',r.kind==='image');
+      $('raw').style.display=r.kind==='pdf'?'':'none';
       const s=$('s'),st=$('strip');
       while(s.children.length>pages)s.lastChild.remove();
       while(st.children.length>pages)st.lastChild.remove();
@@ -91,8 +104,8 @@ async function tick(){
         let t=st.children[i-1];
         if(!t){t=document.createElement('img');t.alt='';t.onclick=()=>go(i);st.appendChild(t)}
         t.src=src(i)}
-      $('st').textContent=pages+' pages · build '+ver+' · '+new Date().toLocaleTimeString();
-      $('ch').innerHTML=ver<2?'':(r.changed.length?'changed: '+r.changed.map(n=>'<a href="#" onclick="return jump('+n+')">'+n+'</a>').join(''):'no page changed');
+      $('st').textContent=r.name+' · '+(r.kind==='image'?'':pages+' pages · ')+'version '+ver+' · '+new Date().toLocaleTimeString();
+      $('ch').innerHTML=ver<2?'':r.kind==='image'?(r.changed.length?'<a>changed</a>':''):(r.changed.length?'changed: '+r.changed.map(n=>'<a href="#" onclick="return jump('+n+')">'+n+'</a>').join(''):'no page changed');
       show()}
   }catch(e){}
   setTimeout(tick,700)}
@@ -101,16 +114,30 @@ show();tick()</script>"""
 
 
 class State:
-    def __init__(self, pdf, dpi):
-        self.pdf, self.dpi = pdf, dpi
+    def __init__(self, path, dpi):
+        self.path, self.dpi = path, dpi
+        ext = os.path.splitext(path)[1].lower()
+        self.kind, self.ctype = ("image", IMAGES[ext]) if ext in IMAGES else ("pdf", "application/pdf")
         self.dir = tempfile.mkdtemp(prefix="gk-pdf-preview-")
         self.pages, self.hashes, self.changed = [], [], []
+        self.image = b""  # an image: the bytes shown, as read when it changed
         self.version, self.mtime = 0, None
         self.lock = threading.Lock()
 
     def render(self):
+        if self.kind == "image":
+            with open(self.path, "rb") as f:
+                data = f.read()
+            if not data:  # still being written
+                return False
+            h = hashlib.sha1(data).hexdigest()
+            with self.lock:
+                self.changed = [1] if self.hashes and self.hashes[0] != h else []
+                self.image, self.pages, self.hashes = data, [self.path], [h]
+                self.version += 1
+            return True
         out = tempfile.mkdtemp(dir=self.dir)
-        r = subprocess.run(["pdftoppm", "-r", str(self.dpi), "-png", self.pdf, out + "/p"], capture_output=True)
+        r = subprocess.run(["pdftoppm", "-r", str(self.dpi), "-png", self.path, out + "/p"], capture_output=True)
         pages = sorted(glob.glob(out + "/p-*.png"))
         if r.returncode != 0 or not pages:  # the PDF is still being written: the next poll tries again
             shutil.rmtree(out, ignore_errors=True)
@@ -132,7 +159,7 @@ class State:
     def watch(self):
         while True:
             try:
-                m = os.stat(self.pdf).st_mtime
+                m = os.stat(self.path).st_mtime
                 if m != self.mtime:
                     time.sleep(0.3)  # let the engine finish writing
                     if self.render():
@@ -144,13 +171,13 @@ class State:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("pdf")
+    ap.add_argument("file", help="a PDF or an image")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dpi", type=int, default=160)  # sharp in the one-slide view; 12 slides: 1.5 s on a Pi 5
     a = ap.parse_args()
-    if not shutil.which("pdftoppm"):
+    st = State(os.path.abspath(a.file), a.dpi)
+    if st.kind == "pdf" and not shutil.which("pdftoppm"):
         sys.exit("no pdftoppm - install poppler-utils")
-    st = State(os.path.abspath(a.pdf), a.dpi)
 
     class H(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -169,9 +196,21 @@ def main():
                 return self.send(PAGE.encode(), "text/html; charset=utf-8")
             if path == "/state":
                 with st.lock:
-                    state = {"version": st.version, "pages": len(st.pages), "changed": st.changed}
+                    state = {"version": st.version, "pages": len(st.pages), "changed": st.changed, "kind": st.kind,
+                             "name": os.path.basename(st.path)}
                 return self.send(json.dumps(state).encode(), "application/json")
-            if path.startswith("/p/"):
+            if path == "/raw":  # the file itself: a PDF in the browser's own viewer
+                try:
+                    with open(st.path, "rb") as f:
+                        return self.send(f.read(), st.ctype)
+                except OSError:
+                    pass
+            if path.startswith("/p/") and st.kind == "image":
+                with st.lock:
+                    data = st.image
+                if path == "/p/1" and data:
+                    return self.send(data, st.ctype)
+            elif path.startswith("/p/"):
                 with st.lock:
                     pages = list(st.pages)
                 try:
@@ -188,7 +227,7 @@ def main():
     threading.Thread(target=st.watch, daemon=True).start()
     # Neovim stops the job with SIGTERM: exit through the finally below, so the rendered pages go too
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print(f"preview of {st.pdf} on http://localhost:{server.server_address[1]}", flush=True)
+    print(f"preview of {st.path} on http://localhost:{server.server_address[1]}", flush=True)
     try:
         server.serve_forever()
     finally:
