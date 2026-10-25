@@ -2488,6 +2488,59 @@ test("LaTeX: a build puts its error in the quickfix list and on the line", funct
   vim.cmd("bwipeout!")
 end)
 
+test("LaTeX: <leader>lw on an image or a PDF previews that file as it is - no build; a change shows", function()
+  local latex = require("devsuite.latex")
+  assert(latex.previewable("/x/a.PNG") and latex.previewable("b.svg") and latex.previewable("c.pdf"), "previewable")
+  assert(not latex.previewable("main.tex") and not latex.previewable("notes"), "a .tex / no extension: the build")
+  latex.preview_port = 0
+  local function get(path)
+    local out = vim.fn.system({ require("devsuite.util").system_python(), "-c",
+      "import sys, urllib.request; r = urllib.request.urlopen(sys.argv[1], timeout=2); b = r.read();"
+        .. " print(r.headers['Content-Type'], len(b)); print(b.decode() if sys.argv[1].endswith('/state') else '')",
+      latex.state.preview_url .. path })
+    return out
+  end
+  local function state()
+    if not latex.state.preview_url then return {} end
+    local ok, decoded = pcall(vim.json.decode, (get("/state"):match("\n(.*)") or ""))
+    return ok and decoded or {}
+  end
+  local RED = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+  local BLUE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC"
+  local png = H.file("dot.png", {})
+  local function write(b64) local f = assert(io.open(png, "wb")); f:write(vim.base64.decode(b64)); f:close() end
+  write(RED)
+  local ok, err = pcall(function()
+    vim.cmd.edit(png)
+    latex.toggle_watch()
+    assert(latex.state.job == nil, "an image started latexmk")
+    assert(H.wait(10000, function() return state().version == 1 end), "no preview of the image: " .. vim.inspect(state()))
+    assert(state().kind == "image" and state().pages == 1, vim.inspect(state()))
+    assert(get("/p/1"):find("image/png " .. vim.fn.getfsize(png), 1, true), get("/p/1"))
+    write(BLUE)
+    assert(H.wait(10000, function() return state().version == 2 end), "the changed image did not show")
+    assert(vim.deep_equal(state().changed, { 1 }), vim.inspect(state()))
+    latex.toggle_watch()
+    assert(latex.state.preview == nil, "not stopped")
+    if vim.fn.executable("pdftoppm") == 1 then
+      local pdf = H.file("tiny.pdf", { "%PDF-1.4", "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
+        "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj", "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj",
+        "trailer<</Root 1 0 R>>", "%%EOF" })
+      vim.cmd.edit(pdf)
+      latex.toggle_watch()
+      assert(latex.state.job == nil, "a PDF started latexmk")
+      assert(H.wait(15000, function() return state().version == 1 end), "no preview of the PDF: " .. vim.inspect(state()))
+      assert(state().kind == "pdf" and state().pages == 1, vim.inspect(state()))
+      assert(get("/raw"):find("application/pdf", 1, true), "/raw is not the PDF: " .. get("/raw"))
+      latex.toggle_watch()
+    end
+  end)
+  latex.stop()
+  latex.preview_port = 8000
+  pcall(vim.cmd, "bwipeout!")
+  assert(ok, err)
+end)
+
 test("LaTeX: the watch starts the preview; the page that changed is marked, stopping ends it", function()
   local latex = require("devsuite.latex")
   if not latex.latexmk() then H.skip("no latexmk on this machine") end
