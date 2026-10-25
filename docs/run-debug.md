@@ -131,14 +131,20 @@ then says so. One closes after 4 hours without a view (an open tab counts) or a 
 opened it ends; the server ends a minute after its last. Port 8000 taken by another program: it takes the next free
 one up to 8019, and the notification names the tunnel for it. Each build swaps the pictures in place,
 the scroll position stays; the pages that changed in it are outlined and listed in the bar at the top
-(**only changed** hides the rest). Two views: the **overview** of all pages, and **one slide** at a time as large as the
-window, with a strip of the others below - a click on a page or `S`; `←` `→` / Space go on, `Esc` back. It needs `pdftoppm` (poppler-utils) and Python; other numbers:
+(**only changed** hides the rest). Two views: the **overview** of all pages, and the **pages** one after another - a
+slide as large as the window, a document page as wide as reads well - a click on a page or `P`; `←` `→` / Space
+jump page by page, `Esc` back. Gentle on a small machine: one render at a time for all previews, at the lowest
+priority and with a memory cap, eight pages per run - the first pages show within seconds while the rest render,
+and a newer build stops an older one. The browser keeps each page's picture until it changes and loads only the
+pages in view, so a build sends only the pages that changed through the tunnel. With the server gone (a tab left
+open), the page asks less and less often and gives up after 3 minutes - no endless `channel open failed` in the SSH
+terminal. It needs `pdftoppm` and `pdfinfo` (poppler-utils) and Python; other numbers:
 `require("devsuite.latex")`'s `preview_port`, `preview_ports`, `preview_max`, `preview_ttl` (seconds). The PDF is the one latexmk writes - with
 `$out_dir = 'build'` in the `latexmkrc`, `build/main.pdf`.
 
 **A PDF or an image** (png, jpg, gif, svg, webp, bmp, avif, ico): `<leader>lw` on it - in its window or in the file
 tree - shows that file in the preview, without a build; it is new there whenever the file changes. An image is the
-browser's own (at its size, nothing rendered); a PDF gets the overview and the one-slide view, and **Open PDF** in the
+browser's own (at its size, nothing rendered); a PDF gets the overview and the page view, and **Open PDF** in the
 bar opens the file itself in the browser's PDF viewer. `<leader>lw` again stops it.
 
 **latexmk** comes from the PATH, else from TeX Live's own install folders (`~/texlive/<year>`,
