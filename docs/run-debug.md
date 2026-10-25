@@ -124,7 +124,8 @@ named (`Undefined control sequence. \badmacro`) - beamer reports every error of 
 http://localhost:8000, in the browser of any machine - over SSH tunnel the port to your own
 (`ssh -L 8000:localhost:8000 <host>`, PowerShell and PuTTY alike). Each build swaps the pictures in place,
 the scroll position stays; the pages that changed in it are outlined and listed in the bar at the top
-(**only changed** hides the rest). It needs `pdftoppm` (poppler-utils) and Python; another port:
+(**only changed** hides the rest). Two views: the **overview** of all pages, and **one slide** at a time as large as the
+window, with a strip of the others below - a click on a page or `S`; `←` `→` / Space go on, `Esc` back. It needs `pdftoppm` (poppler-utils) and Python; another port:
 `require("devsuite.latex").preview_port = 8001`. The PDF is the one latexmk writes - with
 `$out_dir = 'build'` in the `latexmkrc`, `build/main.pdf`.
 
