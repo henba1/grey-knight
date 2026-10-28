@@ -51,8 +51,9 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
-| `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+E` new, `Ctrl+X` end, `Ctrl+A` all projects |
+| `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+E` new, `Ctrl+X` end, `Ctrl+Y` hand it to the agent, `Ctrl+A` all projects; with scrubjay every machine's too |
 | `<leader>ao` | n | A new agent session next to the others (asks which agent) |
+| `<leader>aS` | n | Search past sessions of every machine for words (scrubjay's sj-grep) - `Enter` read, `Ctrl+O` go on with it, `Ctrl+Y` hand it to the agent |
 | `<M-.>` / `<M-,>` | n, agent pane | Next / previous session in the agent's pane (its tabs; a click on a tab, middle click ends it) |
 | `<leader>ac` | n | New AI session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
 | `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`, Claude Code: `/model`) |
@@ -453,6 +454,7 @@ the agent, help or quickfix.
 │   ├── agent_link.lua        ← agents reach into this Neovim: their settings, the servers attached, context
 │   ├── agent_server.lua      ← the MCP server agents start (nvim -l): relays to this Neovim
 │   ├── agent_sessions.lua    ← the agent's sessions: the pane's tabs, running + past ones (<leader>as)
+│   ├── scrubjay.lua          ← scrubjay: every machine's sessions in that list, the archive searched (<leader>aS)
 │   ├── agent_tools.lua       ← the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics
 │   ├── agent_ide.lua         ← Qwen Code's IDE mode: its edits as diffs to accept / reject, the context
 │   ├── agent_changes.lua     ← what changed since the agent started (<leader>ad): diffs, take a file back

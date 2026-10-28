@@ -2160,6 +2160,95 @@ test("Agent sessions: several in one pane (tabs, Alt+. cycles, ending one shows 
   assert(ok, err)
 end)
 
+-- 2026-10-28: scrubjay's catalogue in the session list - every machine's and agent's sessions, tagged; resumed through
+-- sj-resume (staged: its own agent resumes it; another agent: a new session reads its rendered conversation); the
+-- archive searched with sj-grep. A stand-in scrubjay answers as the real one does (--json).
+test("scrubjay: other machines' sessions in the list (host, agent), the archive's copy previewed, resumed natively or carried over; sj-grep's hits", function()
+  linux_only("a stand-in scrubjay (bash)")
+  local agent, sessions, sj = require("integrations.agent"), require("integrations.agent_sessions"), require("integrations.scrubjay")
+  local root = vim.fn.tempname()
+  local app, archive, work = root .. "/app", root .. "/archive", root .. "/work"
+  for _, d in ipairs({ app .. "/bin", archive .. "/laptop/readable/widget", work }) do vim.fn.mkdir(d, "p") end
+  local sid = "aaaaaaaa-1111-4222-8333-444444444444"
+  vim.fn.writefile({ "# Retry backoff", "", "## User", "", "make the retry back off", "", "## Assistant", "", "Done: exponential." },
+    archive .. "/laptop/readable/widget/2026-10-01_retry-backoff__aaaaaaaa.md")
+  vim.fn.writefile({
+    "sj_load_config() { SCRUBJAY_TRANSCRIPT_BACKEND=local; SCRUBJAY_LOCAL_CHATS=" .. vim.fn.shellescape(archive) .. "; }",
+    "sj_host() { echo thishost; }", "sj_chats() { :; }", "sj_log_catalogue() { :; }",
+  }, app .. "/bin/lib.sh")
+  local primer = root .. "/primer.md"
+  vim.fn.writefile({ "# Retry backoff" }, primer)
+  vim.fn.writefile({
+    "#!/usr/bin/env bash",
+    'if [ "$1" = --list ]; then',
+    ("  echo '%s'"):format(vim.json.encode({ ts = "2026-10-01 10:00", host = "laptop", sid = sid, cwd = work, topic = "Retry backoff", harness = "claude", here = false })),
+    ("  echo '%s'"):format(vim.json.encode({ ts = "2026-09-01 10:00", host = "thishost", sid = "ses_bbbbbbbbXX", cwd = work, topic = "", harness = vim.NIL, here = true })),
+    "  exit 0",
+    "fi",
+    'echo "staging $1 into $3 for $SCRUBJAY_HARNESS" >&2',
+    'if [ "$SCRUBJAY_HARNESS" = claude ]; then',
+    '  printf \'{"ok":true,"mode":"native","sid":"%s","cwd":"%s","cmd":"claude --resume %s"}\\n\' "' .. sid .. '" "$3" "' .. sid .. '"',
+    "else",
+    '  printf \'{"ok":true,"mode":"context","sid":"%s","cwd":"%s","primer":"%s"}\\n\' "' .. sid .. '" "$3" ' .. vim.fn.shellescape(primer),
+    "fi",
+  }, app .. "/bin/sj-resume.sh")
+  vim.fn.writefile({ "#!/usr/bin/env bash", ("echo '%s'"):format(vim.json.encode({ type = "session", sid = sid, harness = "claude", host = "laptop",
+    topic = "Retry backoff", date = "2026-10-01", path = archive .. "/laptop/readable/widget/2026-10-01_retry-backoff__aaaaaaaa.md",
+    snippets = { { turn = 1, line = 5, text = "make the retry back off" } } })), "echo '{\"type\":\"summary\"}'" }, app .. "/bin/sj-grep.sh")
+  local fake = {}
+  for _, id in ipairs({ "claude", "opencode" }) do
+    fake[id] = root .. "/bin-" .. id
+    vim.fn.writefile({ "#!/bin/sh", 'echo "ARGS:$*"', "exec cat" }, fake[id])
+    vim.fn.setfperm(fake[id], "rwx------")
+  end
+  local saved = { vim.g.greyknight_scrubjay, vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.g.greyknight_agent_link,
+    sessions.extra_items, sessions.refresh_extra, sj.state }
+  vim.g.greyknight_scrubjay, vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN = app, fake.claude, fake.opencode
+  vim.env.CLAUDE_CONFIG_DIR, vim.g.greyknight_agent_link = root .. "/claude", false
+  local function flat(buf) return (text(buf):gsub("\n", "")) end
+  local ok, err = pcall(function()
+    sj.setup()
+    local done = false
+    sj.load(function() done = true end)
+    assert(wait(10000, function() return done end), "the catalogue did not load")
+    assert(sj.state.host == "thishost" and sj.state.root == archive, vim.inspect({ sj.state.host, sj.state.root }))
+    local items = sessions.items(true)
+    local other, here
+    for _, it in ipairs(items) do
+      if it.sid == sid then other = it end
+      if it.sid == "ses_bbbbbbbbXX" then here = it end
+    end
+    assert(other and other.host == "laptop" and other.harness == "claude" and other.title == "Retry backoff", "another machine's: " .. vim.inspect(other))
+    assert(here and here.host == nil and here.harness == "claude" and here.title == "(no topic)", "this machine's (no harness: claude): " .. vim.inspect(here))
+    local lines
+    sj.render(other, function(l) lines = l end)
+    assert(lines and table.concat(lines, "\n"):find("Done: exponential.", 1, true), "the archive's copy: " .. vim.inspect(lines))
+    -- in its own agent: staged by sj-resume, resumed natively in the folder it gave
+    sessions.resume(other)
+    local t
+    assert(wait(10000, function() t = agent.term(agent.current()); return t and t.gk_session == sid end), "not resumed natively")
+    assert(wait(5000, function() return flat(t.bufnr):find("--resume " .. sid, 1, true) end), flat(t.bufnr))
+    assert(agent.same_dir(t.dir, work), "its folder: " .. tostring(t.dir))
+    -- in another agent: the conversation sj-resume rendered, read first by a new OpenCode session
+    sessions.carry_over(other, "opencode")
+    assert(wait(10000, function() t = agent.term(agent.current()); return t and t.gk_backend == "opencode" end), "not carried over")
+    assert(wait(15000, function() return flat(t.bufnr):find(primer, 1, true) end), "the primer was not handed over: " .. flat(t.bufnr))
+    -- sj-grep's hits: a place per snippet, at its line
+    local res = vim.system({ "bash", app .. "/bin/sj-grep.sh" }, { text = true }):wait()
+    local hits = sj.hits(res.stdout)
+    assert(#hits == 1 and hits[1].pos[1] == 5 and hits[1].file:find("retry-backoff", 1, true), vim.inspect(hits))
+    assert(vim.deep_equal(sj.words('borg "prune policy" host=x'), { "borg", "prune policy", "host=x" }), "words")
+  end)
+  for _, s in ipairs(agent.running()) do pcall(function() s.term:shutdown() end) end
+  for name in pairs(agent.AGENTS) do if name:match("^s%d+$") then agent.AGENTS[name] = nil end end
+  agent.active = "agent"
+  vim.g.greyknight_scrubjay, vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.g.greyknight_agent_link = saved[1], saved[2], saved[3], saved[4], saved[5]
+  sessions.extra_items, sessions.refresh_extra, sj.state = saved[6], saved[7], saved[8]
+  vim.cmd("stopinsert")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
 -- ── Stabilization: the behaviour of 2026-10-15, pinned down ──
 
 -- Completion: types like a user; each step waits until the menu is open (or 5 s), then feeds its keys

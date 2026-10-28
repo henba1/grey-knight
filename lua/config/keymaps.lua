@@ -203,6 +203,7 @@ map("n", "<leader>ac", function() agent().new_session() end, { desc = "AI: New c
 local function sessions() return require("integrations.agent_sessions") end
 map("n", "<leader>as", function() sessions().pick() end, { desc = "AI: Sessions - switch, resume, carry over (Ctrl+A: all projects)" })
 map("n", "<leader>ao", function() sessions().new() end,  { desc = "AI: Open a new session next to the others" })
+map("n", "<leader>aS", function() require("integrations.scrubjay").search() end, { desc = "AI: Search past sessions of every machine (scrubjay)" })
 map("n", "<M-.>", function() agent().cycle(1) end,       { desc = "AI: Next session in the pane" })
 map("n", "<M-,>", function() agent().cycle(-1) end,      { desc = "AI: Previous session in the pane" })
 map("n", "<leader>am", function() agent().model_info() end,  { desc = "AI: Model running on the rig" })

@@ -103,11 +103,30 @@ which comes a moment later). The preview shows the conversation.
 | `Ctrl+O` | Go on with it in **another agent** (Claude Code ↔ OpenCode ↔ Qwen Code): its conversation is written to a file and a new session of that agent is told to read it first. The conversation carries over; its tool history does not |
 | `Ctrl+E` | A new session (asks which agent when more than one is installed) - `<leader>ao` from anywhere |
 | `Ctrl+X`, `dd` | End a running session |
+| `Ctrl+Y` | Hand its conversation to the agent the pane shows: written to a file, typed into the prompt as `@file` - "do it as we did there" without going back |
 | `Ctrl+A` | All projects / this project |
 
 `<leader>tt`, `<leader>aa`, `<leader>ae`, the tree's `@` and speech go to the session the pane shows. A new Claude
 Code session gets its id from GreyKnight (`--session-id`), so its tab knows its title and the list can resume it once
 it has ended. `<leader>t1` … `t3` still open agents of their own below.
+
+### Every machine's sessions: scrubjay
+
+With [scrubjay](https://github.com/henba1/scrubjay) installed (`~/.scrubjay/scrubjay`, or `$SCRUBJAY_APP`), the list
+also shows **the sessions of every machine and every agent** from its catalogue - tagged with the agent (Claude,
+OpenCode, Codex) and, when it is another machine's, that machine. The preview reads the archive's readable copy when
+this machine can read the archive (the NAS mounted, or the git clone).
+
+- `Enter` on another machine's session: scrubjay's `sj-resume` stages it here - that machine's paths rewritten to
+  this one's - and its agent resumes it in a new tab.
+- `Ctrl+O`: go on with it in another agent - `sj-resume` renders the conversation and a new session of that agent
+  reads it first.
+- `<leader>aS` (`:SjGrep words`): **search every past session** for words (scrubjay's `sj-grep`: literal, any word;
+  `"a phrase"`, `host=`, `harness=`, `since=` narrow it). Each place is an item, the conversation around it in the
+  preview: `Enter` reads it there, `Ctrl+O` goes on with that session (its agent or another), `Ctrl+Y` hands the
+  conversation to the agent.
+
+Without scrubjay the list is this machine's, and `<leader>aS` says what is missing.
 
 ## The agent in your editor
 
