@@ -74,7 +74,8 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 > as `@path` plus the selected lines and your question/instruction as one prompt (a new agent
 > starts with it via `qwen -i`). `tt` is a true toggle — the agent process stays alive when
 > hidden, so re-opening re-attaches the same session. Going to the agent's window (`Ctrl+l`, a click) puts
-> you in terminal mode, as every terminal window does: type away. `Esc Esc` gives normal mode there (scroll, copy).
+> you in terminal mode, as every terminal window does: type away. Every key is the agent's there (`Esc`, `Esc Esc`,
+> `Ctrl+J` ...); `Alt+H/J/K/L` leave it, the mouse wheel shows its scrollback - a key typed there types again.
 
 **The agent works in the editor** (both agents, started with `<leader>t*`): ask "where is the bookmarks code?" and
 it opens the file tree on it (or a search there), marks files there, shows code at a line, lists places in the
@@ -382,18 +383,21 @@ Debugging (DAP)](docs/run-debug.md#debugging-dap). C/C++'s `:Codelldb*` surface 
 
 | Key | Action |
 |-----|--------|
-| `<C-h/j/k/l>` | Navigate windows - from a terminal too (clear the shell with `clear` / `cls`) |
+| `<C-h/j/k/l>` | Navigate windows - from a terminal too (clear the shell with `clear` / `cls`); not from an agent's |
+| `<M-h/j/k/l>` | Navigate windows - from an agent's window too (there `Ctrl+H/J/K/L` are the agent's) |
 | `<C-Up/Down/Left/Right>` | Resize windows - a terminal too, not an agent's (there they are the agent's: word by word in its prompt) |
 | `<M-Up/Down/Left/Right>` | Resize windows in the editor (Alt+arrows: for PuTTY's default keys, which send Ctrl+arrows as plain arrows) |
 | `<S-h>` / `<S-l>` | Prev/next buffer |
 | `<leader><Tab>` | Recent buffers (IntelliJ's Ctrl+Tab): starts on the one before this - `Enter` goes back, `Tab` / `Shift+Tab` further back / forward. `Ctrl+Tab` too where the terminal passes it on |
 | `<C-^>` | The buffer before this one, at once (again: back) |
 | `<C-o>` / `<C-i>` | Back / forward through the places you jumped to, file to file (IntelliJ's Navigate Back / Forward) |
-| `<Esc><Esc>` | Leave terminal mode (back to normal mode); going to a terminal window (shell, REPL, agent, a run's output) enters it again |
+| `<Esc><Esc>` | Leave terminal mode (back to normal mode) - not in an agent's window; going to a terminal window (shell, REPL, agent, a run's output) enters it again |
 
-In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `Ctrl+W/U/R` work as typed. In an
-agent's window (Claude Code, OpenCode, Qwen Code) only the ways out stay Neovim's - `<C-h/j/k/l>`, `<Esc><Esc>`,
-`<C-\><C-n>`; every other key, Ctrl+arrows too, is the agent's.
+In a terminal every other key is the program's: bash's `Ctrl+A/E`, `Alt+B/F`, `Ctrl+W/U/R` work as typed. An
+agent's window (Claude Code, OpenCode, Qwen Code) is the agent's like a terminal of its own: every key goes to it -
+`<Esc>`, `<Esc><Esc>`, `<C-h/j/k/l>`, Ctrl+arrows; `Shift+Enter` is a new line. `<M-h/j/k/l>` leave it. The mouse
+wheel, a click or `Shift+PageUp` show its scrollback (drag + `Ctrl+C` / `y` copies); any key typed there goes to the
+agent, typing again - `Esc` only goes back. `<C-\><C-n>` is Neovim's way to the scrollback.
 
 Each file window has a bar on top (the statusline is one for all): the file, `●` when it has unsaved changes, and
 buttons to click - `◫` split right, `⊟` split below, `×` close. Close closes the window; the last file window stays
