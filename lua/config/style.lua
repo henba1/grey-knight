@@ -34,6 +34,11 @@ M.PALETTE = {
   },
 }
 
+--- The selection in the OLED look: white on a strong blue. cyberdream draws it in bg_highlight, which on true black
+--- was almost invisible (2026-10-28). A blue under the neon text would hide the blue and purple of functions and
+--- types, so the selected text is white: 5.9:1 on this blue, and no accent of the palette is lost in it.
+M.SELECTION = { fg = "#ffffff", bg = "#2b63b8" }
+
 --- The style in use: vim.g.greyknight_style, $GREYKNIGHT_STYLE, the choice kept by :GreyKnightStyle, else OLED
 function M.current()
   -- one after the other: in a list an unset vim.g.greyknight_style is nil, and ipairs stopped before $GREYKNIGHT_STYLE
@@ -68,6 +73,10 @@ end
 function M.apply(opts)
   opts = vim.tbl_deep_extend("force", opts or vim.g.cyberdream_opts or {}, {})
   opts.colors = M.palette()
+  -- the selection's colors in OLED only; a switch to greyknight takes them out of the options cyberdream kept
+  opts.highlights = opts.highlights or {}
+  local selection = M.current() == "oled" and vim.deepcopy(M.SELECTION) or nil
+  opts.highlights.Visual, opts.highlights.VisualNOS = selection, selection and vim.deepcopy(selection)
   require("cyberdream").setup(opts)
   vim.cmd.colorscheme("cyberdream")
 end

@@ -47,9 +47,10 @@ The Grey Knight dashboard is the start screen.
 
 ### The look: OLED or GreyKnight
 
-By default cyberdream's neon sits on true black `#000000` - on an OLED screen those pixels stay off. Floats, the
-cursor line and the selection are near-black so they still stand apart, and the text is a little off white
-(`#e8e8e8`) - pure white on pure black glares. Cyberdream's own look, the same neon on its grey `#16181a`, is one
+By default cyberdream's neon sits on true black `#000000` - on an OLED screen those pixels stay off. Floats and the
+cursor line are near-black so they still stand apart, the selection is white text on a strong blue (`#2b63b8`) - a
+near-black one was almost invisible - and the text is a little off white (`#e8e8e8`) - pure white on pure black
+glares. Cyberdream's own look, the same neon on its grey `#16181a`, is one
 command away:
 
 | Command / setting | What |
