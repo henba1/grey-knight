@@ -51,6 +51,9 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
+| `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+N` new, `Ctrl+X` end, `Ctrl+A` all projects |
+| `<leader>ao` | n | A new agent session next to the others (asks which agent) |
+| `<M-.>` / `<M-,>` | n, agent pane | Next / previous session in the agent's pane (its tabs; a click on a tab, middle click ends it) |
 | `<leader>ac` | n | New AI session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
 | `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`, Claude Code: `/model`) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |

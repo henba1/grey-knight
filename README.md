@@ -26,7 +26,9 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   (`<leader>ay` / `<leader>an`, `<leader>ar`);
   a window **follows the agent** to each edit as it lands (`<leader>af`); `@` in the tree hands files to it. Qwen Code
   sees the open files and the selection, and in its ask mode each edit opens as a diff first; `<leader>ad` lists what
-  the agent changed; one you are not looking at says when it is done ([the coding agent](docs/agent.md))
+  the agent changed; one you are not looking at says when it is done; **several sessions as tabs** in its pane,
+  past Claude Code / OpenCode sessions resumed from a list (`<leader>as`) or carried over to the other agent
+  ([the coding agent](docs/agent.md))
 - **Speech to text** — `<leader>av` speaks a prompt to the agent, `<leader>aV` dictates at the cursor, written down by
   whisper.cpp on your machine (`:VoiceInstall`) ([speech to text](docs/agent.md#speech-to-text))
 - **Diffs as in a pull request** — codediff (VS Code's diff) reviews the changes live as they land, the old side red,

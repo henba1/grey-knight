@@ -1,0 +1,624 @@
+-- ╔══════════════════════════════════════════════════════════════╗
+-- ║  Coding agent in toggleterm: Qwen Code, OpenCode or Claude   ║
+-- ║  Code. Per machine: $GREYKNIGHT_AGENT = qwen | opencode |    ║
+-- ║  claude; unset = Qwen Code where it is installed, else       ║
+-- ║  OpenCode, else Claude Code.                                 ║
+-- ║  A new agent gets its first prompt on start (qwen -i,        ║
+-- ║  claude --) or pasted once its TUI is up (opencode); a       ║
+-- ║  running one gets it as one bracketed paste + Enter          ║
+-- ║  (multi-line safe). Ask/edit capture file + selection before ║
+-- ║  the agent window opens and reference the file as @path      ║
+-- ║  (all three CLIs read it).                                   ║
+-- ╚══════════════════════════════════════════════════════════════╝
+local util = require("devsuite.util")
+local M = {}
+
+-- toggleterm ids: 1 = main agent, 11-13 = agents #1-#3 with their own sessions, 21 and on = the sessions started from
+-- the sessions list (integrations/agent_sessions.lua: s21, s22 ...)
+-- (2 = the shell of <leader>ts/tl, 91/92 = REPLs)
+M.AGENTS = { agent = 1, agent1 = 11, agent2 = 12, agent3 = 13 }
+M.SESSION_BASE = 21
+
+-- The session the agent's pane shows, and that <leader>tt, <leader>aa / ae, the tree's @ and speech talk to: its name
+-- in M.AGENTS. One that has ended gives way to the main agent ("agent").
+M.active = "agent"
+
+-- ms between a new OpenCode TUI's first output and the paste of the first prompt (it sets up its input)
+M.READY_DELAY = 1500
+
+local function executable(path) return path ~= nil and path ~= "" and vim.fn.executable(path) == 1 end
+
+M.BACKENDS = {
+  qwen = {
+    name = "Qwen Code",
+    short = "Qwen",
+    --- $QWEN_BIN, ~/.local/bin/qwen (the current release), else qwen on the PATH
+    -- (one check after the other: in a list, an unset $QWEN_BIN is nil and ipairs stopped before ~/.local/bin)
+    bin = function()
+      if executable(vim.env.QWEN_BIN) then return vim.env.QWEN_BIN end
+      local own = vim.fn.expand("~/.local/bin/qwen")
+      if executable(own) then return own end
+      return "qwen"
+    end,
+    first_prompt = "-i", -- a new agent takes its first prompt as an argument
+    new_session = "/clear",
+  },
+  opencode = {
+    name = "OpenCode",
+    short = "OpenCode",
+    --- $OPENCODE_BIN, else opencode on the PATH
+    bin = function() return executable(vim.env.OPENCODE_BIN) and vim.env.OPENCODE_BIN or "opencode" end,
+    first_prompt = nil, -- pasted once the TUI is up: multi-line prompts survive every shell, cmd.exe too
+    new_session = "/new",
+    models = "/models",
+  },
+  claude = {
+    name = "Claude Code",
+    short = "Claude",
+    --- $CLAUDE_BIN, ~/.local/bin/claude (its native installer's), else claude on the PATH
+    bin = function()
+      if executable(vim.env.CLAUDE_BIN) then return vim.env.CLAUDE_BIN end
+      local own = vim.fn.expand("~/.local/bin/claude")
+      if executable(own) then return own end
+      return "claude"
+    end,
+    -- the first prompt an argument after "--" (one starting with - is no option); pasted, it could land in the
+    -- question whether to trust the folder that a first start in one asks
+    first_prompt = "--",
+    new_session = "/clear",
+    models = "/model",
+  },
+}
+
+--- The agent of this machine: $GREYKNIGHT_AGENT (or vim.g.greyknight_agent), else Qwen Code where it is
+--- installed, else OpenCode, else Claude Code where that is - kali and the pi keep Qwen Code without any setting.
+function M.backend_id()
+  local wanted = vim.g.greyknight_agent or vim.env.GREYKNIGHT_AGENT
+  if wanted and wanted ~= "" then
+    if M.BACKENDS[wanted] then return wanted end
+    vim.notify_once(("GREYKNIGHT_AGENT=%s is not an agent (qwen, opencode, claude) - choosing by what is installed"):format(wanted),
+      vim.log.levels.WARN)
+  end
+  for _, id in ipairs({ "qwen", "opencode", "claude" }) do
+    if executable(M.BACKENDS[id].bin()) then return id end
+  end
+  return "qwen"
+end
+
+function M.backend() return M.BACKENDS[M.backend_id()] end
+
+--- The agents installed on this machine, in the order of the machine's choice (backend_id): ids
+function M.installed()
+  local list = {}
+  for _, id in ipairs({ "claude", "opencode", "qwen" }) do
+    if executable(M.BACKENDS[id].bin()) then list[#list + 1] = id end
+  end
+  return list
+end
+
+--- The agent's binary.
+function M.bin() return M.backend().bin() end
+
+local function running(term)
+  return term ~= nil and term.job_id ~= nil and vim.fn.jobwait({ term.job_id }, 0)[1] == -1
+end
+
+--- Whether two folders are the same (Windows: in any case)
+function M.same_dir(a, b)
+  if not a or not b then return false end
+  local function n(p)
+    p = vim.fs.normalize(vim.fn.fnamemodify(p, ":p"))
+    if #p > 1 and not p:match("^%a:/$") then p = p:gsub("/$", "") end
+    return util.WIN and p:lower() or p
+  end
+  return n(a) == n(b)
+end
+
+--- The running agents that work in another folder than Neovim's: a program keeps the folder it started in - a cd
+--- later (the tree's ., :cd) moves only Neovim. Their terminals, by number.
+function M.elsewhere()
+  local T, cwd, list = require("toggleterm.terminal"), vim.fn.getcwd(-1, -1), {}
+  for _, id in pairs(M.AGENTS) do
+    local term = T.get(id, true)
+    if term and term.gk_agent and running(term) and term.dir and not M.same_dir(term.dir, cwd) then list[#list + 1] = term end
+  end
+  table.sort(list, function(a, b) return a.id < b.id end)
+  return list
+end
+
+local function size(direction)
+  if direction == "vertical" then return math.floor(vim.o.columns / 2) end
+  if direction == "horizontal" then return 15 end
+end
+
+-- The agent's terminal, and whether its process is new. A process starts when there is none
+-- (or it exited); `first_prompt` goes to that new process as an argument when the CLI takes one.
+-- The flag for a first prompt on the command line, or nil: then it is pasted once the TUI is up. Never on Windows:
+-- the command goes through cmd.exe (toggleterm), which expands %VAR% even in quotes - "100% of %PATH%" arrived with
+-- the machine's PATH in it (2026-10-21)
+local function prompt_flag(backend) return not util.WIN and backend.first_prompt or nil end
+
+--- The command line that starts the agent. The binary by its full path: cmd.exe gives a quoted .cmd it found on
+--- the PATH the current directory as its own folder (%~dp0), so on Windows opencode.cmd did not find its launcher.
+--- An agent that takes its link to Neovim as arguments (Claude Code) gets them before the first prompt; `args` (the
+--- session to resume: --resume, --session) after them. `id`: the agent (default: this machine's).
+function M.command(first_prompt, id, args)
+  id = id or M.backend_id()
+  local backend = M.BACKENDS[id]
+  local bin = backend.bin()
+  local cmd = vim.fn.shellescape(vim.fn.exepath(bin) ~= "" and vim.fn.exepath(bin) or bin)
+  for _, arg in ipairs(M.link_args(id)) do cmd = cmd .. " " .. vim.fn.shellescape(arg) end
+  for _, arg in ipairs(args or {}) do cmd = cmd .. " " .. vim.fn.shellescape(arg) end
+  if first_prompt and prompt_flag(backend) then
+    cmd = cmd .. " " .. prompt_flag(backend) .. " " .. vim.fn.shellescape(first_prompt)
+  end
+  return cmd
+end
+
+--- What connects a new agent to this Neovim - its tools, Qwen Code's IDE mode (integrations/agent_link.lua): the
+--- environment of its terminal. vim.g.greyknight_agent_link = false: none. Fails: the agent starts without it.
+function M.link_env(id, backend, dir)
+  if vim.g.greyknight_agent_link == false then return nil end
+  backend = backend or M.backend_id()
+  local ok, env = pcall(function() return require("integrations.agent_link").env(backend, dir or vim.fn.getcwd(), id) end)
+  if ok then return env end
+  vim.notify_once(("%s: not connected to Neovim - its tools and diffs are off (%s)"):format(M.BACKENDS[backend].short, tostring(env)),
+    vim.log.levels.WARN)
+end
+
+--- The same as arguments of its command line, for an agent that takes them so (Claude Code: --mcp-config,
+--- --settings); none for the others. Fails: the agent starts without them.
+function M.link_args(backend)
+  if vim.g.greyknight_agent_link == false then return {} end
+  backend = backend or M.backend_id()
+  local ok, args = pcall(function() return require("integrations.agent_link").args(backend) end)
+  if ok then return args end
+  vim.notify_once(("%s: not connected to Neovim - its tools are off (%s)"):format(M.BACKENDS[backend].short, tostring(args)),
+    vim.log.levels.WARN)
+  return {}
+end
+
+--- The agent says it is done ("stop") or waits for an answer ("permission") - its hooks (agent_link.lua). A word
+--- unless the user looks at it: its window is the current one, or the diff it asks about (agent_ide.lua) is.
+function M.attention(event, id)
+  local T = require("toggleterm.terminal")
+  local term = id and T.get(id, true)
+  if term and term.window and vim.api.nvim_win_is_valid(term.window) and vim.api.nvim_get_current_win() == term.window then
+    return
+  end
+  local ide = require("integrations.agent_ide")
+  if event == "permission" and ide.current() then return end
+  local who = term and term.display_name or M.backend().name
+  if event == "stop" then
+    vim.notify(who .. " is done", vim.log.levels.INFO, { title = who })
+  elseif event == "permission" then
+    -- an edit it asks about opens as a diff a moment later (its own word): then this one says nothing more
+    vim.defer_fn(function()
+      if ide.current() or next(ide.views) then return end
+      vim.notify(who .. " waits for your answer", vim.log.levels.WARN, { title = who })
+    end, M.PERMISSION_DELAY)
+  end
+end
+
+-- ms the word "waits for your answer" waits for a diff of the same question (agent_ide.lua)
+M.PERMISSION_DELAY = 600
+
+-- What the project was like when an agent started: <leader>ad lists what changed since (agent_changes.lua)
+local function note_start(dir)
+  pcall(function() require("integrations.agent_changes").start(dir) end)
+end
+
+-- 2026-10-23: the agent's window has a keyboard of its own. GreyKnight's terminal keys (config/keymaps.lua) are for
+-- every terminal; in an agent's they caught keys its TUI needs - Ctrl+Left / Ctrl+Right resized the window instead of
+-- moving the cursor word by word in Claude Code's prompt.
+-- 2026-10-28: all of them now, the ways out too. Esc Esc is Claude Code's rewind (and a single Esc its interrupt),
+-- Ctrl+J its new line, Ctrl+K / Ctrl+H / Ctrl+L its kill-line, backspace and redraw: kept as GreyKnight's, they threw
+-- the user into normal mode or into the next window in the middle of a prompt. The pane works as the agent does in a
+-- terminal of its own; GreyKnight keeps only keys no agent uses - Alt+H/J/K/L to the next window - and Neovim's own
+-- Ctrl+\ Ctrl+N. A click or the mouse wheel shows the scrollback (normal mode); any key typed there goes to the agent
+-- and back to typing, as a terminal snaps to the bottom - a stray letter is no Vim command any more.
+M.LEAVE_KEYS = { "<M-h>", "<M-j>", "<M-k>", "<M-l>" }
+
+-- Keys the scrollback keeps for itself: scrolling (the wheel is Neovim's anyway)
+local SCROLL_KEYS = { "<PageUp>", "<PageDown>", "<S-PageUp>", "<S-PageDown>" }
+
+--- Every key of the scrollback (normal mode) that goes to the agent: the printable ones, Enter, Tab, Backspace, the
+--- arrows, Ctrl+A ... Ctrl+Z - in their notation for a map.
+local function typed_keys()
+  local keys, special = {}, { [" "] = "<Space>", ["<"] = "<lt>", ["|"] = "<Bar>", ["\\"] = "<Bslash>" }
+  for c = 32, 126 do
+    local ch = string.char(c)
+    keys[#keys + 1] = special[ch] or ch
+  end
+  for c = ("a"):byte(), ("z"):byte() do
+    local ch = string.char(c)
+    if ch ~= "i" and ch ~= "m" then keys[#keys + 1] = "<C-" .. ch .. ">" end -- Ctrl+I is Tab, Ctrl+M Enter
+  end
+  vim.list_extend(keys, { "<CR>", "<Tab>", "<S-Tab>", "<BS>", "<Del>", "<Up>", "<Down>", "<Left>", "<Right>", "<Home>", "<End>" })
+  return keys
+end
+
+--- Back to typing in the agent, with `keys` (notation) sent to it - from the scrollback
+local function type_again(keys)
+  vim.cmd("startinsert")
+  if keys then vim.api.nvim_feedkeys(vim.keycode(keys), "n", false) end -- not remapped: as typed, to the program
+end
+
+--- The agent's keys in its buffer `buf`: every global terminal-mode key - Esc Esc, Ctrl+H/J/K/L, Ctrl+arrows - goes to
+--- the agent (a buffer-local map of the key onto itself, not remapped, which Neovim sends to the program as typed);
+--- Alt+H/J/K/L go to the next window; the scrollback types again on any key.
+function M.own_keys(buf)
+  local opts = { buffer = buf, nowait = true, desc = "The agent's (not GreyKnight's)" }
+  local leave = {}
+  for _, k in ipairs(M.LEAVE_KEYS) do leave[vim.keycode(k)] = true end
+  for _, m in ipairs(vim.api.nvim_get_keymap("t")) do
+    if not leave[vim.keycode(m.lhs)] then vim.keymap.set("t", m.lhs, m.lhs, opts) end
+  end
+  -- a single Esc too: as the start of the global Esc Esc it waited for a second key ('timeoutlen'), and Claude Code's
+  -- interrupt came a second late (nowait: at once)
+  vim.keymap.set("t", "<Esc>", "<Esc>", opts)
+  -- Shift+Enter: a new line in the prompt, as in Claude Code's and OpenCode's own terminal - Ctrl+J is that key in
+  -- both; Neovim's terminal sends Shift+Enter as a plain Enter (the prompt went off)
+  vim.keymap.set("t", "<S-CR>", "<C-j>", vim.tbl_extend("force", opts, { desc = "New line in the agent's prompt" }))
+  for _, k in ipairs(M.LEAVE_KEYS) do
+    local dir = k:sub(4, 4)
+    local go = { buffer = buf, nowait = true, desc = "Window " .. dir .. " (from the agent)" }
+    vim.keymap.set("t", k, "<C-\\><C-n><C-w>" .. dir, go)
+    vim.keymap.set("n", k, "<C-w>" .. dir, go)
+  end
+  -- Shift+PageUp / PageDown: the scrollback, as in a terminal emulator; PageUp / PageDown themselves stay the agent's
+  vim.keymap.set("t", "<S-PageUp>", "<C-\\><C-n><C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
+  vim.keymap.set("t", "<S-PageDown>", "<C-\\><C-n><C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
+  -- the scrollback (normal mode: a click, the wheel, Shift+PageUp, Ctrl+\ Ctrl+N)
+  local scroll = {}
+  for _, k in ipairs(SCROLL_KEYS) do scroll[k] = true end
+  for _, k in ipairs(typed_keys()) do
+    if not scroll[k] then
+      vim.keymap.set("n", k, function() type_again(k) end, { buffer = buf, nowait = true, desc = "Type in the agent" })
+    end
+  end
+  vim.keymap.set("n", "<PageUp>", "<C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
+  vim.keymap.set("n", "<PageDown>", "<C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
+  vim.keymap.set("n", "<S-PageUp>", "<C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
+  vim.keymap.set("n", "<S-PageDown>", "<C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
+  -- Esc in the scrollback: typing again, nothing sent - not the agent's interrupt for a look back
+  vim.keymap.set("n", "<Esc>", function() type_again() end, { buffer = buf, nowait = true, desc = "Back to typing in the agent" })
+  -- a selection (drag, double click) is copied as in a terminal: Ctrl+C or y, then typing again
+  local function copy() vim.cmd('normal! "+y'); type_again() end
+  vim.keymap.set("x", "<C-c>", copy, { buffer = buf, desc = "Copy the selection (to the agent again)" })
+  vim.keymap.set("x", "<Esc>", function() vim.cmd("normal! \27"); type_again() end, { buffer = buf, nowait = true, desc = "Back to typing in the agent" })
+end
+
+--- A new session id for Claude Code (--session-id takes a UUID): the session a new agent writes is known from its
+--- start - its tab shows its title, the sessions list can resume it once it has ended
+function M.uuid()
+  local b = { (vim.uv.random(16) or tostring(vim.uv.hrtime()):rep(2)):byte(1, 16) }
+  b[7] = bit.bor(bit.band(b[7], 0x0f), 0x40) -- version 4
+  b[9] = bit.bor(bit.band(b[9], 0x3f), 0x80) -- variant 10
+  local hex = {}
+  for i = 1, 16 do hex[i] = ("%02x"):format(b[i]) end
+  local h = table.concat(hex)
+  return ("%s-%s-%s-%s-%s"):format(h:sub(1, 8), h:sub(9, 12), h:sub(13, 16), h:sub(17, 20), h:sub(21, 32))
+end
+
+--- The terminal of an agent session by its name, when it is one
+function M.term(name)
+  local term = name and M.AGENTS[name] and require("toggleterm.terminal").get(M.AGENTS[name], true)
+  return term and term.gk_agent and term or nil
+end
+
+--- The session the pane shows and prompts go to: the active one while its agent runs, else the main agent
+function M.current()
+  local term = M.term(M.active)
+  if term and running(term) then return M.active end
+  return "agent"
+end
+
+--- The agent sessions of this Neovim whose program runs, by their terminal number: { name, term }
+function M.running()
+  local list = {}
+  for name, id in pairs(M.AGENTS) do
+    local term = require("toggleterm.terminal").get(id, true)
+    if term and term.gk_agent and running(term) then list[#list + 1] = { name = name, term = term } end
+  end
+  table.sort(list, function(a, b) return a.term.id < b.term.id end)
+  return list
+end
+
+--- A name for a new session: s21, s22 ... - the first number no terminal has
+function M.new_name()
+  local T, id = require("toggleterm.terminal"), M.SESSION_BASE
+  while T.get(id, true) and running(T.get(id, true)) do id = id + 1 end
+  local name = "s" .. id
+  M.AGENTS[name] = id
+  return name
+end
+
+-- `spec` of a session (integrations/agent_sessions.lua): backend (the agent; default this machine's), args (to resume
+-- one: --resume <id>, --session <id>), dir (the folder it works in: a session resumes where it was started), sid (its
+-- session id where known), title (its tab's)
+local function agent(name, direction, first_prompt, spec)
+  spec = spec or {}
+  local T = require("toggleterm.terminal")
+  local id_backend = spec.backend or M.backend_id()
+  local backend = M.BACKENDS[id_backend]
+  local id = M.AGENTS[name] or M.AGENTS.agent
+  local term = T.get(id, true)
+  if running(term) then
+    if term.gk_agent then return term, false end
+    vim.notify(("%s: terminal %d is not an agent - close it first"):format(backend.short, id), vim.log.levels.WARN)
+    return nil
+  end
+  if term then pcall(term.shutdown, term) end
+  local args, sid = vim.list_extend({}, spec.args or {}), spec.sid
+  -- a new Claude Code session gets its id from here: known while it runs, resumable by it afterwards
+  if id_backend == "claude" and not sid and not vim.tbl_contains(args, "--resume") then
+    sid = M.uuid()
+    vim.list_extend(args, { "--session-id", sid })
+  end
+  local display = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1))
+  if name:match("^s%d+$") then display = backend.short .. (spec.title and (": " .. spec.title) or "") end
+  term = T.Terminal:new({
+    id = id,
+    cmd = M.command(first_prompt, id_backend, args),
+    dir = spec.dir,
+    direction = direction,
+    display_name = display,
+    close_on_exit = false, -- keep the transcript when the CLI exits
+    env = M.link_env(id, id_backend, spec.dir),
+    on_create = function(t) M.own_keys(t.bufnr) end,
+  })
+  term.gk_agent = true
+  term.gk_backend = id_backend
+  term.gk_session = sid
+  term.gk_title = spec.title
+  term.gk_started = os.time()
+  note_start(spec.dir or vim.fn.getcwd())
+  return term, true
+end
+
+--- The window of the agent's pane: one that shows an agent session (not a float), the current window first
+function M.pane()
+  local wins = { vim.api.nvim_get_current_win() }
+  vim.list_extend(wins, vim.api.nvim_tabpage_list_wins(0))
+  for _, win in ipairs(wins) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      local buf = vim.api.nvim_win_get_buf(win)
+      for _, s in ipairs(M.running()) do
+        if s.term.bufnr == buf then return win, s end
+      end
+    end
+  end
+end
+
+-- The tabs on the pane: its sessions (integrations/agent_sessions.lua)
+local function tabs(win)
+  pcall(function() require("integrations.agent_sessions").decorate(win) end)
+end
+
+-- Going back to the agent's window later is insert mode as well, like every toggleterm window (plugins/ai.lua). A
+-- session shown where the pane is already open takes the pane's window (its buffer swapped in): one pane, its sessions
+-- as tabs, the layout unchanged.
+local function show(term, direction)
+  direction = direction or term.direction
+  if term:is_open() and term.direction ~= direction then term:close() end
+  if term:is_open() then
+    term:focus()
+  else
+    local pane = M.pane()
+    if pane and direction ~= "float" and vim.api.nvim_win_get_buf(pane) ~= term.bufnr and term.bufnr
+      and vim.api.nvim_buf_is_valid(term.bufnr) then
+      vim.api.nvim_win_set_buf(pane, term.bufnr) -- toggleterm's is_open() of the other is false from now: not its buffer
+      vim.api.nvim_set_current_win(pane)
+      term.window, term.direction = pane, direction
+    else
+      term:open(size(direction), direction)
+    end
+  end
+  tabs(term.window)
+  vim.cmd("startinsert!")
+end
+
+-- One bracketed paste, then Enter as a keypress of its own once the TUI has taken the paste
+local function submit(term, text)
+  vim.fn.chansend(term.job_id, "\27[200~" .. text .. "\27[201~")
+  vim.defer_fn(function()
+    if running(term) then vim.fn.chansend(term.job_id, "\r") end
+  end, 150)
+end
+
+-- fn() once a new agent's TUI has drawn something, plus READY_DELAY for it to set up its input
+local function when_ready(term, fn)
+  local waited = 0
+  local function poll()
+    if not running(term) then return end
+    local lines = vim.api.nvim_buf_is_valid(term.bufnr) and vim.api.nvim_buf_get_lines(term.bufnr, 0, -1, false) or {}
+    for _, line in ipairs(lines) do
+      if vim.trim(line) ~= "" then
+        return vim.defer_fn(function() if running(term) then fn() end end, M.READY_DELAY)
+      end
+    end
+    waited = waited + 200
+    if waited >= 30000 then
+      return vim.notify(M.backend().short .. ": the agent did not start within 30 s", vim.log.levels.WARN)
+    end
+    vim.defer_fn(poll, 200)
+  end
+  vim.defer_fn(poll, 200)
+end
+
+--- What a prompt needs from the editor; call it before any window changes.
+function M.context()
+  local file = vim.api.nvim_buf_get_name(0)
+  local ctx = { ft = vim.bo.filetype, rel = file ~= "" and vim.fn.fnamemodify(file, ":.") or nil }
+  local mode = vim.fn.mode()
+  if mode == "v" or mode == "V" or mode == "\22" then
+    local lines, first, last = util.visual_lines()
+    ctx.sel = { text = table.concat(lines, "\n"), first = first, last = last }
+  end
+  return ctx
+end
+
+--- Prompt for an "ask" or "edit" request. @path makes the agent read the file itself.
+function M.prompt(kind, ctx, request)
+  local ref = "the current buffer"
+  if ctx.rel then
+    local escaped = ctx.rel:gsub(" ", "\\ ")
+    ref = "@" .. escaped
+  end
+  local block = ctx.sel and ("lines %d-%d:\n```%s\n%s\n```"):format(ctx.sel.first, ctx.sel.last, ctx.ft or "", ctx.sel.text)
+  if kind == "edit" then
+    return ("Edit %s, %s\n\nInstruction: %s\n\nChange only these lines unless the instruction needs more, then stop.")
+      :format(ref, block, request)
+  end
+  if block then
+    return ("In %s, %s\n\n%s\n\nAnswer only - do not modify any files."):format(ref, block, request)
+  end
+  return ("%s\n\n%s\n\nAnswer only - do not modify any files."):format(ref, request)
+end
+
+--- Send a prompt to an agent (default: the main one, vertical split).
+function M.send(text, name, direction)
+  direction = direction or "vertical"
+  local term, new = agent(name or "agent", direction, text)
+  if not term then return end
+  show(term, direction)
+  if not new then return submit(term, text) end
+  if not prompt_flag(M.backend()) then when_ready(term, function() submit(term, text) end) end
+end
+
+--- Files as @path mentions in the agent's input - typed there, not sent: the user goes on with the prompt (the
+--- tree's @). Both CLIs read a file (or folder) named so.
+function M.mention(paths)
+  local refs = {}
+  for _, p in ipairs(paths or {}) do
+    local r = vim.fn.fnamemodify(p, ":.")
+    refs[#refs + 1] = "@" .. (r:gsub(" ", "\\ "))
+  end
+  if #refs == 0 then return end
+  local text = table.concat(refs, " ") .. " "
+  local term, new = agent("agent", "vertical")
+  if not term then return end
+  show(term, "vertical")
+  local function paste() vim.fn.chansend(term.job_id, "\27[200~" .. text .. "\27[201~") end
+  if new then when_ready(term, paste) else paste() end
+end
+
+--- Ask about the file or the selection (read-only); asks for the question first.
+function M.ask()
+  local ctx = M.context()
+  local who = M.backend().short
+  local prompt = ctx.sel and ("Ask %s about the selection: "):format(who) or ("Ask %s about this file: "):format(who)
+  vim.ui.input({ prompt = prompt }, function(request)
+    if request == nil then return end
+    if vim.trim(request) == "" then request = ctx.sel and "Explain this code." or "Explain what this file does." end
+    M.send(M.prompt("ask", ctx, request))
+  end)
+end
+
+--- Let the agent change the selected lines; asks for the instruction first.
+function M.edit()
+  local ctx = M.context()
+  local who = M.backend().short
+  if not ctx.sel then return vim.notify(who .. ": select the lines to edit first", vim.log.levels.WARN) end
+  vim.ui.input({ prompt = who .. ", change the selection: " }, function(request)
+    if request == nil or vim.trim(request) == "" then return end
+    M.send(M.prompt("edit", ctx, request))
+  end)
+end
+
+--- Fresh conversation in the main agent (/clear for Qwen Code and Claude Code, /new for OpenCode), or a new agent. One that works in
+--- another folder (started before a cd) starts anew in Neovim's - its conversation ends anyway, its folder cannot change.
+function M.new_session()
+  local old = require("toggleterm.terminal").get(M.AGENTS.agent, true)
+  if old and old.gk_agent and running(old) and old.dir and not M.same_dir(old.dir, vim.fn.getcwd(-1, -1)) then
+    pcall(old.shutdown, old)
+    vim.notify(("%s starts anew in %s"):format(M.backend().name, vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
+      vim.log.levels.INFO, { title = M.backend().short })
+    return M.launch("agent", "vertical")
+  end
+  local term, new = agent("agent", "vertical")
+  if not term then return end
+  show(term, "vertical")
+  if not new then
+    vim.fn.chansend(term.job_id, M.backend().new_session)
+    vim.defer_fn(function()
+      if running(term) then vim.fn.chansend(term.job_id, "\r") end
+    end, 150)
+    pcall(function() require("integrations.agent_changes").start(vim.fn.getcwd(), true) end) -- what it changes counts from now
+  end
+end
+
+--- Base URL of Qwen Code's model server: $QWEN_BASE_URL, else the default model of ~/.qwen/settings.json.
+function M.base_url()
+  if vim.env.QWEN_BASE_URL and vim.env.QWEN_BASE_URL ~= "" then return vim.env.QWEN_BASE_URL end
+  local ok, settings = pcall(function()
+    return vim.json.decode(table.concat(vim.fn.readfile(vim.fn.expand("~/.qwen/settings.json")), "\n"))
+  end)
+  local url = ok and type(settings) == "table" and type(settings.model) == "table" and settings.model.baseUrl
+  return url or "http://192.168.2.173:8000/v1"
+end
+
+--- Which model the server runs right now (llama-server /props): name and context size.
+--- Several launchers share the port, so this is how you know who Qwen Code talks to.
+--- OpenCode and Claude Code pick their model themselves (/models, /model in the agent).
+function M.model_info(done)
+  if M.backend_id() ~= "qwen" then
+    local msg = ("%s picks its model itself: %s in the agent shows and switches it"):format(M.backend().name, M.backend().models)
+    vim.notify(msg, vim.log.levels.INFO, { title = M.backend().short })
+    if done then done(msg) end
+    return
+  end
+  local url = M.base_url():gsub("/v1/?$", "") .. "/props"
+  vim.system({ "curl", "-s", "--max-time", "3", url }, { text = true }, function(res)
+    vim.schedule(function()
+      local ok, props = pcall(vim.json.decode, res.stdout or "")
+      local msg, level
+      if res.code ~= 0 or not ok or type(props) ~= "table" or not props.model_path then
+        msg, level = ("No model is running at %s - start a launcher on the AI Dashboard (Models)"):format(url), vim.log.levels.WARN
+      else
+        local settings = type(props.default_generation_settings) == "table" and props.default_generation_settings or {}
+        msg = ("Model: %s\nContext: %s tokens"):format(vim.fn.fnamemodify(props.model_path, ":t:r"), tostring(settings.n_ctx or "?"))
+        level = vim.log.levels.INFO
+      end
+      vim.notify(msg, level, { title = "Qwen" })
+      if done then done(msg) end
+    end)
+  end)
+end
+
+-- Neovim's folder changed (the tree's ., :cd) while agents run in the old one: a word - they keep working there
+vim.api.nvim_create_autocmd("DirChanged", {
+  group = vim.api.nvim_create_augroup("greyknight_agent_dir", { clear = true }),
+  callback = function(ev)
+    if ev.match ~= "global" then return end -- a window's or tab's own directory: not the one agents start in
+    local list = M.elsewhere()
+    if #list == 0 then return end
+    local names = {}
+    for _, t in ipairs(list) do
+      names[#names + 1] = ("%s in %s"):format(t.display_name or M.backend().name, vim.fn.fnamemodify(t.dir, ":~"))
+    end
+    vim.notify(("%s - %s started there, a running program keeps its folder. <leader>ac: a new conversation in %s")
+      :format(table.concat(names, ", "), #list == 1 and "it" or "they", vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
+      vim.log.levels.WARN, { title = M.backend().short })
+  end,
+})
+
+--- Open (or focus) an agent.
+function M.launch(name, direction)
+  local term = agent(name or "agent", direction)
+  if term then show(term, direction) end
+end
+
+--- Open or hide an agent; its process keeps running while hidden.
+function M.toggle(name, direction)
+  local term = agent(name or "agent", direction)
+  if not term then return end
+  if term:is_open() then
+    term:close()
+  else
+    show(term, direction)
+  end
+end
+
+return M

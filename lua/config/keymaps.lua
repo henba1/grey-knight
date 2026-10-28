@@ -190,14 +190,21 @@ local function agent() return require("integrations.agent") end
 vim.g.qwen_launch = function(name, direction) agent().launch(name, direction) end
 vim.g.qwen_toggle = function(name, direction) agent().toggle(name, direction) end
 
-map("n", "<leader>tt", function() agent().toggle("agent", "vertical") end,    { desc = "AI: Toggle" })
-map("n", "<leader>tf", function() agent().launch("agent", "float") end,       { desc = "AI: Float" })
-map("n", "<leader>th", function() agent().launch("agent", "horizontal") end,  { desc = "AI: Horizontal" })
-map("n", "<leader>tv", function() agent().launch("agent", "vertical") end,    { desc = "AI: Vertical" })
+-- tt / tf / th / tv: the session the pane shows (the main agent until another one is picked: <leader>as)
+map("n", "<leader>tt", function() agent().toggle(nil, "vertical") end,    { desc = "AI: Toggle" })
+map("n", "<leader>tf", function() agent().launch(nil, "float") end,       { desc = "AI: Float" })
+map("n", "<leader>th", function() agent().launch(nil, "horizontal") end,  { desc = "AI: Horizontal" })
+map("n", "<leader>tv", function() agent().launch(nil, "vertical") end,    { desc = "AI: Vertical" })
 map("n", "<leader>t1", function() agent().launch("agent1", "horizontal") end, { desc = "AI: Agent #1 (own session)" })
 map("n", "<leader>t2", function() agent().launch("agent2", "horizontal") end, { desc = "AI: Agent #2 (own session)" })
 map("n", "<leader>t3", function() agent().launch("agent3", "horizontal") end, { desc = "AI: Agent #3 (own session)" })
-map("n", "<leader>ac", function() agent().new_session() end, { desc = "AI: New session" })
+map("n", "<leader>ac", function() agent().new_session() end, { desc = "AI: New conversation in this session (/clear)" })
+-- Sessions (lua/integrations/agent_sessions.lua): the running ones are the pane's tabs, the past ones resume
+local function sessions() return require("integrations.agent_sessions") end
+map("n", "<leader>as", function() sessions().pick() end, { desc = "AI: Sessions - switch, resume, carry over (Ctrl+A: all projects)" })
+map("n", "<leader>ao", function() sessions().new() end,  { desc = "AI: Open a new session next to the others" })
+map("n", "<M-.>", function() agent().cycle(1) end,       { desc = "AI: Next session in the pane" })
+map("n", "<M-,>", function() agent().cycle(-1) end,      { desc = "AI: Previous session in the pane" })
 map("n", "<leader>am", function() agent().model_info() end,  { desc = "AI: Model running on the rig" })
 map("n", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about file" })
 map("v", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about selection" })

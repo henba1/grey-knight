@@ -13,9 +13,15 @@
 local util = require("devsuite.util")
 local M = {}
 
--- toggleterm ids: 1 = main agent, 11-13 = agents #1-#3 with their own sessions
+-- toggleterm ids: 1 = main agent, 11-13 = agents #1-#3 with their own sessions, 21 and on = the sessions started from
+-- the sessions list (integrations/agent_sessions.lua: s21, s22 ...)
 -- (2 = the shell of <leader>ts/tl, 91/92 = REPLs)
 M.AGENTS = { agent = 1, agent1 = 11, agent2 = 12, agent3 = 13 }
+M.SESSION_BASE = 21
+
+-- The session the agent's pane shows, and that <leader>tt, <leader>aa / ae, the tree's @ and speech talk to: its name
+-- in M.AGENTS. One that has ended gives way to the main agent ("agent").
+M.active = "agent"
 
 -- ms between a new OpenCode TUI's first output and the paste of the first prompt (it sets up its input)
 M.READY_DELAY = 1500
@@ -81,6 +87,15 @@ end
 
 function M.backend() return M.BACKENDS[M.backend_id()] end
 
+--- The agents installed on this machine, in the order of the machine's choice (backend_id): ids
+function M.installed()
+  local list = {}
+  for _, id in ipairs({ "claude", "opencode", "qwen" }) do
+    if executable(M.BACKENDS[id].bin()) then list[#list + 1] = id end
+  end
+  return list
+end
+
 --- The agent's binary.
 function M.bin() return M.backend().bin() end
 
@@ -125,12 +140,15 @@ local function prompt_flag(backend) return not util.WIN and backend.first_prompt
 
 --- The command line that starts the agent. The binary by its full path: cmd.exe gives a quoted .cmd it found on
 --- the PATH the current directory as its own folder (%~dp0), so on Windows opencode.cmd did not find its launcher.
---- An agent that takes its link to Neovim as arguments (Claude Code) gets them before the first prompt.
-function M.command(first_prompt)
-  local backend = M.backend()
+--- An agent that takes its link to Neovim as arguments (Claude Code) gets them before the first prompt; `args` (the
+--- session to resume: --resume, --session) after them. `id`: the agent (default: this machine's).
+function M.command(first_prompt, id, args)
+  id = id or M.backend_id()
+  local backend = M.BACKENDS[id]
   local bin = backend.bin()
   local cmd = vim.fn.shellescape(vim.fn.exepath(bin) ~= "" and vim.fn.exepath(bin) or bin)
-  for _, arg in ipairs(M.link_args()) do cmd = cmd .. " " .. vim.fn.shellescape(arg) end
+  for _, arg in ipairs(M.link_args(id)) do cmd = cmd .. " " .. vim.fn.shellescape(arg) end
+  for _, arg in ipairs(args or {}) do cmd = cmd .. " " .. vim.fn.shellescape(arg) end
   if first_prompt and prompt_flag(backend) then
     cmd = cmd .. " " .. prompt_flag(backend) .. " " .. vim.fn.shellescape(first_prompt)
   end
@@ -139,21 +157,23 @@ end
 
 --- What connects a new agent to this Neovim - its tools, Qwen Code's IDE mode (integrations/agent_link.lua): the
 --- environment of its terminal. vim.g.greyknight_agent_link = false: none. Fails: the agent starts without it.
-function M.link_env(id)
+function M.link_env(id, backend, dir)
   if vim.g.greyknight_agent_link == false then return nil end
-  local ok, env = pcall(function() return require("integrations.agent_link").env(M.backend_id(), vim.fn.getcwd(), id) end)
+  backend = backend or M.backend_id()
+  local ok, env = pcall(function() return require("integrations.agent_link").env(backend, dir or vim.fn.getcwd(), id) end)
   if ok then return env end
-  vim.notify_once(("%s: not connected to Neovim - its tools and diffs are off (%s)"):format(M.backend().short, tostring(env)),
+  vim.notify_once(("%s: not connected to Neovim - its tools and diffs are off (%s)"):format(M.BACKENDS[backend].short, tostring(env)),
     vim.log.levels.WARN)
 end
 
 --- The same as arguments of its command line, for an agent that takes them so (Claude Code: --mcp-config,
 --- --settings); none for the others. Fails: the agent starts without them.
-function M.link_args()
+function M.link_args(backend)
   if vim.g.greyknight_agent_link == false then return {} end
-  local ok, args = pcall(function() return require("integrations.agent_link").args(M.backend_id()) end)
+  backend = backend or M.backend_id()
+  local ok, args = pcall(function() return require("integrations.agent_link").args(backend) end)
   if ok then return args end
-  vim.notify_once(("%s: not connected to Neovim - its tools are off (%s)"):format(M.backend().short, tostring(args)),
+  vim.notify_once(("%s: not connected to Neovim - its tools are off (%s)"):format(M.BACKENDS[backend].short, tostring(args)),
     vim.log.levels.WARN)
   return {}
 end
@@ -246,6 +266,9 @@ function M.own_keys(buf)
     vim.keymap.set("t", k, "<C-\\><C-n><C-w>" .. dir, go)
     vim.keymap.set("n", k, "<C-w>" .. dir, go)
   end
+  -- Alt+. / Alt+,: the next / previous session in the pane (its tabs: integrations/agent_sessions.lua)
+  vim.keymap.set({ "t", "n" }, "<M-.>", function() M.cycle(1) end, { buffer = buf, nowait = true, desc = "Next agent session" })
+  vim.keymap.set({ "t", "n" }, "<M-,>", function() M.cycle(-1) end, { buffer = buf, nowait = true, desc = "Previous agent session" })
   -- Shift+PageUp / PageDown: the scrollback, as in a terminal emulator; PageUp / PageDown themselves stay the agent's
   vim.keymap.set("t", "<S-PageUp>", "<C-\\><C-n><C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
   vim.keymap.set("t", "<S-PageDown>", "<C-\\><C-n><C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
@@ -269,9 +292,59 @@ function M.own_keys(buf)
   vim.keymap.set("x", "<Esc>", function() vim.cmd("normal! \27"); type_again() end, { buffer = buf, nowait = true, desc = "Back to typing in the agent" })
 end
 
-local function agent(name, direction, first_prompt)
+--- A new session id for Claude Code (--session-id takes a UUID): the session a new agent writes is known from its
+--- start - its tab shows its title, the sessions list can resume it once it has ended
+function M.uuid()
+  local b = { (vim.uv.random(16) or tostring(vim.uv.hrtime()):rep(2)):byte(1, 16) }
+  b[7] = bit.bor(bit.band(b[7], 0x0f), 0x40) -- version 4
+  b[9] = bit.bor(bit.band(b[9], 0x3f), 0x80) -- variant 10
+  local hex = {}
+  for i = 1, 16 do hex[i] = ("%02x"):format(b[i]) end
+  local h = table.concat(hex)
+  return ("%s-%s-%s-%s-%s"):format(h:sub(1, 8), h:sub(9, 12), h:sub(13, 16), h:sub(17, 20), h:sub(21, 32))
+end
+
+--- The terminal of an agent session by its name, when it is one
+function M.term(name)
+  local term = name and M.AGENTS[name] and require("toggleterm.terminal").get(M.AGENTS[name], true)
+  return term and term.gk_agent and term or nil
+end
+
+--- The session the pane shows and prompts go to: the active one while its agent runs, else the main agent
+function M.current()
+  local term = M.term(M.active)
+  if term and running(term) then return M.active end
+  return "agent"
+end
+
+--- The agent sessions of this Neovim whose program runs, by their terminal number: { name, term }
+function M.running()
+  local list = {}
+  for name, id in pairs(M.AGENTS) do
+    local term = require("toggleterm.terminal").get(id, true)
+    if term and term.gk_agent and running(term) then list[#list + 1] = { name = name, term = term } end
+  end
+  table.sort(list, function(a, b) return a.term.id < b.term.id end)
+  return list
+end
+
+--- A name for a new session: s21, s22 ... - the first number no terminal has
+function M.new_name()
+  local T, id = require("toggleterm.terminal"), M.SESSION_BASE
+  while T.get(id, true) and running(T.get(id, true)) do id = id + 1 end
+  local name = "s" .. id
+  M.AGENTS[name] = id
+  return name
+end
+
+-- `spec` of a session (integrations/agent_sessions.lua): backend (the agent; default this machine's), args (to resume
+-- one: --resume <id>, --session <id>), dir (the folder it works in: a session resumes where it was started), sid (its
+-- session id where known), title (its tab's)
+local function agent(name, direction, first_prompt, spec)
+  spec = spec or {}
   local T = require("toggleterm.terminal")
-  local backend = M.backend()
+  local id_backend = spec.backend or M.backend_id()
+  local backend = M.BACKENDS[id_backend]
   local id = M.AGENTS[name] or M.AGENTS.agent
   local term = T.get(id, true)
   if running(term) then
@@ -280,29 +353,77 @@ local function agent(name, direction, first_prompt)
     return nil
   end
   if term then pcall(term.shutdown, term) end
+  local args, sid = vim.list_extend({}, spec.args or {}), spec.sid
+  -- a new Claude Code session gets its id from here: known while it runs, resumable by it afterwards
+  if id_backend == "claude" and not sid and not vim.tbl_contains(args, "--resume") then
+    sid = M.uuid()
+    vim.list_extend(args, { "--session-id", sid })
+  end
+  local display = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1))
+  if name:match("^s%d+$") then display = backend.short .. (spec.title and (": " .. spec.title) or "") end
   term = T.Terminal:new({
     id = id,
-    cmd = M.command(first_prompt),
+    cmd = M.command(first_prompt, id_backend, args),
+    dir = spec.dir,
     direction = direction,
-    display_name = name == "agent" and backend.name or (backend.name .. " #" .. name:sub(-1)),
+    display_name = display,
     close_on_exit = false, -- keep the transcript when the CLI exits
-    env = M.link_env(id),
+    env = M.link_env(id, id_backend, spec.dir),
     on_create = function(t) M.own_keys(t.bufnr) end,
   })
   term.gk_agent = true
-  note_start(vim.fn.getcwd())
+  term.gk_backend = id_backend
+  term.gk_session = sid
+  term.gk_title = spec.title
+  term.gk_started = os.time()
+  note_start(spec.dir or vim.fn.getcwd())
   return term, true
 end
 
--- Going back to the agent's window later is insert mode as well, like every toggleterm window (plugins/ai.lua)
+--- The window of the agent's pane: one that shows an agent session (not a float), the current window first
+function M.pane()
+  local wins = { vim.api.nvim_get_current_win() }
+  vim.list_extend(wins, vim.api.nvim_tabpage_list_wins(0))
+  for _, win in ipairs(wins) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      local buf = vim.api.nvim_win_get_buf(win)
+      for name, id in pairs(M.AGENTS) do -- also one whose agent has ended: its transcript is still the pane
+        local term = require("toggleterm.terminal").get(id, true)
+        if term and term.gk_agent and term.bufnr == buf then return win, { name = name, term = term } end
+      end
+    end
+  end
+end
+
+-- The tabs on the pane: its sessions (integrations/agent_sessions.lua)
+local function tabs(win)
+  pcall(function() require("integrations.agent_sessions").decorate(win) end)
+end
+
+-- Going back to the agent's window later is insert mode as well, like every toggleterm window (plugins/ai.lua). A
+-- session shown where the pane is already open takes the pane's window (its buffer swapped in): one pane, its sessions
+-- as tabs, the layout unchanged.
 local function show(term, direction)
   direction = direction or term.direction
   if term:is_open() and term.direction ~= direction then term:close() end
   if term:is_open() then
     term:focus()
   else
-    term:open(size(direction), direction)
+    local pane, shown = M.pane()
+    if pane and direction ~= "float" and term.bufnr and vim.api.nvim_buf_is_valid(term.bufnr) then
+      vim.api.nvim_win_set_buf(pane, term.bufnr) -- toggleterm's is_open() of the other is false from now: not its buffer
+      vim.api.nvim_set_current_win(pane)
+      term.window, term.direction = pane, direction
+    elseif pane and direction ~= "float" and shown.term.direction == direction then
+      -- a new session: its terminal opens where the pane was, as large
+      local width = direction == "vertical" and vim.api.nvim_win_get_width(pane) or vim.api.nvim_win_get_height(pane)
+      shown.term:close()
+      term:open(width, direction)
+    else
+      term:open(size(direction), direction)
+    end
   end
+  tabs(term.window)
   vim.cmd("startinsert!")
 end
 
@@ -364,14 +485,14 @@ function M.prompt(kind, ctx, request)
   return ("%s\n\n%s\n\nAnswer only - do not modify any files."):format(ref, request)
 end
 
---- Send a prompt to an agent (default: the main one, vertical split).
+--- Send a prompt to an agent (default: the session the pane shows, vertical split).
 function M.send(text, name, direction)
   direction = direction or "vertical"
-  local term, new = agent(name or "agent", direction, text)
+  local term, new = agent(name or M.current(), direction, text)
   if not term then return end
   show(term, direction)
   if not new then return submit(term, text) end
-  if not prompt_flag(M.backend()) then when_ready(term, function() submit(term, text) end) end
+  if not prompt_flag(M.BACKENDS[term.gk_backend] or M.backend()) then when_ready(term, function() submit(term, text) end) end
 end
 
 --- Files as @path mentions in the agent's input - typed there, not sent: the user goes on with the prompt (the
@@ -384,7 +505,7 @@ function M.mention(paths)
   end
   if #refs == 0 then return end
   local text = table.concat(refs, " ") .. " "
-  local term, new = agent("agent", "vertical")
+  local term, new = agent(M.current(), "vertical")
   if not term then return end
   show(term, "vertical")
   local function paste() vim.fn.chansend(term.job_id, "\27[200~" .. text .. "\27[201~") end
@@ -417,18 +538,22 @@ end
 --- Fresh conversation in the main agent (/clear for Qwen Code and Claude Code, /new for OpenCode), or a new agent. One that works in
 --- another folder (started before a cd) starts anew in Neovim's - its conversation ends anyway, its folder cannot change.
 function M.new_session()
-  local old = require("toggleterm.terminal").get(M.AGENTS.agent, true)
-  if old and old.gk_agent and running(old) and old.dir and not M.same_dir(old.dir, vim.fn.getcwd(-1, -1)) then
+  local name = M.current()
+  local old = M.term(name)
+  if old and running(old) and old.dir and not M.same_dir(old.dir, vim.fn.getcwd(-1, -1)) then
+    local backend = M.BACKENDS[old.gk_backend] or M.backend()
     pcall(old.shutdown, old)
-    vim.notify(("%s starts anew in %s"):format(M.backend().name, vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
-      vim.log.levels.INFO, { title = M.backend().short })
+    vim.notify(("%s starts anew in %s"):format(backend.name, vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
+      vim.log.levels.INFO, { title = backend.short })
+    if name ~= "agent" then return M.open_session({ backend = old.gk_backend }) end
     return M.launch("agent", "vertical")
   end
-  local term, new = agent("agent", "vertical")
+  local term, new = agent(name, "vertical")
   if not term then return end
   show(term, "vertical")
   if not new then
-    vim.fn.chansend(term.job_id, M.backend().new_session)
+    term.gk_session, term.gk_title = nil, nil -- a new conversation: Claude Code's /clear gives it an id of its own
+    vim.fn.chansend(term.job_id, (M.BACKENDS[term.gk_backend] or M.backend()).new_session)
     vim.defer_fn(function()
       if running(term) then vim.fn.chansend(term.job_id, "\r") end
     end, 150)
@@ -491,21 +616,77 @@ vim.api.nvim_create_autocmd("DirChanged", {
   end,
 })
 
---- Open (or focus) an agent.
+--- Open (or focus) an agent - default: the session the pane shows.
 function M.launch(name, direction)
-  local term = agent(name or "agent", direction)
-  if term then show(term, direction) end
+  name = name or M.current()
+  local term = agent(name, direction)
+  if not term then return end
+  M.active = name
+  show(term, direction)
 end
 
---- Open or hide an agent; its process keeps running while hidden.
+--- Open or hide an agent - default: the session the pane shows; its process keeps running while hidden.
 function M.toggle(name, direction)
-  local term = agent(name or "agent", direction)
+  name = name or M.current()
+  local term = agent(name, direction)
   if not term then return end
   if term:is_open() then
     term:close()
   else
+    M.active = name
     show(term, direction)
   end
+end
+
+--- A new session in the pane, next to the others (integrations/agent_sessions.lua): `spec` as for agent() above, and
+--- prompt - its first one. Returns its name.
+function M.open_session(spec, direction)
+  spec = spec or {}
+  direction = direction or "vertical"
+  local name = M.new_name()
+  local term, new = agent(name, direction, spec.prompt, spec)
+  if not term then return end
+  M.active = name
+  show(term, direction)
+  if new and spec.prompt and not prompt_flag(M.BACKENDS[term.gk_backend]) then
+    when_ready(term, function() submit(term, spec.prompt) end)
+  end
+  return name
+end
+
+--- Show a running session in the pane (its tab)
+function M.switch(name)
+  local term = M.term(name)
+  if not term then return end
+  M.active = name
+  local _, shown = M.pane()
+  show(term, shown and shown.term.direction or (term.direction ~= "float" and term.direction) or "vertical")
+end
+
+--- The next (step 1) or previous (-1) session in the pane
+function M.cycle(step)
+  local list = M.running()
+  if #list == 0 then return end
+  local at = 1
+  for i, s in ipairs(list) do
+    if s.name == M.current() then at = i end
+  end
+  M.switch(list[(at - 1 + step) % #list + 1].name)
+end
+
+--- End a session: its program stops, its terminal goes; the pane shows the next one
+function M.stop(name)
+  local term = M.term(name)
+  if not term then return end
+  local win = term.window
+  local shown = win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == term.bufnr
+  local others = vim.tbl_filter(function(s) return s.name ~= name end, M.running())
+  if shown and others[1] then -- the pane stays, with another session in it
+    M.active = others[1].name
+    show(others[1].term, term.direction)
+  end
+  pcall(term.shutdown, term)
+  if M.active == name then M.active = others[1] and others[1].name or "agent" end
 end
 
 return M
