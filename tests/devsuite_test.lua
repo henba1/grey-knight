@@ -2062,6 +2062,104 @@ test("Agent: its window has its own keys - Esc, Ctrl+H/J/K/L, Ctrl+arrows reach 
   assert(ok, err)
 end)
 
+-- 2026-10-28: one agent pane, one conversation - another one ended it, a past one was not to be found from the editor.
+-- Sessions now: several in the pane (its tabs), the past ones of Claude Code listed and resumed where they worked, or
+-- carried over to another agent. Stand-in agents print their arguments and wait.
+test("Agent sessions: several in one pane (tabs, Alt+. cycles, ending one shows the next); a past Claude Code session listed, resumed, carried over", function()
+  linux_only("stand-in agents (sh)")
+  local agent, sessions, T = require("integrations.agent"), require("integrations.agent_sessions"), require("toggleterm.terminal")
+  local root = vim.fn.tempname()
+  local claude_dir, project = root .. "/claude", root .. "/project"
+  vim.fn.mkdir(project, "p")
+  local fake = {}
+  for _, id in ipairs({ "claude", "opencode" }) do
+    fake[id] = root .. "/bin-" .. id
+    vim.fn.writefile({ "#!/bin/sh", 'echo "ARGS:$*"', "exec cat" }, fake[id])
+    vim.fn.setfperm(fake[id], "rwx------")
+  end
+  -- a past session of the project: its first prompt, the title Claude Code gave it
+  local sid = "11111111-2222-4333-8444-555555555555"
+  local folder = claude_dir .. "/projects/" .. sessions.claude_slug(project)
+  vim.fn.mkdir(folder, "p")
+  vim.fn.writefile({
+    vim.json.encode({ type = "user", cwd = project, sessionId = sid, message = { role = "user", content = "<command-name>/clear</command-name>" } }),
+    vim.json.encode({ type = "user", cwd = project, sessionId = sid, message = { role = "user", content = "fix the flaky retry test" } }),
+    vim.json.encode({ type = "assistant", cwd = project, message = { role = "assistant", content = {
+      { type = "text", text = "The retry waits too little." }, { type = "tool_use", name = "Edit" } } } }),
+    vim.json.encode({ type = "ai-title", aiTitle = "Flaky retry test", sessionId = sid }),
+  }, folder .. "/" .. sid .. ".jsonl")
+  local saved = { vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent_link }
+  vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT = fake.claude, fake.opencode, claude_dir, "opencode"
+  vim.g.greyknight_agent_link = false
+  local before, code = vim.fn.getcwd(), vim.api.nvim_get_current_win()
+  local function flat(buf) return (text(buf):gsub("\n", "")) end -- a narrow pane wraps the line
+  local function panes()
+    local n = 0
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      for _, s in ipairs(agent.running()) do
+        if vim.api.nvim_win_get_buf(w) == s.term.bufnr then n = n + 1 end
+      end
+    end
+    return n
+  end
+  local ok, err = pcall(function()
+    vim.fn.chdir(project)
+    agent.launch("agent", "vertical")
+    local a = agent.open_session({ backend = "opencode" })
+    local b = agent.open_session({ backend = "claude" })
+    assert(#agent.running() >= 3, "running: " .. #agent.running())
+    assert(panes() == 1, "one pane for the sessions, got " .. panes())
+    assert(agent.current() == b, "the new session is the pane's: " .. agent.current())
+    local bt = agent.term(b)
+    assert(bt.gk_session and bt.gk_session:match("^%x+%-%x+%-4%x+%-[89ab]%x+%-%x+$"), "a Claude Code session id: " .. tostring(bt.gk_session))
+    assert(wait(5000, function() return flat(bt.bufnr):find("--session-id " .. bt.gk_session, 1, true) end), "started with its id: " .. flat(bt.bufnr))
+    local win = agent.pane()
+    assert(vim.wo[win].winbar == sessions.BAR, "the tabs on the pane: " .. vim.wo[win].winbar)
+    vim.g.statusline_winid = win
+    local bar = sessions.tabline()
+    assert(bar:find("OpenCode", 1, true) and bar:find("Claude", 1, true) and bar:find("GkAgentNew", 1, true), bar)
+    agent.cycle(1) -- after the last: the first
+    assert(agent.current() == "agent" and panes() == 1, "Alt+. went to " .. agent.current())
+    agent.cycle(-1)
+    assert(agent.current() == b, "Alt+, went to " .. agent.current())
+    agent.stop(b)
+    assert(not agent.term(b) or vim.fn.jobwait({ bt.job_id }, 0)[1] ~= -1, "the session did not end")
+    assert(agent.current() ~= b and panes() == 1, "after ending one: " .. agent.current() .. ", panes " .. panes())
+    -- the past session: in the list with Claude Code's title, its conversation rendered
+    local items = sessions.items(false)
+    local past
+    for _, item in ipairs(items) do if item.sid == sid then past = item end end
+    assert(past and past.title == "Flaky retry test" and past.dir == project, "the past session: " .. vim.inspect(past))
+    assert(items[1].running, "running sessions first")
+    local md = table.concat(sessions.render_claude(past.path), "\n")
+    assert(md:find("## User\n\nfix the flaky retry test", 1, true) and md:find("## Assistant\n\nThe retry waits", 1, true)
+      and md:find("tools: Edit", 1, true) and not md:find("/clear", 1, true), md)
+    -- resumed: Claude Code with --resume in its folder, a tab of its own
+    vim.fn.chdir(before)
+    sessions.resume(past)
+    local r = agent.term(agent.current())
+    assert(r and r.gk_session == sid and agent.same_dir(r.dir, project), "resumed: " .. vim.inspect(r and { r.gk_session, r.dir }))
+    assert(wait(5000, function() return flat(r.bufnr):find("--resume " .. sid, 1, true) end), "not resumed: " .. flat(r.bufnr))
+    assert(not flat(r.bufnr):find("--session-id", 1, true), "a resumed session got a new id: " .. text(r.bufnr))
+    -- carried over to OpenCode: the conversation as a file, a new session told to read it
+    sessions.carry_over(past, "opencode")
+    local c = agent.term(agent.current())
+    local file = sessions.carry_dir() .. "/claude-" .. sid .. ".md"
+    assert(c.gk_backend == "opencode" and vim.fn.filereadable(file) == 1, "carried over: " .. tostring(c.gk_backend))
+    assert(table.concat(vim.fn.readfile(file), "\n"):find("fix the flaky retry test", 1, true), "the file")
+  end)
+  for _, s in ipairs(agent.running()) do pcall(function() s.term:shutdown() end) end
+  for name in pairs(agent.AGENTS) do if name:match("^s%d+$") then agent.AGENTS[name] = nil end end
+  agent.active = "agent"
+  vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2], saved[3], saved[4]
+  vim.g.greyknight_agent_link = saved[5]
+  vim.fn.chdir(before)
+  if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
+  vim.cmd("stopinsert")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
 -- ── Stabilization: the behaviour of 2026-10-15, pinned down ──
 
 -- Completion: types like a user; each step waits until the menu is open (or 5 s), then feeds its keys

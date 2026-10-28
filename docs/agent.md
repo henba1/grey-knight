@@ -87,6 +87,28 @@ else `claude` on the `PATH`.
 
 > Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 
+## Sessions: several agents, past conversations
+
+The agent's pane holds **several sessions as tabs** - a bar on top of it: `1 Claude fix the flaky test`,
+`2 OpenCode …`, `+` for a new one, `☰` for the list. A click on a tab shows that session in the pane (the others keep
+running), a middle click ends it. `Alt+.` / `Alt+,` go to the next / previous tab, also from inside the pane.
+
+`<leader>as` lists every session: the running ones first (`●`), then the past ones of this project, newest first -
+Claude Code's (from `~/.claude/projects`, with the title Claude Code gave them) and OpenCode's (its session list,
+which comes a moment later). The preview shows the conversation.
+
+| Key in the list | What |
+|---|---|
+| `Enter` | A running session: show it. A past one: **resume** it in its own agent (`claude --resume`, `opencode --session`), in the folder it worked in, as a new tab |
+| `Ctrl+O` | Go on with it in **another agent** (Claude Code ↔ OpenCode ↔ Qwen Code): its conversation is written to a file and a new session of that agent is told to read it first. The conversation carries over; its tool history does not |
+| `Ctrl+E` | A new session (asks which agent when more than one is installed) - `<leader>ao` from anywhere |
+| `Ctrl+X`, `dd` | End a running session |
+| `Ctrl+A` | All projects / this project |
+
+`<leader>tt`, `<leader>aa`, `<leader>ae`, the tree's `@` and speech go to the session the pane shows. A new Claude
+Code session gets its id from GreyKnight (`--session-id`), so its tab knows its title and the list can resume it once
+it has ended. `<leader>t1` … `t3` still open agents of their own below.
+
 ## The agent in your editor
 
 An agent started here (`<leader>tt`, `t1` ... - Qwen Code and OpenCode alike) can **work in Neovim**, not only in
