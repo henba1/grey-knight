@@ -1974,9 +1974,11 @@ test("Terminals: Ctrl+L goes to the window on the right, Ctrl+arrows resize - ba
 end)
 
 -- 2026-10-23: the agent's window has a keyboard of its own - Ctrl+arrows resized it instead of moving through
--- Claude Code's prompt word by word. There every key is the agent's but the ways out: Esc Esc, Ctrl+H/J/K/L. In
--- other terminals Ctrl+arrows still resize (the test above). The stand-in agent reports every key it gets.
-test("Agent: its window has its own keys - Ctrl+arrows reach the agent (no resize), Ctrl+H still leaves it", function()
+-- Claude Code's prompt word by word. 2026-10-28: the ways out too - Esc Esc (Claude Code's rewind) gave normal mode,
+-- Ctrl+J (its new line) went to the window below. Every key is the agent's but Alt+H/J/K/L; in the scrollback a typed
+-- key goes to the agent and back to typing. In other terminals Ctrl+arrows still resize (the test above). The
+-- stand-in agent reports every key it gets.
+test("Agent: its window has its own keys - Esc, Ctrl+H/J/K/L, Ctrl+arrows reach the agent; Alt+H leaves; the scrollback types again", function()
   linux_only("the fake agent (sh + python, raw tty)")
   local agent, T = require("integrations.agent"), require("toggleterm.terminal")
   local script, fake = vim.fn.tempname() .. ".py", vim.fn.tempname() .. "-opencode"
@@ -1989,39 +1991,63 @@ test("Agent: its window has its own keys - Ctrl+arrows reach the agent (no resiz
   if old then old:shutdown() end
   local code = vim.api.nvim_get_current_win()
   local term
-  local ok, err = pcall(function()
-    agent.launch("agent", "vertical")
-    term = T.get(agent.AGENTS.agent, true)
-    assert(term and term.window and vim.api.nvim_win_is_valid(term.window), "no agent window")
-    assert(wait(10000, function() return text(term.bufnr):find("READY", 1, true) end), "the stand-in did not start: " .. text(term.bufnr))
-    for _, k in ipairs(agent.ESCAPE_KEYS) do -- the ways out: GreyKnight's global keys, no map of the agent's buffer
-      assert(vim.fn.maparg(k, "t", false, true).buffer ~= 1, k .. " is mapped in the agent's buffer")
-    end
-    vim.cmd("stopinsert")
-    vim.api.nvim_set_current_win(term.window)
-    local width, height = vim.api.nvim_win_get_width(term.window), vim.api.nvim_win_get_height(term.window)
-    local keys, i = { "<C-Left>", "<C-Right>", "<C-Up>", "<C-Down>", "<C-h>" }, 0
-    local function step() -- one key every 200 ms, in terminal mode
+  -- keys typed one every 200 ms in the agent's window; returns when terminal mode ends (a key that leaves, or after
+  -- 15 s Neovim's own Ctrl+\ Ctrl+N)
+  local function type_keys(keys, start)
+    local i = 0
+    local function step()
       i = i + 1
       if not keys[i] then return end
       vim.api.nvim_feedkeys(vim.keycode(keys[i]), "t", false)
       vim.defer_fn(step, 200)
     end
     vim.defer_fn(step, 200)
-    local stop = vim.uv.new_timer() -- out of terminal mode if Ctrl+H does not leave it
+    local stop = vim.uv.new_timer()
     stop:start(15000, 0, vim.schedule_wrap(function() vim.api.nvim_feedkeys(vim.keycode("<C-\\><C-n>"), "nt", false) end))
-    vim.api.nvim_feedkeys("i", "tx!", false) -- returns when terminal mode ends
+    vim.api.nvim_feedkeys(start, "tx!", false)
     stop:stop()
     stop:close()
-    assert(vim.api.nvim_get_current_win() ~= term.window, "Ctrl+H did not leave the agent's window")
+  end
+  local function got()
+    local list = {}
+    for g in text(term.bufnr):gmatch("GOT ([%x ]+)") do list[#list + 1] = vim.trim(g) end
+    return list
+  end
+  local ok, err = pcall(function()
+    agent.launch("agent", "vertical")
+    term = T.get(agent.AGENTS.agent, true)
+    assert(term and term.window and vim.api.nvim_win_is_valid(term.window), "no agent window")
+    assert(wait(10000, function() return text(term.bufnr):find("READY", 1, true) end), "the stand-in did not start: " .. text(term.bufnr))
+    for _, k in ipairs({ "<Esc><Esc>", "<C-h>", "<C-j>", "<C-k>", "<C-l>", "<C-Left>" }) do -- GreyKnight's: mapped onto themselves
+      local m = vim.fn.maparg(k, "t", false, true)
+      assert(m.buffer == 1 and vim.keycode(m.rhs) == vim.keycode(k), k .. " is not the agent's: " .. vim.inspect(m))
+    end
+    vim.cmd("stopinsert")
+    vim.api.nvim_set_current_win(term.window)
+    local width, height = vim.api.nvim_win_get_width(term.window), vim.api.nvim_win_get_height(term.window)
+    type_keys({ "<C-Left>", "<C-Right>", "<C-Up>", "<C-Down>", "<Esc>", "<Esc>", "<C-h>", "<C-j>", "<C-k>", "<C-l>", "<S-CR>", "<M-h>" },
+      vim.keycode("<Cmd>startinsert<CR>")) -- not i: in the agent's window that is a letter for the agent
+    assert(vim.api.nvim_get_current_win() ~= term.window, "Alt+H did not leave the agent's window")
     assert(vim.api.nvim_win_get_width(term.window) == width and vim.api.nvim_win_get_height(term.window) == height,
       ("Ctrl+arrows resized the agent's window: %dx%d, was %dx%d"):format(vim.api.nvim_win_get_width(term.window),
         vim.api.nvim_win_get_height(term.window), width, height))
-    local want = { "1b 5b 31 3b 35 44", "1b 5b 31 3b 35 43", "1b 5b 31 3b 35 41", "1b 5b 31 3b 35 42" }
-    wait(3000, function() local _, n = text(term.bufnr):gsub("GOT ", ""); return n >= #want end)
-    local got = {}
-    for g in text(term.bufnr):gmatch("GOT ([%x ]+)") do got[#got + 1] = vim.trim(g) end
-    assert(vim.deep_equal(got, want), "typed Ctrl+Left/Right/Up/Down " .. vim.inspect(want) .. ", the agent got " .. vim.inspect(got))
+    local want = { "1b 5b 31 3b 35 44", "1b 5b 31 3b 35 43", "1b 5b 31 3b 35 41", "1b 5b 31 3b 35 42", "1b", "1b", "08", "0a",
+      "0b", "0c", "0a" }
+    wait(3000, function() return #got() >= #want end)
+    assert(vim.deep_equal(got(), want), "typed Ctrl+arrows, Esc Esc, Ctrl+H/J/K/L, Shift+Enter " .. vim.inspect(want)
+      .. ", the agent got " .. vim.inspect(got()))
+    -- the scrollback (a click, the wheel): a letter there is no Vim command - it goes to the agent, typing again
+    vim.api.nvim_set_current_win(term.window)
+    vim.cmd("stopinsert")
+    wait(1000, function() return vim.api.nvim_get_mode().mode:sub(1, 1) == "n" end)
+    -- (under feedkeys the mapping's startinsert comes after the call; typed, the next key is the agent's again - an
+    -- embedded Neovim fed with nvim_input showed it)
+    vim.api.nvim_feedkeys("x", "tx!", false)
+    wait(3000, function() return #got() >= #want + 1 end)
+    assert(got()[#want + 1] == "78", "x in the scrollback - the agent got " .. vim.inspect(got()))
+    vim.cmd("stopinsert")
+    vim.api.nvim_feedkeys(vim.keycode("<M-h>"), "tx", false)
+    assert(vim.api.nvim_get_current_win() ~= term.window, "Alt+H did not leave the agent's window after the scrollback")
   end)
   if term then
     pcall(vim.fn.jobstop, term.job_id)

@@ -107,11 +107,11 @@ resize it, as everywhere else. Every other key is the program's: the shell's own
 `Alt+F`, `Ctrl+W`, `Ctrl+U`, `Ctrl+R` work as typed. To clear the shell type `clear` (`cls` in cmd.exe) - `Ctrl+L`
 is the window on the right.
 
-**An agent's window** (Claude Code, OpenCode, Qwen Code - `<leader>tt`, `t1` ...) has a keyboard of its own: only the
-ways out stay GreyKnight's - `Ctrl+h` / `Ctrl+j` / `Ctrl+k` / `Ctrl+l` (the next window) and `Esc Esc` (normal mode;
-Neovim's own `Ctrl+\ Ctrl+n` as well). Every other key is the agent's: `Ctrl+←` / `Ctrl+→` move through its prompt
-word by word instead of resizing the window. To resize it: `Esc Esc`, then `Ctrl+arrows` - or from the window next
-to it.
+**An agent's window** (Claude Code, OpenCode, Qwen Code - `<leader>tt`, `t1` ...) is the agent's, as in a terminal of
+its own: every key goes to it - `Esc`, `Esc Esc`, `Ctrl+h/j/k/l`, `Ctrl+arrows`. `Alt+h` / `Alt+j` / `Alt+k` / `Alt+l`
+leave it (they move between windows everywhere). The mouse wheel or a click shows its scrollback; any key typed there
+goes to the agent and you are typing again (`Esc`: back without a key) - details in
+[the coding agent](agent.md). To resize it: drag its border, or `Ctrl+arrows` from the window next to it.
 
 Going to a terminal window - a shell, the REPL, an agent, a run's output, the debug console, `:terminal` - puts
 you in terminal mode right away, also when you left it in normal mode; not when its program has exited (a key

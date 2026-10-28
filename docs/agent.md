@@ -69,15 +69,21 @@ else `claude` on the `PATH`.
   numbers. A running agent gets it as one bracketed paste (multi-line safe); a new agent
   starts with it (`qwen -i`).
 - Going to the agent window (`Ctrl+l`, a click, `<leader>tt`) puts you straight into terminal mode, as
-  every terminal window does ([Terminal](windows.md#terminal)): type away. Inside it, `Esc Esc` gives normal mode
-  (scroll, copy); the next time you come back it is terminal mode again - unless the agent has exited (a
-  key would close its window).
-- **The agent's window has its own keys.** In it only the ways out are GreyKnight's: `Ctrl+h/j/k/l` (the next
-  window) and `Esc Esc` (normal mode; Neovim's `Ctrl+\ Ctrl+n` too). Every other key goes to the agent -
-  `Ctrl+←` / `Ctrl+→` move word by word in its prompt, where other terminals resize the window with them
-  ([Terminal](windows.md#terminal)). Qwen Code's input box can have a vim mode of its own (`general.vimMode` in
-  `~/.qwen/settings.json`, `/vim` toggles it): a single `Esc` there puts that box into its NORMAL mode,
-  which Neovim neither sees nor changes - `i` gets back to typing.
+  every terminal window does ([Terminal](windows.md#terminal)): type away. The next time you come back it is terminal
+  mode again - unless the agent has exited (a key would close its window).
+- **The agent's window is the agent's, as in a terminal of its own.** Every key goes to it: `Esc` (interrupt),
+  `Esc Esc` (Claude Code's rewind), `Ctrl+j` (a new line - `Shift+Enter` sends it too), `Ctrl+h/k/l`, `Ctrl+←` /
+  `Ctrl+→` (word by word in its prompt), `Ctrl+r`, `Ctrl+o` ... GreyKnight keeps only keys no agent uses:
+  - `Alt+h/j/k/l` - to the next window (also from any other window); a click elsewhere does the same.
+  - The **scrollback**: the mouse wheel, a click, `Shift+PageUp` / `Shift+PageDown` show the agent's earlier output.
+    Drag or double-click to select, `Ctrl+c` or `y` copies. **Any key typed there goes to the agent and you are
+    typing again**, as a terminal snaps back to the bottom - `Esc` only goes back. Vim's keys (and `Space` as the
+    leader) do not work in the agent's window: `Alt+h` out first.
+  - Neovim's own `Ctrl+\ Ctrl+n` still gives the scrollback from the keyboard.
+
+  To resize it: drag its border, or `Alt+h` and `Ctrl+arrows` from the window next to it. Qwen Code's input box can
+  have a vim mode of its own (`general.vimMode` in `~/.qwen/settings.json`, `/vim` toggles it): a single `Esc` there
+  puts that box into its NORMAL mode, which Neovim neither sees nor changes - `i` gets back to typing.
 
 > Tip: for multi-agent work, keep agent #1 on one task and `<leader>t2` for another.
 

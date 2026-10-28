@@ -34,8 +34,8 @@ vim.api.nvim_create_autocmd("User", {
 -- A terminal gets every key but these: Ctrl+H/J/K/L go to the next window, Ctrl+arrows resize (below), <Esc><Esc> is
 -- normal mode. The shell keeps its own keys - Ctrl+A/E, Alt+B/F, Ctrl+W/U, Ctrl+R ...; for its Ctrl+L (clear) type
 -- clear (cls). Ctrl+L went to the shell, so from a terminal the window on the right was Esc Esc, Ctrl+L (2026-10-21).
--- An agent's terminal keeps only the ways out (Esc Esc, Ctrl+H/J/K/L): every other terminal-mode key here goes to the
--- agent there - Ctrl+arrows move through Claude Code's prompt (integrations/agent.lua, M.own_keys; 2026-10-23).
+-- An agent's terminal keeps none of them: every key is the agent's - Esc Esc is Claude Code's rewind, Ctrl+J its new
+-- line, Ctrl+arrows move through its prompt; Alt+H/J/K/L leave it (integrations/agent.lua, M.own_keys; 2026-10-28).
 map("t", "<Esc><Esc>", "<C-\\><C-n>",       { desc = "Exit terminal mode" })
 map("t", "<C-h>",      "<C-\\><C-n><C-w>h", { desc = "Window left (from term)" })
 map("t", "<C-j>",      "<C-\\><C-n><C-w>j", { desc = "Window down (from term)" })
@@ -59,6 +59,11 @@ map("n", "<C-h>", "<C-w>h", { desc = "Window left" })
 map("n", "<C-j>", "<C-w>j", { desc = "Window down" })
 map("n", "<C-k>", "<C-w>k", { desc = "Window up" })
 map("n", "<C-l>", "<C-w>l", { desc = "Window right" })
+-- Alt+H/J/K/L as well: the keys that leave an agent's window (its Ctrl+H/J/K/L are the agent's), the same everywhere
+map("n", "<M-h>", "<C-w>h", { desc = "Window left" })
+map("n", "<M-j>", "<C-w>j", { desc = "Window down" })
+map("n", "<M-k>", "<C-w>k", { desc = "Window up" })
+map("n", "<M-l>", "<C-w>l", { desc = "Window right" })
 
 -- ── Window resize - in terminals too, where the keys went to the program (2026-10-21) ──
 map({ "n", "t" }, "<C-Up>",    "<cmd>resize +2<cr>",          { desc = "Resize up" })

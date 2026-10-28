@@ -190,20 +190,83 @@ end
 
 -- 2026-10-23: the agent's window has a keyboard of its own. GreyKnight's terminal keys (config/keymaps.lua) are for
 -- every terminal; in an agent's they caught keys its TUI needs - Ctrl+Left / Ctrl+Right resized the window instead of
--- moving the cursor word by word in Claude Code's prompt. There only these stay GreyKnight's, the ways out of the
--- window: Esc Esc (normal mode) and Ctrl+H/J/K/L (the next window); Neovim's own Ctrl+\ Ctrl+N is always there.
-M.ESCAPE_KEYS = { "<Esc><Esc>", "<C-h>", "<C-j>", "<C-k>", "<C-l>" }
+-- moving the cursor word by word in Claude Code's prompt.
+-- 2026-10-28: all of them now, the ways out too. Esc Esc is Claude Code's rewind (and a single Esc its interrupt),
+-- Ctrl+J its new line, Ctrl+K / Ctrl+H / Ctrl+L its kill-line, backspace and redraw: kept as GreyKnight's, they threw
+-- the user into normal mode or into the next window in the middle of a prompt. The pane works as the agent does in a
+-- terminal of its own; GreyKnight keeps only keys no agent uses - Alt+H/J/K/L to the next window - and Neovim's own
+-- Ctrl+\ Ctrl+N. A click or the mouse wheel shows the scrollback (normal mode); any key typed there goes to the agent
+-- and back to typing, as a terminal snaps to the bottom - a stray letter is no Vim command any more.
+M.LEAVE_KEYS = { "<M-h>", "<M-j>", "<M-k>", "<M-l>" }
 
---- Every other global terminal-mode key goes to the agent in buffer `buf`: a buffer-local map of the key onto
---- itself (not remapped), which Neovim sends to the program as typed.
+-- Keys the scrollback keeps for itself: scrolling (the wheel is Neovim's anyway)
+local SCROLL_KEYS = { "<PageUp>", "<PageDown>", "<S-PageUp>", "<S-PageDown>" }
+
+--- Every key of the scrollback (normal mode) that goes to the agent: the printable ones, Enter, Tab, Backspace, the
+--- arrows, Ctrl+A ... Ctrl+Z - in their notation for a map.
+local function typed_keys()
+  local keys, special = {}, { [" "] = "<Space>", ["<"] = "<lt>", ["|"] = "<Bar>", ["\\"] = "<Bslash>" }
+  for c = 32, 126 do
+    local ch = string.char(c)
+    keys[#keys + 1] = special[ch] or ch
+  end
+  for c = ("a"):byte(), ("z"):byte() do
+    local ch = string.char(c)
+    if ch ~= "i" and ch ~= "m" then keys[#keys + 1] = "<C-" .. ch .. ">" end -- Ctrl+I is Tab, Ctrl+M Enter
+  end
+  vim.list_extend(keys, { "<CR>", "<Tab>", "<S-Tab>", "<BS>", "<Del>", "<Up>", "<Down>", "<Left>", "<Right>", "<Home>", "<End>" })
+  return keys
+end
+
+--- Back to typing in the agent, with `keys` (notation) sent to it - from the scrollback
+local function type_again(keys)
+  vim.cmd("startinsert")
+  if keys then vim.api.nvim_feedkeys(vim.keycode(keys), "n", false) end -- not remapped: as typed, to the program
+end
+
+--- The agent's keys in its buffer `buf`: every global terminal-mode key - Esc Esc, Ctrl+H/J/K/L, Ctrl+arrows - goes to
+--- the agent (a buffer-local map of the key onto itself, not remapped, which Neovim sends to the program as typed);
+--- Alt+H/J/K/L go to the next window; the scrollback types again on any key.
 function M.own_keys(buf)
-  local keep = {}
-  for _, k in ipairs(M.ESCAPE_KEYS) do keep[vim.keycode(k)] = true end
+  local opts = { buffer = buf, nowait = true, desc = "The agent's (not GreyKnight's)" }
+  local leave = {}
+  for _, k in ipairs(M.LEAVE_KEYS) do leave[vim.keycode(k)] = true end
   for _, m in ipairs(vim.api.nvim_get_keymap("t")) do
-    if not keep[vim.keycode(m.lhs)] then
-      vim.keymap.set("t", m.lhs, m.lhs, { buffer = buf, desc = "The agent's (not GreyKnight's)" })
+    if not leave[vim.keycode(m.lhs)] then vim.keymap.set("t", m.lhs, m.lhs, opts) end
+  end
+  -- a single Esc too: as the start of the global Esc Esc it waited for a second key ('timeoutlen'), and Claude Code's
+  -- interrupt came a second late (nowait: at once)
+  vim.keymap.set("t", "<Esc>", "<Esc>", opts)
+  -- Shift+Enter: a new line in the prompt, as in Claude Code's and OpenCode's own terminal - Ctrl+J is that key in
+  -- both; Neovim's terminal sends Shift+Enter as a plain Enter (the prompt went off)
+  vim.keymap.set("t", "<S-CR>", "<C-j>", vim.tbl_extend("force", opts, { desc = "New line in the agent's prompt" }))
+  for _, k in ipairs(M.LEAVE_KEYS) do
+    local dir = k:sub(4, 4)
+    local go = { buffer = buf, nowait = true, desc = "Window " .. dir .. " (from the agent)" }
+    vim.keymap.set("t", k, "<C-\\><C-n><C-w>" .. dir, go)
+    vim.keymap.set("n", k, "<C-w>" .. dir, go)
+  end
+  -- Shift+PageUp / PageDown: the scrollback, as in a terminal emulator; PageUp / PageDown themselves stay the agent's
+  vim.keymap.set("t", "<S-PageUp>", "<C-\\><C-n><C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
+  vim.keymap.set("t", "<S-PageDown>", "<C-\\><C-n><C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
+  -- the scrollback (normal mode: a click, the wheel, Shift+PageUp, Ctrl+\ Ctrl+N)
+  local scroll = {}
+  for _, k in ipairs(SCROLL_KEYS) do scroll[k] = true end
+  for _, k in ipairs(typed_keys()) do
+    if not scroll[k] then
+      vim.keymap.set("n", k, function() type_again(k) end, { buffer = buf, nowait = true, desc = "Type in the agent" })
     end
   end
+  vim.keymap.set("n", "<PageUp>", "<C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
+  vim.keymap.set("n", "<PageDown>", "<C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
+  vim.keymap.set("n", "<S-PageUp>", "<C-b>", { buffer = buf, desc = "The agent's scrollback: a page up" })
+  vim.keymap.set("n", "<S-PageDown>", "<C-f>", { buffer = buf, desc = "The agent's scrollback: a page down" })
+  -- Esc in the scrollback: typing again, nothing sent - not the agent's interrupt for a look back
+  vim.keymap.set("n", "<Esc>", function() type_again() end, { buffer = buf, nowait = true, desc = "Back to typing in the agent" })
+  -- a selection (drag, double click) is copied as in a terminal: Ctrl+C or y, then typing again
+  local function copy() vim.cmd('normal! "+y'); type_again() end
+  vim.keymap.set("x", "<C-c>", copy, { buffer = buf, desc = "Copy the selection (to the agent again)" })
+  vim.keymap.set("x", "<Esc>", function() vim.cmd("normal! \27"); type_again() end, { buffer = buf, nowait = true, desc = "Back to typing in the agent" })
 end
 
 local function agent(name, direction, first_prompt)
