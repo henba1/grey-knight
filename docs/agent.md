@@ -18,13 +18,16 @@ llama.cpp, zero cloud. For coding, start a coding launcher on the AI Dashboard's
 (the uncensored "alternative" build), both without a chat persona, thinking on, 128k context.
 `<leader>am` shows which model the rig is running ([The model](#the-model)).
 
-**Qwen Code, OpenCode or Claude Code.** The agent is Qwen Code by default. The environment variable
-`GREYKNIGHT_AGENT=opencode` switches to OpenCode, `GREYKNIGHT_AGENT=claude` to Claude Code (`qwen` pins
-Qwen Code); unset, GreyKnight takes Qwen Code where it is installed, else OpenCode, else Claude Code, so
-kali and the pi keep Qwen Code without any setting. The keys, `@path` references, ask/edit and `<leader>rf`
+**Qwen Code, OpenCode or Claude Code.** `<leader>al` opens the **agents page**: the three agents (installed or not,
+how many sessions of each run) and the settings of all of them. `Enter` on an agent chooses it for new sessions and
+keeps the choice for this machine; the pane goes over to it - one of its sessions that runs, else a new one - and the
+session the pane showed keeps running, a tab of the pane ([Sessions](#sessions-several-agents-past-conversations)).
+`⚙ Claude` on the pane's bar names the chosen one; a click on it opens the page. Before the choice:
+`GREYKNIGHT_AGENT=opencode` / `claude` / `qwen` (or `vim.g.greyknight_agent`); none of them, GreyKnight takes Qwen
+Code where it is installed, else OpenCode, else Claude Code, so kali and the pi keep Qwen Code without any setting. The keys, `@path` references, ask/edit and `<leader>rf`
 work the same with all three. A new OpenCode agent gets its first prompt pasted once it has started;
-`<leader>ac` sends `/new` there, and `<leader>am` points to `/models` (OpenCode picks its model itself).
-Claude Code takes its first prompt as an argument (`claude -- <prompt>`), `<leader>ac` sends `/clear`, and
+`<leader>aC` sends `/new` there, and `<leader>am` points to `/models` (OpenCode picks its model itself).
+Claude Code takes its first prompt as an argument (`claude -- <prompt>`), `<leader>aC` sends `/clear`, and
 `<leader>am` points to `/model`; it is found as `$CLAUDE_BIN`, `~/.local/bin/claude` (its native installer's),
 else `claude` on the `PATH`.
 
@@ -37,7 +40,12 @@ else `claude` on the `PATH`.
 | `<leader>t1` | n | Agent #1 (its own session) |
 | `<leader>t2` | n | Agent #2 (its own session) |
 | `<leader>t3` | n | Agent #3 (its own session) |
-| `<leader>ac` | n | Fresh conversation in the main agent (`/clear`) |
+| `<leader>ap` | n | The agent's pane: focused where it is open, else opened with the session it showed last (none running: a new one) |
+| `<leader>al` | n | The agents page: choose the agent of new sessions, settings |
+| `<leader>ae` | n | A new session with the chosen agent, a tab of the pane |
+| `<leader>ac` | n | Back to the last session - none running: resume the newest past one of the project |
+| `<leader>ax` | n | End the session the pane shows |
+| `<leader>aC` | n | Fresh conversation in the session the pane shows (`/clear`) |
 | `<leader>am` | n | Which model the rig runs right now: name and context size (several launchers share the port) |
 | `<leader>aa` | n | Ask about the current file (prompts for the question) |
 | `<leader>aa` | v | Ask about the selected code (prompts for the question) |
@@ -46,8 +54,8 @@ else `claude` on the `PATH`.
 
 ### Using the agent
 
-1. **Open:** `<leader>tt` (or `tf`/`th`/`tv` for float/split orientation). Default is a
-   **vertical 50/50** split.
+1. **Open:** `<leader>ap` - the agent's pane, a **vertical 50/50** split (`<leader>tt` toggles it; `tf`/`th`/`tv`
+   float or split it).
 2. **Type a prompt** in the terminal and press **Enter**
 3. The agent (Qwen Code) responds and, in agentic mode, can read files, edit code, and
    run commands inside your project
@@ -62,7 +70,7 @@ else `claude` on the `PATH`.
   `QWEN.md` / `AGENTS.md` context files **automatically**.
 - **It keeps that folder.** A running program cannot change its folder: after a `cd` - the tree's `.` on another
   project, `:cd` - a running agent still works where it started. A warning says so, the statusline shows it
-  (`OpenCode - in C:\dev\tools\nvim\bin`), and `<leader>ac` starts it anew in Neovim's folder (a new conversation; your
+  (`OpenCode - in C:\dev\tools\nvim\bin`), and `<leader>aC` starts it anew in Neovim's folder (a new conversation; your
   OpenCode launcher asks for its mode again). Agents started after the `cd` start in the new folder.
 - `<leader>aa` / `<leader>ae` ask for your question / instruction, then send one prompt with
   the file as `@path` (Qwen Code reads it itself) plus the selected lines and their line
@@ -89,9 +97,12 @@ else `claude` on the `PATH`.
 
 ## Sessions: several agents, past conversations
 
-The agent's pane holds **several sessions as tabs** - a bar on top of it: `1 Claude fix the flaky test`,
-`2 OpenCode …`, `+` for a new one, `☰` for the list. A click on a tab shows that session in the pane (the others keep
+The agent's pane (`<leader>ap`) holds **several sessions as tabs** - a bar on top of it: `1 Claude fix the flaky
+test`, `2 OpenCode …`, `+` for a new one (of the chosen agent), `⚙ Claude` the chosen agent (a click: the agents page),
+`☰` for the list. A click on a tab shows that session in the pane (the others keep
 running), a middle click ends it. `Alt+.` / `Alt+,` go to the next / previous tab, also from inside the pane.
+`<leader>ac` goes back to the session shown last - with none running, it resumes the newest past one of the project;
+`<leader>ae` starts a new one, `<leader>ax` ends the one shown.
 
 `<leader>as` lists every session: the running ones first (`●`), then the past ones of this project, newest first -
 Claude Code's (from `~/.claude/projects`, with the title Claude Code gave them) and OpenCode's (its session list,
@@ -101,7 +112,7 @@ which comes a moment later). The preview shows the conversation.
 |---|---|
 | `Enter` | A running session: show it. A past one: **resume** it in its own agent (`claude --resume`, `opencode --session`), in the folder it worked in, as a new tab |
 | `Ctrl+O` | Go on with it in **another agent** (Claude Code ↔ OpenCode ↔ Qwen Code): its conversation is written to a file and a new session of that agent is told to read it first. The conversation carries over; its tool history does not |
-| `Ctrl+E` | A new session (asks which agent when more than one is installed) - `<leader>ao` from anywhere |
+| `Ctrl+E` | A new session of the chosen agent - `<leader>ae` from anywhere |
 | `Ctrl+X`, `dd` | End a running session |
 | `Ctrl+Y` | Hand its conversation to the agent the pane shows: written to a file, typed into the prompt as `@file` - "do it as we did there" without going back |
 | `Ctrl+A` | All projects / this project |

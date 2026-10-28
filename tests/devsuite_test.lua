@@ -1211,7 +1211,7 @@ end)
 
 -- 2026-10-23: the tree's root set to another project while OpenCode ran - it still worked where it started (Neovim's
 -- folder then); a program keeps its folder
-test("Agent: Neovim's folder changes while it runs - a word that it works where it started; <leader>ac starts it anew in the new one", function()
+test("Agent: Neovim's folder changes while it runs - a word that it works where it started; <leader>aC starts it anew in the new one", function()
   linux_only("the fake agent (sh)")
   local agent, T = require("integrations.agent"), require("toggleterm.terminal")
   local fake = vim.fn.tempname() .. "-qwen"
@@ -1224,7 +1224,7 @@ test("Agent: Neovim's folder changes while it runs - a word that it works where 
   local notes, notify = {}, vim.notify
   vim.notify = function(msg) notes[#notes + 1] = tostring(msg) end
   local term
-  -- the lines joined as they wrapped: in the vertical split <leader>ac opens, PWD:<folder>| is longer than a line
+  -- the lines joined as they wrapped: in the vertical split <leader>aC opens, PWD:<folder>| is longer than a line
   local function screen() return term and table.concat(vim.api.nvim_buf_get_lines(term.bufnr, 0, -1, false), "") or "" end
   local ok, err = pcall(function()
     vim.fn.chdir(a)
@@ -1233,7 +1233,7 @@ test("Agent: Neovim's folder changes while it runs - a word that it works where 
     assert(wait(10000, function() return screen():find("PWD:" .. a .. "|", 1, true) end), "first: " .. screen())
     vim.fn.chdir(b)
     assert(wait(3000, function()
-      for _, m in ipairs(notes) do if m:find("started there", 1, true) and m:find("<leader>ac", 1, true) then return true end end
+      for _, m in ipairs(notes) do if m:find("started there", 1, true) and m:find("<leader>aC", 1, true) then return true end end
     end), "no word: " .. vim.inspect(notes))
     assert(#agent.elsewhere() == 1, "not elsewhere")
     agent.new_session()
@@ -2153,6 +2153,93 @@ test("Agent sessions: several in one pane (tabs, Alt+. cycles, ending one shows 
   agent.active = "agent"
   vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2], saved[3], saved[4]
   vim.g.greyknight_agent_link = saved[5]
+  vim.fn.chdir(before)
+  if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
+  vim.cmd("stopinsert")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-10-28: the agent of new sessions chosen on a page of its own (<leader>al), kept for the machine; choosing one
+-- moves the pane over to it - the session it showed keeps running, a tab. <leader>ap opens the pane, <leader>ac goes
+-- back to the last session (none running: resumes the newest past one), <leader>ae starts one with the chosen agent.
+test("Agents page: choosing an agent moves the pane to it (the other keeps running, a tab), kept; ap / ac / ae", function()
+  linux_only("stand-in agents (sh)")
+  local agent, sessions = require("integrations.agent"), require("integrations.agent_sessions")
+  local root = vim.fn.tempname()
+  local claude_dir, project = root .. "/claude", root .. "/project"
+  vim.fn.mkdir(project, "p")
+  local fake = {}
+  for _, id in ipairs({ "claude", "opencode" }) do
+    fake[id] = root .. "/bin-" .. id
+    vim.fn.writefile({ "#!/bin/sh", 'echo "ARGS:$*"', "exec cat" }, fake[id])
+    vim.fn.setfperm(fake[id], "rwx------")
+  end
+  local sid = "22222222-3333-4444-8555-666666666666"
+  local folder = claude_dir .. "/projects/" .. sessions.claude_slug(project)
+  vim.fn.mkdir(folder, "p")
+  vim.fn.writefile({
+    vim.json.encode({ type = "user", cwd = project, sessionId = sid, message = { role = "user", content = "tidy the parser" } }),
+  }, folder .. "/" .. sid .. ".jsonl")
+  local saved = { vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.QWEN_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT,
+    vim.g.greyknight_agent, vim.g.greyknight_agent_link, agent.FILE }
+  vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.QWEN_BIN = fake.claude, fake.opencode, root .. "/no-qwen"
+  vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT, vim.g.greyknight_agent = claude_dir, nil, nil
+  vim.g.greyknight_agent_link, agent.FILE = false, root .. "/kept"
+  vim.fn.writefile({ "claude" }, agent.FILE) -- chosen on an earlier day
+  local before, code = vim.fn.getcwd(), vim.api.nvim_get_current_win()
+  local function shown() local _, s = agent.pane(); return s and s.term end
+  local ok, err = pcall(function()
+    vim.fn.chdir(project)
+    for _, key in ipairs({ "<leader>ap", "<leader>ac", "<leader>ae", "<leader>al", "<leader>ax", "<leader>aC" }) do
+      assert(vim.fn.maparg(key, "n") ~= "", key .. " is not mapped")
+    end
+    assert(agent.backend_id() == "claude", "the kept choice: " .. agent.backend_id())
+    local rows = sessions.page_items()
+    assert(#rows == 4 and rows[1].chosen and rows[1].installed and not rows[3].installed and rows[4].kind == "link",
+      "the page: " .. vim.inspect(vim.tbl_map(function(r) return { r.id, r.chosen, r.installed } end, rows)))
+    -- ap with nothing running: a session of the chosen agent
+    agent.open_pane()
+    local first = assert(shown(), "no pane")
+    assert(first.gk_backend == "claude", "ap started " .. tostring(first.gk_backend))
+    vim.g.statusline_winid = agent.pane()
+    assert(sessions.tabline():find("GkAgentPage", 1, true) and sessions.tabline():find("⚙ Claude", 1, true), sessions.tabline())
+    -- choosing OpenCode: the pane goes over to it, Claude Code keeps running as a tab; kept for the machine
+    agent.select("opencode")
+    assert(shown() and shown().gk_backend == "opencode", "the pane shows " .. tostring(shown() and shown().gk_backend))
+    assert(#agent.running() == 2 and vim.fn.jobwait({ first.job_id }, 0)[1] == -1, "Claude Code no longer runs")
+    assert(vim.fn.readfile(agent.FILE)[1] == "opencode" and agent.backend_id() == "opencode", "not kept")
+    -- back to Claude Code: its session that runs, not a new one
+    agent.select("claude")
+    assert(shown() == first and #agent.running() == 2, "a new session instead of the running one")
+    -- not installed: a word, the choice stays
+    agent.select("qwen")
+    assert(agent.backend_id() == "claude", "chose an agent that is not installed")
+    -- ae: a new session with the chosen agent
+    sessions.new()
+    assert(#agent.running() == 3 and shown() ~= first and shown().gk_backend == "claude", "ae")
+    -- ap from another window: the pane focused, not a new one
+    vim.api.nvim_set_current_win(code)
+    agent.open_pane()
+    assert(vim.api.nvim_get_current_win() == agent.pane() and #agent.running() == 3, "ap did not go to the pane")
+    -- ac: the session shown last
+    local last = shown()
+    vim.api.nvim_set_current_win(code)
+    sessions.resume_last()
+    assert(shown() == last, "ac went elsewhere")
+    -- none running: ac resumes the newest past session of the project
+    for _, s in ipairs(agent.running()) do agent.stop(s.name) end
+    assert(wait(3000, function() return #agent.running() == 0 end), "still running")
+    sessions.resume_last()
+    local r = assert(shown(), "nothing resumed")
+    assert(r.gk_session == sid and wait(5000, function() return text(r.bufnr):gsub("\n", ""):find("--resume " .. sid, 1, true) end),
+      "not resumed: " .. text(r.bufnr))
+  end)
+  for _, s in ipairs(agent.running()) do pcall(function() s.term:shutdown() end) end
+  for name in pairs(agent.AGENTS) do if name:match("^s%d+$") then agent.AGENTS[name] = nil end end
+  agent.active = "agent"
+  vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.QWEN_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2], saved[3], saved[4], saved[5]
+  vim.g.greyknight_agent, vim.g.greyknight_agent_link, agent.FILE = saved[6], saved[7], saved[8]
   vim.fn.chdir(before)
   if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
   vim.cmd("stopinsert")

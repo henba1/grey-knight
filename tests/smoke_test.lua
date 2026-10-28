@@ -1390,8 +1390,8 @@ test("Agent review: <leader>ay / <leader>an with the cursor off the change (a ma
   local review, file, buf = review_file("notes.md", { "# Notes", "one", "two", "three", "four", "five" })
   assert(vim.bo[buf].filetype == "markdown", "not markdown: " .. vim.bo[buf].filetype)
   -- the keys are the review's in a markdown buffer too: no buffer-local map over them
-  assert(vim.fn.maparg("<leader>ay", "n", false, true).desc == "AI: Keep the agent's change here", vim.inspect(vim.fn.maparg("<leader>ay", "n", false, true)))
-  assert(vim.fn.maparg("<leader>an", "n", false, true).desc == "AI: Revert the agent's change here", "<leader>an is not the review's")
+  assert(vim.fn.maparg("<leader>ay", "n", false, true).desc == "Agent: Keep the agent's change here", vim.inspect(vim.fn.maparg("<leader>ay", "n", false, true)))
+  assert(vim.fn.maparg("<leader>an", "n", false, true).desc == "Agent: Revert the agent's change here", "<leader>an is not the review's")
   local saved, notes = vim.notify, {}
   vim.notify = function(msg) notes[#notes + 1] = msg end
   local ok, err = pcall(function()

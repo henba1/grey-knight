@@ -4,7 +4,7 @@
 > On a link: `gd` or `Enter` follows it, `Ctrl+o` jumps back. `gO` lists all headings.
 > How it all works, a file per topic: [the guide](docs/README.md).
 
-**Contents:** [General](#general) · [Easy mode](#easy-mode-altn) · [AI](#ai-qwen-code-opencode-or-claude-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [LaTeX](#latex-leaderl) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
+**Contents:** [General](#general) · [Easy mode](#easy-mode-altn) · [Agent](#agent-claude-code-opencode-or-qwen-code-leadera) · [Run](#run-tasks-repl-f6-leaderr-bash-python) · [LaTeX](#latex-leaderl) · [Explorer](#file-explorer-leadere) · [Find](#find-snacks-picker-leaderf) · [Navigation](#file-navigation) · [Git](#git-leaderg) · [Terminal](#terminal-leadert) · [Errors](#errors-logs) · [Trouble](#trouble-diagnostics-leaderx) · [LSP](#lsp) · [Debug](#debug-f5-leaderd-python-bash) · [Hacker](#hacker-specials) · [Session](#session-leaderp) · [Editing](#editing) · [Windows](#windows-buffers) · [Structure](#config-structure) · [Docs](#docs)
 
 ## General
 
@@ -42,7 +42,7 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 | `Esc` | Normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
 | `F1` | These keys |
 
-## AI (Qwen Code, OpenCode or Claude Code) — `<leader>a`
+## Agent (Claude Code, OpenCode or Qwen Code) — `<leader>a`
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -51,11 +51,15 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 | `<leader>th` | n | Horizontal AI agent |
 | `<leader>tv` | n | Vertical AI agent |
 | `<leader>t1` / `<leader>t2` / `<leader>t3` | n | Agents #1/#2/#3 (each its own session) |
+| `<leader>ap` | n | **The agent's pane**: its sessions as tabs on top (`+` new, `⚙` the agent, `☰` the list) - focused where it is open, else opened with the session it showed last; none running: a new one |
+| `<leader>al` | n | **Agents page**: choose Claude Code, OpenCode or Qwen Code for new sessions (kept for this machine) - the pane goes over to it, the session it showed keeps running as a tab; settings (connect to Neovim) |
+| `<leader>ae` | n | A new session with the chosen agent, next to the others |
+| `<leader>ac` | n | Back to the last session - none running: resume the newest past one of the project |
+| `<leader>ax` | n | End the session the pane shows (the pane shows the next) |
 | `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+E` new, `Ctrl+X` end, `Ctrl+Y` hand it to the agent, `Ctrl+A` all projects; with scrubjay every machine's too |
-| `<leader>ao` | n | A new agent session next to the others (asks which agent) |
 | `<leader>aS` | n | Search past sessions of every machine for words (scrubjay's sj-grep) - `Enter` read, `Ctrl+O` go on with it, `Ctrl+Y` hand it to the agent |
 | `<M-.>` / `<M-,>` | n, agent pane | Next / previous session in the agent's pane (its tabs; a click on a tab, middle click ends it) |
-| `<leader>ac` | n | New AI session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
+| `<leader>aC` | n | New conversation in the session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
 | `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`, Claude Code: `/model`) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |
 | `<leader>ae` | v | AI edit selection (asks for the instruction) |
@@ -69,9 +73,8 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 | `<leader>aV` | n | Dictate at the cursor - again stops (in a terminal: typed in) |
 | `<leader>rf` | n | Send the last failed run (command, output, code) to the agent: fix it |
 
-> **Which agent:** Qwen Code by default; the environment variable `GREYKNIGHT_AGENT=opencode` switches to OpenCode,
-> `GREYKNIGHT_AGENT=claude` to Claude Code. Unset, GreyKnight takes Qwen Code where it is installed, else OpenCode,
-> else Claude Code.
+> **Which agent:** the one chosen on the agents page (`<leader>al`, kept for this machine); before that choice
+> `GREYKNIGHT_AGENT=opencode` / `claude` / `qwen`. Neither: Qwen Code where it is installed, else OpenCode, else Claude Code.
 >
 > The agent runs the local **Qwen Code** CLI in a persistent terminal. It inherits the
 > project's cwd and any `QWEN.md`/`AGENTS.md` context automatically. `aa`/`ae` send the file

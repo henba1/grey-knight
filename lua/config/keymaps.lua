@@ -11,7 +11,7 @@ vim.api.nvim_create_autocmd("User", {
     local ok, wk = pcall(require, "which-key")
     if ok then
       wk.add({
-        { "<leader>a",  group = "AI (" .. require("integrations.agent").backend().name .. ")" },
+        { "<leader>a",  group = "Agent" }, -- Claude Code, OpenCode or Qwen Code: <leader>al picks
         { "<leader>b",  group = "Buffer" },
         { "<leader>d",  group = "Debug/DAP" },
         { "<leader>f",  group = "Find (Picker)" },
@@ -184,49 +184,54 @@ map("n", "<leader>lw", function() latex().toggle_watch() end,      { desc = "LaT
 map("n", "<leader>lo", function() latex().list_previews() end,     { desc = "Preview: the open ones and their addresses" })
 map("n", "<leader>le", function() latex().show_errors() end,       { desc = "LaTeX: Errors of the last build (quickfix)" })
 
--- ── Coding agent: Qwen Code or OpenCode (lua/integrations/agent.lua) ─
+-- ── Coding agent: Claude Code, OpenCode or Qwen Code (lua/integrations/agent.lua) ─
 local function agent() return require("integrations.agent") end
 -- The start page's "AI" key calls these
 vim.g.qwen_launch = function(name, direction) agent().launch(name, direction) end
 vim.g.qwen_toggle = function(name, direction) agent().toggle(name, direction) end
 
 -- tt / tf / th / tv: the session the pane shows (the main agent until another one is picked: <leader>as)
-map("n", "<leader>tt", function() agent().toggle(nil, "vertical") end,    { desc = "AI: Toggle" })
-map("n", "<leader>tf", function() agent().launch(nil, "float") end,       { desc = "AI: Float" })
-map("n", "<leader>th", function() agent().launch(nil, "horizontal") end,  { desc = "AI: Horizontal" })
-map("n", "<leader>tv", function() agent().launch(nil, "vertical") end,    { desc = "AI: Vertical" })
-map("n", "<leader>t1", function() agent().launch("agent1", "horizontal") end, { desc = "AI: Agent #1 (own session)" })
-map("n", "<leader>t2", function() agent().launch("agent2", "horizontal") end, { desc = "AI: Agent #2 (own session)" })
-map("n", "<leader>t3", function() agent().launch("agent3", "horizontal") end, { desc = "AI: Agent #3 (own session)" })
-map("n", "<leader>ac", function() agent().new_session() end, { desc = "AI: New conversation in this session (/clear)" })
+map("n", "<leader>tt", function() agent().toggle(nil, "vertical") end,    { desc = "Agent: Toggle" })
+map("n", "<leader>tf", function() agent().launch(nil, "float") end,       { desc = "Agent: Float" })
+map("n", "<leader>th", function() agent().launch(nil, "horizontal") end,  { desc = "Agent: Horizontal" })
+map("n", "<leader>tv", function() agent().launch(nil, "vertical") end,    { desc = "Agent: Vertical" })
+map("n", "<leader>t1", function() agent().launch("agent1", "horizontal") end, { desc = "Agent: Agent #1 (own session)" })
+map("n", "<leader>t2", function() agent().launch("agent2", "horizontal") end, { desc = "Agent: Agent #2 (own session)" })
+map("n", "<leader>t3", function() agent().launch("agent3", "horizontal") end, { desc = "Agent: Agent #3 (own session)" })
+map("n", "<leader>aC", function() agent().new_session() end, { desc = "Agent: New conversation in this session (/clear)" })
 -- Sessions (lua/integrations/agent_sessions.lua): the running ones are the pane's tabs, the past ones resume
 local function sessions() return require("integrations.agent_sessions") end
-map("n", "<leader>as", function() sessions().pick() end, { desc = "AI: Sessions - switch, resume, carry over (Ctrl+A: all projects)" })
-map("n", "<leader>ao", function() sessions().new() end,  { desc = "AI: Open a new session next to the others" })
-map("n", "<leader>aS", function() require("integrations.scrubjay").search() end, { desc = "AI: Search past sessions of every machine (scrubjay)" })
-map("n", "<M-.>", function() agent().cycle(1) end,       { desc = "AI: Next session in the pane" })
-map("n", "<M-,>", function() agent().cycle(-1) end,      { desc = "AI: Previous session in the pane" })
-map("n", "<leader>am", function() agent().model_info() end,  { desc = "AI: Model running on the rig" })
-map("n", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about file" })
-map("v", "<leader>aa", function() agent().ask() end,         { desc = "AI: Ask about selection" })
-map("v", "<leader>ae", function() agent().edit() end,        { desc = "AI: Edit selection" })
-map("n", "<leader>ad", function() require("integrations.agent_changes").pick() end, { desc = "AI: What changed since the agent started (diff, take back)" })
+map("n", "<leader>ap", function() agent().open_pane() end,    { desc = "Agent: The agent's pane (its sessions as tabs)" })
+map("n", "<leader>ac", function() sessions().resume_last() end, { desc = "Agent: Back to the last session (none running: resume the newest)" })
+map("n", "<leader>ae", function() sessions().new() end,       { desc = "Agent: New session with the chosen agent" })
+map("n", "<leader>al", function() sessions().page() end,      { desc = "Agent: Agents - choose Claude Code, OpenCode, Qwen Code; settings" })
+map("n", "<leader>ax", function() local _, s = agent().pane(); agent().stop(s and s.name or agent().current()) end,
+  { desc = "Agent: End the session the pane shows" })
+map("n", "<leader>as", function() sessions().pick() end, { desc = "Agent: Sessions - switch, resume, carry over (Ctrl+A: all projects)" })
+map("n", "<leader>aS", function() require("integrations.scrubjay").search() end, { desc = "Agent: Search past sessions of every machine (scrubjay)" })
+map("n", "<M-.>", function() agent().cycle(1) end,       { desc = "Agent: Next session in the pane" })
+map("n", "<M-,>", function() agent().cycle(-1) end,      { desc = "Agent: Previous session in the pane" })
+map("n", "<leader>am", function() agent().model_info() end,  { desc = "Agent: Model running on the rig" })
+map("n", "<leader>aa", function() agent().ask() end,         { desc = "Agent: Ask about file" })
+map("v", "<leader>aa", function() agent().ask() end,         { desc = "Agent: Ask about selection" })
+map("v", "<leader>ae", function() agent().edit() end,        { desc = "Agent: Edit selection" })
+map("n", "<leader>ad", function() require("integrations.agent_changes").pick() end, { desc = "Agent: What changed since the agent started (diff, take back)" })
 -- The agent's edits, reviewed in their buffers (lua/integrations/agent_review.lua): ]c / [c go between them; a
 -- window following the agent goes to each edit as it lands
 local function review() return require("integrations.agent_review") end
 local function sel() local a, b = vim.fn.line("v"), vim.fn.line("."); return math.min(a, b), math.max(a, b) end
-map("n", "<leader>ay", function() review().act(true) end,  { desc = "AI: Keep the agent's change here" })
-map("n", "<leader>an", function() review().act(false) end, { desc = "AI: Revert the agent's change here" })
-map("v", "<leader>ay", function() local a, b = sel(); review().act(true, false, a, b) end,  { desc = "AI: Keep the agent's changes in the selection" })
-map("v", "<leader>an", function() local a, b = sel(); review().act(false, false, a, b) end, { desc = "AI: Revert the agent's changes in the selection" })
-map("n", "<leader>aY", function() review().act(true, true) end,  { desc = "AI: Keep all of the agent's changes in this file" })
-map("n", "<leader>aN", function() review().act(false, true) end, { desc = "AI: Revert all of the agent's changes in this file" })
-map("n", "<leader>ar", function() review().pick() end,           { desc = "AI: The agent's edits to review (keep, revert)" })
-map("n", "<leader>af", function() review().toggle_follow() end,  { desc = "AI: This window follows the agent's edits (again: stops)" })
+map("n", "<leader>ay", function() review().act(true) end,  { desc = "Agent: Keep the agent's change here" })
+map("n", "<leader>an", function() review().act(false) end, { desc = "Agent: Revert the agent's change here" })
+map("v", "<leader>ay", function() local a, b = sel(); review().act(true, false, a, b) end,  { desc = "Agent: Keep the agent's changes in the selection" })
+map("v", "<leader>an", function() local a, b = sel(); review().act(false, false, a, b) end, { desc = "Agent: Revert the agent's changes in the selection" })
+map("n", "<leader>aY", function() review().act(true, true) end,  { desc = "Agent: Keep all of the agent's changes in this file" })
+map("n", "<leader>aN", function() review().act(false, true) end, { desc = "Agent: Revert all of the agent's changes in this file" })
+map("n", "<leader>ar", function() review().pick() end,           { desc = "Agent: The agent's edits to review (keep, revert)" })
+map("n", "<leader>af", function() review().toggle_follow() end,  { desc = "Agent: This window follows the agent's edits (again: stops)" })
 -- Speech to text on this machine (lua/integrations/voice.lua): press to start, again to stop
 local function voice() return require("integrations.voice") end
-map("n", "<leader>av", function() voice().toggle("agent") end,  { desc = "AI: Speak a prompt to the agent (again: stop)" })
-map("n", "<leader>aV", function() voice().toggle("cursor") end, { desc = "AI: Dictate at the cursor (again: stop)" })
+map("n", "<leader>av", function() voice().toggle("agent") end,  { desc = "Agent: Speak a prompt to the agent (again: stop)" })
+map("n", "<leader>aV", function() voice().toggle("cursor") end, { desc = "Agent: Dictate at the cursor (again: stop)" })
 vim.api.nvim_create_user_command("VoiceInstall", function(o) voice().install(o.args) end, {
   nargs = "?", complete = function() return { "small", "base", "turbo" } end,
   desc = "Speech to text: download whisper.cpp and a model (small - the default, base, turbo)",

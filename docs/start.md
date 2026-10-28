@@ -21,7 +21,7 @@ On first launch:
 Started in Neovim's own program folder - a Windows shortcut whose *Start in* is `C:\dev\tools\nvim\bin`, a
 double-click on `nvim.exe` - GreyKnight works in your home folder instead: terminals and agents start in Neovim's
 folder, and nobody works in that one. Open a project from there (`<leader>e`, `.` on its folder) before you start an
-agent, or `<leader>ac` afterwards ([the agent keeps its folder](agent.md#context)).
+agent, or `<leader>aC` afterwards ([the agent keeps its folder](agent.md#context)).
 
 ---
 
@@ -38,7 +38,7 @@ The Grey Knight dashboard is the start screen.
 | `c` | Edit nvim config |
 | `s` | Restore last session |
 | `e` | Easy mode on / off (below) |
-| `a` | Open the AI agent (Qwen Code or OpenCode) |
+| `a` | The agent's pane (Claude Code, OpenCode or Qwen Code: `<leader>al` chooses) |
 | `L` | Open Lazy plugin manager |
 | `q` | Quit |
 | `1-8` | Open numbered recent file/project |

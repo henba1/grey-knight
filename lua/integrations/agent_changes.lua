@@ -1,7 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  What changed since the agent started (<leader>ad). When the ║
 -- ║  first agent starts in a project - and with a new session    ║
--- ║  (<leader>ac) - the project is noted: a git snapshot of its  ║
+-- ║  (<leader>aC) - the project is noted: a git snapshot of its  ║
 -- ║  tracked files (the user's index and HEAD stay untouched),   ║
 -- ║  the names of its untracked ones. The list shows each file   ║
 -- ║  changed since, its diff in the preview; Enter shows it side ║
