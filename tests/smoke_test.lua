@@ -53,6 +53,9 @@ test("Style: OLED by default - true black, the GREY KNIGHT start screen (no mode
     assert(style.current() == "oled", "the style: " .. style.current())
     style.apply()
     assert(bg() == 0x000000, ("the OLED background: %06x"):format(bg() or 0))
+    -- the selection stands out on black (2026-10-28: bg_highlight was almost invisible there)
+    local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
+    assert(visual.bg == 0x2b63b8 and visual.fg == 0xffffff, "the OLED selection: " .. vim.inspect(visual))
     local s = screen()
     assert(s:find("╚██████╔╝██║  ██║███████╗", 1, true), "the start screen:\n" .. s)
     -- the header: no model, no address (its entries name the agent: "AI (Qwen Code)" on kali)
@@ -61,6 +64,8 @@ test("Style: OLED by default - true black, the GREY KNIGHT start screen (no mode
     vim.cmd("GreyKnightStyle greyknight")
     assert(vim.fn.readfile(style.FILE)[1] == "greyknight", "the choice was not kept")
     assert(bg() == 0x16181a, ("greyknight's background: %06x"):format(bg() or 0))
+    local grey_visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
+    assert(grey_visual.bg ~= 0x2b63b8 and not grey_visual.fg, "greyknight kept OLED's selection: " .. vim.inspect(grey_visual))
     s = screen()
     assert(s:find("╚██████╔╝██║  ██║███████╗", 1, true), "GreyKnight's start screen:\n" .. s)
     -- before the kept choice: vim.g.greyknight_style, then $GREYKNIGHT_STYLE
