@@ -204,6 +204,7 @@ end
 
 --- A past session's conversation as Markdown: `done(lines)` (Claude Code's at once, OpenCode's when it exported it)
 function M.render(item, done, max)
+  if item.render then return item.render(item, done, max) end -- a source of its own (integrations/scrubjay.lua)
   if item.harness == "claude" and item.path then return done(M.render_claude(item.path, max)) end
   if item.harness == "opencode" then return M.render_opencode(item.sid, done) end
   done({})
@@ -260,12 +261,18 @@ function M.items(all)
   end
   local past = M.claude_sessions(not all and cwd or nil)
   vim.list_extend(past, M.opencode_cache or {})
-  vim.list_extend(past, M.extra_items(all) or {})
+  -- the ones on this machine come first: a session from elsewhere that is also here resumes from here
+  local here = {}
+  for _, item in ipairs(past) do here[item.sid] = true end
+  for _, item in ipairs(M.extra_items(all) or {}) do
+    if not here[item.sid] then past[#past + 1] = item end
+  end
   table.sort(past, function(a, b) return (a.time or 0) > (b.time or 0) end)
   for _, item in ipairs(past) do
-    local key = item.sid and (item.sid .. (item.host or ""))
-    if not (item.sid and seen[item.sid]) and not (key and seen[key]) and (all or in_project(item.dir, cwd)) then
-      if key then seen[key] = true end
+    -- one row per session: a session handed off between machines has the same id on each; the one here (or the
+    -- newest) is the one listed
+    if not (item.sid and seen[item.sid]) and (all or in_project(item.dir, cwd)) then
+      if item.sid then seen[item.sid] = true end
       items[#items + 1] = item
     end
   end
@@ -322,7 +329,7 @@ end
 -- ── Resuming, carrying over ──────────────────────────────────
 
 --- The folder a past session goes on in: where it worked, when that is on this machine; else Neovim's
-local function workdir(item)
+function M.workdir(item)
   if item.dir and vim.fn.isdirectory(item.dir) == 1 then return item.dir end
   if item.dir then
     notify(("%s worked in %s - not on this machine; it goes on in %s"):format(item.title or item.sid, item.dir,
@@ -340,12 +347,13 @@ M.RESUME_ARGS = {
 --- Go on with a past session in its own agent, in the pane next to the others
 function M.resume(item)
   if item.running then return agent.switch(item.name) end
+  if item.resume then return item.resume(item, item.harness) end
   local args = M.RESUME_ARGS[item.harness]
   if not args or vim.fn.executable(agent.BACKENDS[item.harness].bin()) ~= 1 then
     return M.carry_over(item)
   end
   agent.open_session({ backend = item.harness, args = args(item.sid), sid = item.harness == "claude" and item.sid or nil,
-    dir = workdir(item), title = item.title })
+    dir = M.workdir(item), title = item.title })
 end
 
 --- The folder a carried-over conversation is written to (Neovim's state folder: no project's)
@@ -369,12 +377,25 @@ function M.carry_over(item, target)
       format_item = function(id) return agent.BACKENDS[id].name end,
     }, function(choice) if choice then M.carry_over(item, choice) end end)
   end
+  if item.resume then return item.resume(item, target) end -- its source carries it over (scrubjay: sj-resume)
   M.render(item, function(lines)
     if #lines == 0 then return notify("Nothing to carry over from " .. (item.title or item.sid), vim.log.levels.WARN) end
     vim.fn.mkdir(M.carry_dir(), "p")
     local file = ("%s/%s-%s.md"):format(M.carry_dir(), item.harness, (item.sid or tostring(os.time())):gsub("[^%w%-_]", "_"))
     vim.fn.writefile(vim.list_extend({ "# " .. (item.title or ""), "" }, lines), file)
-    agent.open_session({ backend = target, dir = workdir(item), title = item.title, prompt = M.carry_prompt(item, file) })
+    agent.open_session({ backend = target, dir = M.workdir(item), title = item.title, prompt = M.carry_prompt(item, file) })
+  end, M.RENDER_MAX)
+end
+
+--- A past session's conversation into the agent's input as @file (the session the pane shows): the agent reads it -
+--- "as we did there" without going back to it. The conversation is written to a file first.
+function M.mention(item)
+  M.render(item, function(lines)
+    if #lines == 0 then return notify("Nothing to hand over from " .. (item.title or item.sid), vim.log.levels.WARN) end
+    vim.fn.mkdir(M.carry_dir(), "p")
+    local file = ("%s/%s-%s.md"):format(M.carry_dir(), item.harness, (item.sid or tostring(os.time())):gsub("[^%w%-_]", "_"))
+    vim.fn.writefile(vim.list_extend({ "# " .. (item.title or ""), "" }, lines), file)
+    agent.mention({ file })
   end, M.RENDER_MAX)
 end
 
@@ -408,6 +429,11 @@ function M.pick(opts)
         p:close()
         vim.schedule(function() M.carry_over(item) end)
       end,
+      gk_mention = function(p, item)
+        if not item or item.running then return end
+        p:close()
+        vim.schedule(function() M.mention(item) end)
+      end,
       gk_new = function(p)
         p:close()
         vim.schedule(function() M.new() end)
@@ -429,6 +455,7 @@ function M.pick(opts)
         ["<c-o>"] = { "gk_carry", mode = { "n", "i" }, desc = "Go on with it in another agent" },
         ["<c-e>"] = { "gk_new", mode = { "n", "i" }, desc = "New session" }, -- Ctrl+N stays the picker's next item
         ["<c-x>"] = { "gk_stop", mode = { "n", "i" }, desc = "End the running session" },
+        ["<c-y>"] = { "gk_mention", mode = { "n", "i" }, desc = "Hand its conversation to the agent (@file)" },
         ["<c-a>"] = { "gk_all", mode = { "n", "i" }, desc = "All projects / this project" },
       } },
       list = { keys = { ["dd"] = { "gk_stop", desc = "End the running session" } } },
