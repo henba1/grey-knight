@@ -5101,24 +5101,36 @@ test("Docs: the CHEATSHEET lists every leader and F key", function()
   assert(#missing == 0, "not in the CHEATSHEET: " .. table.concat(missing, ", "))
 end)
 
-test("Easy mode: Alt+N - a plain editor's keys in file windows, typing stays on; Esc one command; off as before", function()
-  -- a GreyKnight of its own, typed into over RPC as from a terminal: this test's feedkeys end insert mode after each
-  -- key, so they cannot show that it stays (and SSH_TTY hidden: OSC 52 would write into the RPC channel)
-  local file = H.file("easy.txt", { "first line" })
+-- A GreyKnight of its own for the easy mode tests, typed into over RPC as from a terminal: this suite's feedkeys end
+-- insert mode after each key, so they cannot show that it stays (and SSH_TTY hidden: OSC 52 would write into the RPC
+-- channel). Its clipboard is a variable; it starts in the file's folder. run(c) gets c.rpc, c.mode, c.text and
+-- c.type(keys, mode it ends in); the child ends after it (2026-10-28).
+local function easy_child(file, run)
   local ch = vim.fn.jobstart({ vim.v.progpath, "--embed", "--headless", "-i", "NONE",
     "-c", "lua local last = { { '' }, 'v' }; vim.g.clipboard = { name = 'test', copy = { ['+'] = function(l, t) last = { l, t } end,"
       .. " ['*'] = function() end }, paste = { ['+'] = function() return last end, ['*'] = function() return { {}, 'v' } end } }",
-    file }, { rpc = true, env = { SSH_TTY = "", SSH_CONNECTION = "" } })
+    file }, { rpc = true, cwd = vim.fs.dirname(file), env = { SSH_TTY = "", SSH_CONNECTION = "" } })
   assert(ch > 0, "no child Neovim")
-  local function rpc(method, ...) return vim.rpcrequest(ch, method, ...) end
-  local function mode() return rpc("nvim_get_mode").mode end
-  local function text() return table.concat(rpc("nvim_buf_get_lines", 0, 0, -1, false), "|") end
-  local function type(keys, want_mode)
-    rpc("nvim_input", keys)
-    assert(H.wait(3000, function() return mode() == want_mode end), keys .. ": mode " .. mode() .. ", not " .. want_mode)
+  local c = {}
+  function c.rpc(method, ...) return vim.rpcrequest(ch, method, ...) end
+  function c.mode() return c.rpc("nvim_get_mode").mode end
+  function c.text() return table.concat(c.rpc("nvim_buf_get_lines", 0, 0, -1, false), "|") end
+  function c.type(keys, want_mode)
+    c.rpc("nvim_input", keys)
+    assert(H.wait(3000, function() return c.mode() == want_mode end), keys .. ": mode " .. c.mode() .. ", not " .. want_mode)
   end
   local ok, err = pcall(function()
-    assert(H.wait(20000, function() return rpc("nvim_eval", "exists(':EasyMode')") == 2 end), "the child did not start")
+    assert(H.wait(20000, function() return c.rpc("nvim_eval", "exists(':EasyMode')") == 2 end), "the child did not start")
+    run(c)
+  end)
+  pcall(vim.fn.jobstop, ch)
+  assert(ok, err)
+end
+
+test("Easy mode: Alt+N - a plain editor's keys in file windows, typing stays on; Esc one command; off as before", function()
+  local file = H.file("easy.txt", { "first line" })
+  easy_child(file, function(c)
+    local rpc, text, type = c.rpc, c.text, c.type
     local before = rpc("nvim_call_function", "maparg", { "<C-s>", "i" })
     type("<M-n>", "i")
     type("<C-End> second", "i")
@@ -5147,8 +5159,115 @@ test("Easy mode: Alt+N - a plain editor's keys in file windows, typing stays on;
     assert(rpc("nvim_call_function", "maparg", { "<C-s>", "i" }) == before, "Ctrl+S in insert mode not as before")
     assert(rpc("nvim_get_option_value", "selection", {}) == "inclusive", "'selection' not back")
   end)
-  pcall(vim.fn.jobstop, ch)
-  assert(ok, err)
+end)
+
+test("Easy mode: the file tree opens with a click or Enter and a double click, typing again in the file", function()
+  local file = H.file("tree_a.txt", { "alpha beta", "gamma" })
+  vim.fn.writefile({ "bbb" }, vim.fs.dirname(file) .. "/tree_b.txt")
+  easy_child(file, function(c)
+    local rpc, type = c.rpc, c.type
+    local function name() return vim.fs.basename(rpc("nvim_buf_get_name", 0)) end
+    local function click(row, col, mods)
+      rpc("nvim_input_mouse", "left", "press", mods or "", 0, row, col)
+      rpc("nvim_input_mouse", "left", "release", mods or "", 0, row, col)
+    end
+    type("<M-n>", "i")
+    rpc("nvim_exec_lua", "Snacks.explorer()", {})
+    -- the tree has the cursor: Neovim's normal mode there, not insert mode (its keys were letters, E21)
+    assert(H.wait(5000, function()
+      return rpc("nvim_eval", "&filetype") == "snacks_picker_list" and c.mode() == "n"
+    end), "the tree: mode " .. c.mode())
+    local tree = rpc("nvim_get_current_win")
+    local row_of = function(file_name) -- the screen row of a file in the tree
+      local lines = rpc("nvim_buf_get_lines", rpc("nvim_win_get_buf", tree), 0, -1, false)
+      for i, line in ipairs(lines) do
+        if line:find(file_name, 1, true) then return rpc("nvim_win_get_position", tree)[1] + i - 1 end
+      end
+    end
+    assert(H.wait(5000, function() return row_of("tree_b.txt") end), "tree_b.txt not in the tree")
+    type("<C-w>l", "i") -- the file: typing
+    -- from typing in the file a click into the tree, then Enter: the file opens, typing goes on there
+    click(row_of("tree_b.txt"), 8)
+    assert(H.wait(3000, function() return c.mode() == "n" and rpc("nvim_get_current_win") == tree end),
+      "a click into the tree: mode " .. c.mode())
+    type("<CR>", "i")
+    assert(H.wait(3000, function() return name() == "tree_b.txt" end), "Enter in the tree opened " .. name())
+    -- a double click on a file from typing in another: opens it
+    local row = row_of("tree_a.txt")
+    click(row, 8)
+    rpc("nvim_input", ("<2-LeftMouse><%d,%d>"):format(8, row))
+    assert(H.wait(3000, function() return name() == "tree_a.txt" and c.mode() == "i" end),
+      "a double click in the tree: " .. name() .. ", mode " .. c.mode())
+    -- a click past the end of a line, from the tree: the cursor after the last character, typing goes on there
+    rpc("nvim_set_current_win", tree)
+    assert(H.wait(3000, function() return c.mode() == "n" end), "back in the tree: mode " .. c.mode())
+    local win = vim.tbl_filter(function(w) return rpc("nvim_buf_get_name", rpc("nvim_win_get_buf", w)) == file end,
+      rpc("nvim_list_wins"))[1]
+    local pos = rpc("nvim_win_get_position", win)
+    local info = rpc("nvim_call_function", "getwininfo", { win })[1]
+    vim.wait(600) -- not a third click of the double click above ('mousetime')
+    rpc("nvim_exec_lua", "Snacks.notifier.hide()", {}) -- "Easy mode on" lies over the line's end
+    click(pos[1] + info.winbar, pos[2] + info.textoff + 30)
+    assert(H.wait(3000, function() return c.mode() == "i" and name() == "tree_a.txt" end),
+      "the click into the file: " .. name() .. ", mode " .. c.mode())
+    type("!", "i")
+    assert(c.text() == "alpha beta!|gamma", "typed after a click past the end: " .. c.text())
+  end)
+end)
+
+test("Easy mode: suggestions Tab / Esc / Enter as in VS Code, Ctrl+Z a word, Home, Ctrl+Del, Shift+click", function()
+  local file = H.file("keys.txt", { "alpha beta", "  gamma", "" })
+  easy_child(file, function(c)
+    local rpc, text, type = c.rpc, c.text, c.type
+    local function menu() return rpc("nvim_exec_lua", "return require('blink.cmp').is_visible()", {}) end
+    local function cursor() return rpc("nvim_win_get_cursor", 0) end
+    type("<M-n>", "i")
+    assert(not rpc("nvim_get_option_value", "showmode", {}), "-- INSERT -- shown")
+    -- Ctrl+Z: the last word, not all that was typed; Ctrl+Y brings it back
+    type("<C-End>one two three", "i")
+    assert(H.wait(2000, function() return text() == "alpha beta|  gamma|one two three" end), text())
+    type("<C-z>", "i")
+    assert(text() == "alpha beta|  gamma|one two ", "Ctrl+Z: " .. text())
+    type("<C-z>", "i")
+    assert(text() == "alpha beta|  gamma|one ", "Ctrl+Z twice: " .. text())
+    type("<C-y>", "i")
+    assert(text() == "alpha beta|  gamma|one two ", "Ctrl+Y: " .. text())
+    -- the suggestions: Esc closes them (no normal mode), Tab takes the grey one, Enter without one picked: a new line
+    type("<C-End> al", "i")
+    assert(H.wait(5000, menu), "no suggestions for 'al'")
+    type("<Esc>", "i")
+    assert(H.wait(2000, function() return not menu() end), "Esc did not close the suggestions")
+    assert(text() == "alpha beta|  gamma|one two  al", "Esc changed the text: " .. text())
+    type("p", "i")
+    assert(H.wait(5000, menu), "no suggestions for 'alp'")
+    type("<Tab>", "i")
+    assert(H.wait(2000, function() return text() == "alpha beta|  gamma|one two  alpha" and not menu() end),
+      "Tab did not take the suggestion: " .. text())
+    type(" gam", "i")
+    assert(H.wait(5000, menu), "no suggestions for 'gam'")
+    type("<CR>", "i")
+    assert(H.wait(2000, function() return text() == "alpha beta|  gamma|one two  alpha gam|" end),
+      "Enter without a picked suggestion: " .. text())
+    -- Home: the first character, then the start of the line; Ctrl+Del at the end of a line: the next line comes up
+    rpc("nvim_win_set_cursor", 0, { 2, 7 })
+    type("<Home>", "i")
+    assert(cursor()[2] == 2, "Home: column " .. cursor()[2])
+    type("<Home>", "i")
+    assert(cursor()[2] == 0, "Home twice: column " .. cursor()[2])
+    type("<End><C-Del>", "i")
+    assert(text() == "alpha beta|  gammaone two  alpha gam|", "Ctrl+Del at the end of a line: " .. text())
+    -- Shift+click selects from the cursor to the click; typing replaces it, Ctrl+Z brings it back at once
+    local pos = rpc("nvim_win_get_position", 0)
+    local info = rpc("nvim_call_function", "getwininfo", { rpc("nvim_get_current_win") })[1]
+    rpc("nvim_win_set_cursor", 0, { 1, 10 })
+    rpc("nvim_input_mouse", "left", "press", "S", 0, pos[1] + info.winbar, pos[2] + info.textoff + 6)
+    rpc("nvim_input_mouse", "left", "release", "S", 0, pos[1] + info.winbar, pos[2] + info.textoff + 6)
+    assert(H.wait(2000, function() return c.mode() == "s" end), "Shift+click: mode " .. c.mode())
+    type("X", "i")
+    assert(text():match("^alpha X|"), "typing over the Shift+click selection: " .. text())
+    type("<C-z>", "i")
+    assert(text():match("^alpha beta|"), "Ctrl+Z after typing over a selection: " .. text())
+  end)
 end)
 
 H.report("Smoke Test Results")

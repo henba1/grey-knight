@@ -255,7 +255,8 @@ return {
         component_separators = { left = "", right = "" },
       },
       sections = {
-        lualine_a = { "mode" },
+        -- easy mode (Alt+N): EASY where Vim's INSERT was - typing there is the plain editor's, not Vim's insert mode
+        lualine_a = { { "mode", fmt = function(m) return vim.g.greyknight_easymode and m == "INSERT" and "EASY" or m end } },
         lualine_b = { "branch", "diff", "diagnostics" },
         -- a terminal by its name, not its buffer's - term://<cwd>//<pid>:<the whole command line> (2026-10-23)
         lualine_c = { { "filename", path = 1, fmt = function(name)

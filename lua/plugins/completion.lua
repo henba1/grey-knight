@@ -16,7 +16,13 @@ return {
         ["<C-space>"] = { "show", "show_documentation", "hide_documentation" },
         ["<C-e>"]     = { "hide" },
         ["<CR>"]      = { "accept", "fallback" },
-        ["<Tab>"]     = { "select_next", "snippet_forward", "fallback" },
+        -- Easy mode (Alt+N, config/easymode.lua): Tab takes the suggestion - the one picked with the arrows, else the
+        -- grey one - as in VS Code; it put the next one in and left the menu open (2026-10-28). Esc closes the menu
+        -- there (easymode.lua). Outside easy mode Tab goes through the list as before.
+        ["<Tab>"]     = {
+          function(cmp) if vim.g.greyknight_easymode and cmp.is_menu_visible() then return cmp.select_and_accept() end end,
+          "select_next", "snippet_forward", "fallback",
+        },
         ["<S-Tab>"]   = { "select_prev", "snippet_backward", "fallback" },
         ["<C-b>"]     = { "scroll_documentation_up" },
         ["<C-f>"]     = { "scroll_documentation_down" },
