@@ -114,6 +114,9 @@ return {
       -- forward, <C-d> deletes the character under the cursor, <C-k> everything after it; <C-u> (all before it)
       -- and <C-w> (a word) are built in. 2026-10-20
       styles = {
+        -- a notification wraps: snacks makes it at most 40% of the screen wide and cut off what did not fit
+        -- (a preview's address ended in "http://localho"). 2026-10-28
+        notification = { wo = { wrap = true } },
         input = {
           keys = {
             i_line_start = { "<c-a>", "<home>", mode = "i", expr = true, desc = "start of the line" },

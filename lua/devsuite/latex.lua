@@ -203,8 +203,9 @@ function M.preview_open(path, done)
     local url = ("http://localhost:%d/%s/"):format(port, id)
     M.state.previews[id] = { path = path, url = url }
     M.state.preview, M.state.preview_url = id, url
-    vim.notify(("Preview of %s on %s%s"):format(vim.fn.fnamemodify(path, ":t"), url,
-      port == 8000 and "" or (" - over SSH: ssh -L %d:localhost:%d <host>"):format(port, port)),
+    -- the address on a line of its own: it wraps as one piece, not after the file's name
+    vim.notify(("Preview of %s:\n%s%s"):format(vim.fn.fnamemodify(path, ":t"), url,
+      port == 8000 and "" or ("\nover SSH: ssh -L %d:localhost:%d <host>"):format(port, port)),
       vim.log.levels.INFO, { title = "Preview", id = "greyknight_preview_" .. id })
     if done then done(id, url) end
   end)
