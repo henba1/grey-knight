@@ -70,10 +70,19 @@ M.BACKENDS = {
   },
 }
 
---- The agent of this machine: $GREYKNIGHT_AGENT (or vim.g.greyknight_agent), else Qwen Code where it is
---- installed, else OpenCode, else Claude Code where that is - kali and the pi keep Qwen Code without any setting.
+-- The agent picked on the agents page (<leader>al), kept for this machine
+M.FILE = vim.fn.stdpath("data") .. "/greyknight-agent"
+
+local function kept()
+  local ok, lines = pcall(vim.fn.readfile, M.FILE)
+  return ok and lines[1] and M.BACKENDS[lines[1]] and lines[1] or nil
+end
+
+--- The agent of this machine - the one new sessions start with: vim.g.greyknight_agent (the agents page sets it),
+--- $GREYKNIGHT_AGENT, the one picked on the agents page before, else Qwen Code where it is installed, else OpenCode,
+--- else Claude Code where that is - kali and the pi keep Qwen Code without any setting.
 function M.backend_id()
-  local wanted = vim.g.greyknight_agent or vim.env.GREYKNIGHT_AGENT
+  local wanted = vim.g.greyknight_agent or vim.env.GREYKNIGHT_AGENT or kept()
   if wanted and wanted ~= "" then
     if M.BACKENDS[wanted] then return wanted end
     vim.notify_once(("GREYKNIGHT_AGENT=%s is not an agent (qwen, opencode, claude) - choosing by what is installed"):format(wanted),
@@ -610,7 +619,7 @@ vim.api.nvim_create_autocmd("DirChanged", {
     for _, t in ipairs(list) do
       names[#names + 1] = ("%s in %s"):format(t.display_name or M.backend().name, vim.fn.fnamemodify(t.dir, ":~"))
     end
-    vim.notify(("%s - %s started there, a running program keeps its folder. <leader>ac: a new conversation in %s")
+    vim.notify(("%s - %s started there, a running program keeps its folder. <leader>aC: a new conversation in %s")
       :format(table.concat(names, ", "), #list == 1 and "it" or "they", vim.fn.fnamemodify(vim.fn.getcwd(-1, -1), ":~")),
       vim.log.levels.WARN, { title = M.backend().short })
   end,
@@ -652,6 +661,48 @@ function M.open_session(spec, direction)
     when_ready(term, function() submit(term, spec.prompt) end)
   end
   return name
+end
+
+--- <leader>ap: the agent's pane - focused where it is open, else opened with the session it showed last; with none
+--- running, a new one of the chosen agent
+function M.open_pane()
+  local win, shown = M.pane()
+  if win then
+    M.active = shown.name
+    vim.api.nvim_set_current_win(win)
+    return vim.cmd("startinsert!")
+  end
+  M.launch(nil, "vertical")
+end
+
+--- The running session of agent `id` to show: the one shown last if it is one of it, else the newest
+local function session_of(id)
+  local best
+  for _, s in ipairs(M.running()) do
+    if s.term.gk_backend == id then
+      if s.name == M.active then return s.name end
+      if not best or (s.term.gk_started or 0) >= (best.term.gk_started or 0) then best = s end
+    end
+  end
+  return best and best.name
+end
+
+--- Choose the agent new sessions start with (the agents page, <leader>al): kept for this machine. The pane goes over
+--- to it - one of its sessions that runs, else a new one; the session it showed keeps running, a tab of the pane.
+function M.select(id)
+  if not M.BACKENDS[id] then return end
+  if not executable(M.BACKENDS[id].bin()) then
+    return vim.notify(("%s is not installed here (%s)"):format(M.BACKENDS[id].name, M.BACKENDS[id].bin()),
+      vim.log.levels.WARN, { title = "Agents" })
+  end
+  vim.g.greyknight_agent = id
+  pcall(function()
+    vim.fn.mkdir(vim.fs.dirname(M.FILE), "p")
+    vim.fn.writefile({ id }, M.FILE)
+  end)
+  local name = session_of(id)
+  if name then return M.switch(name) end
+  M.open_session({ backend = id })
 end
 
 --- Show a running session in the pane (its tab)

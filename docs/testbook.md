@@ -116,7 +116,7 @@ log).
 1. Start Neovim in one folder, `<leader>tt`.
 2. `<leader>e`, go to another project, `.` on it - **expect** a warning: the agent still works where it started; its
    statusline says `- in <that folder>`.
-3. `<leader>ac` - **expect** it to start anew in the new folder (OpenCode asks for its mode again).
+3. `<leader>aC` - **expect** it to start anew in the new folder (OpenCode asks for its mode again).
 
 ## 13. The look, a session, SSH
 

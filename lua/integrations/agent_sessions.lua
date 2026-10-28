@@ -4,7 +4,9 @@
 -- ║  on disk (Claude Code's, OpenCode's) - in one list           ║
 -- ║  (<leader>as): switch to one, resume one where it worked, or ║
 -- ║  carry it over to another agent; start a new one next to the ║
--- ║  others (<leader>ao). Alt+, / Alt+. go through the tabs.     ║
+-- ║  others (<leader>ae). Alt+, / Alt+. go through the tabs.     ║
+-- ║  The agents page (<leader>al) picks the agent new sessions   ║
+-- ║  start with.                                                 ║
 -- ╚══════════════════════════════════════════════════════════════╝
 -- 2026-10-28: there was one agent pane and one conversation in it - another one ended it (/clear), a past one could
 -- not be found again from the editor. The agent's terminals are integrations/agent.lua's; this is the list and the
@@ -401,10 +403,23 @@ end
 
 --- A new session next to the others: in `backend` (asked when nil and more than one agent is installed)
 function M.new(backend)
-  local list = agent.installed()
-  if backend or #list <= 1 then return agent.open_session({ backend = backend or list[1] }) end
-  vim.ui.select(list, { prompt = "New session with:", format_item = function(id) return agent.BACKENDS[id].name end },
-    function(choice) if choice then agent.open_session({ backend = choice }) end end)
+  return agent.open_session({ backend = backend or agent.backend_id() })
+end
+
+--- <leader>ac: back to the session of last - the one the pane showed while one runs, else the newest past one of the
+--- project (of this machine before one of elsewhere), resumed in its own agent
+function M.resume_last()
+  local last
+  for _, s in ipairs(agent.running()) do
+    if s.name == agent.active then last = s break end
+    if not last or (s.term.gk_started or 0) >= (last.term.gk_started or 0) then last = s end
+  end
+  if last then return agent.switch(last.name) end
+  local past = vim.tbl_filter(function(item) return not item.running end, M.items(false))
+  local here = vim.tbl_filter(function(item) return not item.host end, past)
+  local item = here[1] or past[1]
+  if not item then return notify("No session of this project yet - <leader>ae starts one") end
+  M.resume(item)
 end
 
 --- <leader>as: the sessions - running ones, past ones of the project (Ctrl+A: of all projects)
@@ -476,10 +491,90 @@ end
 --- Sources that load in the background (integrations replace it): `done()` when there is more to list
 function M.refresh_extra(done) end
 
+-- ── The agents page ──────────────────────────────────────────
+
+M.AGENT_ORDER = { "claude", "opencode", "qwen" }
+
+--- The rows of the agents page: each agent, then the settings of every agent
+function M.page_items()
+  local chosen, items = agent.backend_id(), {}
+  for _, id in ipairs(M.AGENT_ORDER) do
+    local b = agent.BACKENDS[id]
+    local bin = b.bin()
+    local sessions = vim.tbl_filter(function(s) return s.term.gk_backend == id end, agent.running())
+    local lines = {
+      "# " .. b.name, "",
+      vim.fn.executable(bin) == 1 and ("`" .. (vim.fn.exepath(bin) ~= "" and vim.fn.exepath(bin) or bin) .. "`")
+        or ("_not installed here_ (`" .. bin .. "`)"), "",
+      id == chosen and "**Chosen**: new sessions start with it (`<leader>ae`, `+` on the pane)."
+        or ("`Enter` chooses it: the pane goes over to a %s session - one that runs, else a new one. The session it shows now keeps running, a tab of the pane."):format(b.short),
+      "", "The choice is kept for this machine. Before it: `vim.g.greyknight_agent`, `$GREYKNIGHT_AGENT`.",
+    }
+    if #sessions > 0 then
+      vim.list_extend(lines, { "", "## Running here" })
+      for _, s in ipairs(sessions) do lines[#lines + 1] = "- " .. M.title(s.term) end
+    end
+    items[#items + 1] = { kind = "agent", id = id, chosen = id == chosen, installed = vim.fn.executable(bin) == 1,
+      count = #sessions, text = b.name, preview = { text = table.concat(lines, "\n"), ft = "markdown" } }
+  end
+  local link = vim.g.greyknight_agent_link ~= false
+  items[#items + 1] = { kind = "link", on = link, text = "Connect to Neovim", preview = { ft = "markdown", text = table.concat({
+    "# Connect to Neovim", "", link and "**On**" or "**Off**", "",
+    "A new session gets Neovim's tools (open files, the selection, diagnostics) and shows its edits as diffs here.",
+    "`Enter` switches it - for the sessions started from now on.",
+  }, "\n") } }
+  for i, item in ipairs(items) do item.idx = i end
+  return items
+end
+
+local function page_format(item)
+  if item.kind == "link" then
+    return { { "⚙ ", "Comment" }, { ("%-20s"):format(item.text) }, { item.on and "on" or "off", item.on and "DiagnosticOk" or "Comment" } }
+  end
+  local status = not item.installed and "not installed" or item.chosen and "chosen" or ""
+  local parts = {
+    { item.chosen and "● " or "  ", "DiagnosticOk" },
+    { ("%-20s"):format(item.text), item.installed and (M.HL[item.id] or "Normal") or "Comment" },
+    { ("%-15s"):format(status), item.chosen and "DiagnosticOk" or "Comment" },
+  }
+  if item.count > 0 then parts[#parts + 1] = { ("%d running"):format(item.count), "Comment" } end
+  return parts
+end
+
+--- <leader>al: the agents page - which agent new sessions start with (Enter: the pane goes over to it), and the
+--- settings of every agent
+function M.page()
+  return Snacks.picker.pick({
+    title = "Agents",
+    finder = M.page_items,
+    format = page_format,
+    preview = "preview",
+    sort = { fields = { "idx" } },
+    matcher = { sort_empty = false },
+    layout = { preset = "default", preview = true },
+    win = { preview = { wo = { number = false, relativenumber = false, signcolumn = "no", statuscolumn = "", wrap = true } } },
+    on_show = function(p) -- on the chosen agent
+      for i, item in ipairs(p:items()) do if item.chosen then p.list:view(i) end end
+    end,
+    confirm = function(p, item)
+      if not item then return end
+      if item.kind == "link" then
+        vim.g.greyknight_agent_link = not item.on
+        return p:find()
+      end
+      if not item.installed then
+        return notify(("%s is not installed here"):format(agent.BACKENDS[item.id].name), vim.log.levels.WARN)
+      end
+      p:close()
+      vim.schedule(function() agent.select(item.id) end)
+    end,
+  })
+end
+
 -- ── The tabs on the pane ─────────────────────────────────────
 
---- The winbar of the pane: a tab per running session (a click shows it, a middle click ends it), + a new one,
---- ☰ the list
+--- The winbar of the pane: a tab per running session (a click shows it, a middle click ends it), + a new one (of the
+--- chosen agent), ⚙ the chosen agent (a click: the agents page), ☰ the list
 function M.tabline()
   local win = vim.g.statusline_winid or vim.api.nvim_get_current_win()
   local shown = vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win)
@@ -492,7 +587,9 @@ function M.tabline()
       active and "GkAgentTabActive" or "GkAgentTab", i, M.HL[s.term.gk_backend] or "Normal", backend.short,
       active and "GkAgentTabActive" or "GkAgentTab", title)
   end
-  parts[#parts + 1] = "%#GkAgentTab#%0@v:lua.GkAgentNew@ + %X%=%0@v:lua.GkAgentList@ ☰ %X"
+  local chosen = agent.backend_id()
+  parts[#parts + 1] = ("%%#GkAgentTab#%%0@v:lua.GkAgentNew@ + %%X%%=%%0@v:lua.GkAgentPage@%%#%s# ⚙ %s %%X%%#GkAgentTab#%%0@v:lua.GkAgentList@ ☰ %%X")
+    :format(M.HL[chosen] or "GkAgentTab", agent.BACKENDS[chosen].short)
   return table.concat(parts, "%#Normal# ")
 end
 
@@ -516,6 +613,7 @@ _G.GkAgentTab = function(id, _, button)
 end
 _G.GkAgentNew = function() vim.schedule(function() M.new() end) end
 _G.GkAgentList = function() vim.schedule(function() M.pick() end) end
+_G.GkAgentPage = function() vim.schedule(function() M.page() end) end
 
 function M.setup()
   M.colors()
