@@ -76,14 +76,19 @@ command away:
 
 `Alt+N` switches **easy mode** on and off: windows with a file behave like a plain text editor (Notepad, VS
 Code) - you are always typing, and the keys are the usual ones. **EASY** in the bar above each file window says it
-is on; a click on it switches it off. It lasts for this session; terminals, the file tree, pickers and the agent's
-pane keep their own keys.
+is on, and the status line says **EASY** instead of INSERT. It lasts for this session; terminals, the file tree,
+pickers and the agent's pane keep their own keys - click into the tree (or go there with `Esc` `Ctrl+H`) and `Enter`
+or a double click opens a file, and you are typing in it again. Coming back to a file window from anywhere (a
+terminal, a picker, the tree) you are typing again.
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+S` | Save (a new file: asks for a name) |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
-| `Shift+arrows`, `Shift+Home/End`, `Ctrl+Shift+arrows` | Select; typing replaces the selection, an arrow ends it; the mouse selects too |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo - word by word, not all you typed since easy mode began |
+| `Tab` | With suggestions open: take the grey one (or the one picked with the arrows) |
+| `Up` / `Down`, `Enter` | Pick a suggestion, take it; `Enter` without one picked is a new line |
+| `Shift+arrows`, `Shift+Home/End`, `Ctrl+Shift+arrows`, `Shift+click` | Select; typing replaces the selection (one `Ctrl+Z` brings it back), an arrow ends it; the mouse selects too, a double click a word |
+| `Home` / `End` | The first character of the line (again: its start) / the end |
 | `Ctrl+A` | Select all |
 | `Ctrl+C` / `Ctrl+X` | Copy / cut the selection - without one, the line |
 | `Ctrl+V` | Paste (Windows Terminal pastes its own clipboard: what you copied on Windows) |
@@ -92,12 +97,13 @@ pane keep their own keys.
 | `Ctrl+G` | Go to line |
 | `Ctrl+/` | Comment / uncomment the line or the selection |
 | `Tab` / `Shift+Tab` | Indent / outdent the selection (`Shift+Tab`: the line) |
-| `Ctrl+Backspace` / `Ctrl+Del` | Delete the word before / after |
+| `Ctrl+Backspace` / `Ctrl+Del` | Delete the word before / after (at the end of a line: the line break) |
 | `Ctrl+O` / `Ctrl+N` / `Ctrl+W` | Open a file (picker) / new file / close the file (asks about unsaved changes) |
-| `Esc` | Normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
+| `Esc` | Close the suggestions; without them: normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
 | `F1` | These keys |
 
-In easy mode only `Ctrl+C` / `Ctrl+X` reach the clipboard - text you type over or delete does not. Over SSH a copy
+`Backspace` at the start of a line and `Del` at its end join lines, the arrows go on over a line's end, a click past
+the end of a line puts the cursor there. In easy mode only `Ctrl+C` / `Ctrl+X` reach the clipboard - text you type over or delete does not. Over SSH a copy
 goes to your own computer's clipboard (OSC 52). `Alt+N` again (or `:EasyMode off`) brings Neovim's keys back as they
 were. `:EasyMode on` / `off` switch it from a command.
 

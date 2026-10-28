@@ -22,13 +22,16 @@
 ## Easy Mode — `Alt+N`
 
 File windows as in a plain text editor: always typing, the usual keys. **EASY** in the window bar (a click: off);
-for this session. Terminals, the tree, pickers and the agent's pane keep their keys.
+for this session; the status line says EASY, not INSERT. Terminals, the tree, pickers and the agent's pane keep their
+keys: a click into the tree, then `Enter` or a double click opens a file - typing again there.
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+S` | Save (a new file: asks for a name) |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
-| `Shift+arrows`, `Shift+Home/End`, `Ctrl+Shift+arrows` | Select; typing replaces the selection, an arrow ends it; the mouse selects too |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo, word by word |
+| `Tab` / `Up` `Down` `Enter` / `Esc` | Suggestions: take the grey one / pick one, take it (unpicked: `Enter` is a new line) / close them |
+| `Shift+arrows`, `Shift+Home/End`, `Ctrl+Shift+arrows`, `Shift+click` | Select; typing replaces the selection, an arrow ends it; the mouse selects too, a double click a word |
+| `Home` | The first character of the line, again: its start |
 | `Ctrl+A` | Select all |
 | `Ctrl+C` / `Ctrl+X` | Copy / cut the selection - without one, the line |
 | `Ctrl+V` | Paste (Windows Terminal pastes its own clipboard: what you copied on Windows) |
@@ -37,9 +40,9 @@ for this session. Terminals, the tree, pickers and the agent's pane keep their k
 | `Ctrl+G` | Go to line |
 | `Ctrl+/` | Comment / uncomment the line or the selection |
 | `Tab` / `Shift+Tab` | Indent / outdent the selection (`Shift+Tab`: the line) |
-| `Ctrl+Backspace` / `Ctrl+Del` | Delete the word before / after |
+| `Ctrl+Backspace` / `Ctrl+Del` | Delete the word before / after (at a line's end: the line break) |
 | `Ctrl+O` / `Ctrl+N` / `Ctrl+W` | Open a file (picker) / new file / close the file (asks about unsaved changes) |
-| `Esc` | Normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
+| `Esc` | Suggestions open: close them; else normal mode for **one** command - `Space f f`, `:w`, `Ctrl+H/J/K/L` to another window - then typing again |
 | `F1` | These keys |
 
 ## AI (Qwen Code, OpenCode or Claude Code) — `<leader>a`
