@@ -101,7 +101,7 @@ which comes a moment later). The preview shows the conversation.
 |---|---|
 | `Enter` | A running session: show it. A past one: **resume** it in its own agent (`claude --resume`, `opencode --session`), in the folder it worked in, as a new tab |
 | `Ctrl+O` | Go on with it in **another agent** (Claude Code ↔ OpenCode ↔ Qwen Code): its conversation is written to a file and a new session of that agent is told to read it first. The conversation carries over; its tool history does not |
-| `Ctrl+N` | A new session (asks which agent when more than one is installed) - `<leader>ao` from anywhere |
+| `Ctrl+E` | A new session (asks which agent when more than one is installed) - `<leader>ao` from anywhere |
 | `Ctrl+X`, `dd` | End a running session |
 | `Ctrl+A` | All projects / this project |
 

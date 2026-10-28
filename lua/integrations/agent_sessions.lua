@@ -427,7 +427,7 @@ function M.pick(opts)
     win = {
       input = { keys = {
         ["<c-o>"] = { "gk_carry", mode = { "n", "i" }, desc = "Go on with it in another agent" },
-        ["<c-n>"] = { "gk_new", mode = { "n", "i" }, desc = "New session" },
+        ["<c-e>"] = { "gk_new", mode = { "n", "i" }, desc = "New session" }, -- Ctrl+N stays the picker's next item
         ["<c-x>"] = { "gk_stop", mode = { "n", "i" }, desc = "End the running session" },
         ["<c-a>"] = { "gk_all", mode = { "n", "i" }, desc = "All projects / this project" },
       } },
