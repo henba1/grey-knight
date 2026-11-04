@@ -2,7 +2,8 @@
 -- ║  scrubjay: the sessions of every machine and every agent in  ║
 -- ║  the agent's session list (<leader>as) - tagged by agent and ║
 -- ║  machine, resumed in the agent you pick (sj-resume); the     ║
--- ║  archive searched for words, the hits as a list (<leader>aS).║
+-- ║  archive searched for words, the hits as a list (<leader>aS);║
+-- ║  the session map in the browser (<leader>aM, sj-view).       ║
 -- ║  Nothing without scrubjay installed: the list stays this     ║
 -- ║  machine's.                                                  ║
 -- ╚══════════════════════════════════════════════════════════════╝
@@ -10,9 +11,11 @@
 -- into one archive, with a catalogue of them. GreyKnight reads that catalogue through scrubjay's own scripts - never
 -- its files directly: `sj-resume.sh --list --json` lists it, `sj-resume.sh <id> --json` stages a session (another
 -- machine's paths rewritten to this one's) or renders it for another agent, `sj-grep.sh --json` searches it.
+-- 2026-11-04: `sj-view.sh --json` starts the session map (a page served here, on demand) and says where it is.
 local M = {}
 
 local function notify(msg, level) vim.notify(msg, level or vim.log.levels.INFO, { title = "scrubjay" }) end
+local WARN, ERROR = vim.log.levels.WARN, vim.log.levels.ERROR
 
 --- scrubjay's folder: vim.g.greyknight_scrubjay, $SCRUBJAY_APP, else ~/.scrubjay/scrubjay - when it is installed
 function M.app()
@@ -51,8 +54,13 @@ function M.handle(sid) return ((sid or ""):gsub("^ses_", "")):sub(1, 8) end
 function M.item(row, host)
   local here = row.host == host
   local topic = vim.trim(row.topic or "")
+  local harness = row.harness
+  if not harness or harness == "" or harness == "-" then
+    -- a row from before the harness field: an OpenCode id says so itself (an older scrubjay sends none)
+    harness = (row.sid or ""):match("^ses_") and "opencode" or "claude"
+  end
   return {
-    harness = (row.harness and row.harness ~= "" and row.harness ~= "-") and row.harness or "claude",
+    harness = harness, summary = (row.summary or "") ~= "" and row.summary or nil,
     sid = row.sid, dir = row.cwd, time = epoch(row.ts),
     title = topic ~= "" and topic or "(no topic)",
     host = not here and row.host or nil, -- shown in the list: another machine's
@@ -124,7 +132,10 @@ function M.render(item, done, max)
     if max and size > max then break end
     keep = i
   end
-  done(vim.list_slice(lines, keep))
+  lines = vim.list_slice(lines, keep)
+  -- what scrubjay summed it up as, above the conversation (the preview only: a carry-over passes `max`)
+  if item.summary and not max then lines = vim.list_extend({ "> " .. item.summary, "" }, lines) end
+  done(lines)
 end
 
 --- Go on with it in `target` (an agent): sj-resume stages it here - another machine's paths rewritten to this one's -
@@ -283,6 +294,52 @@ function M.pick_hits(items, text)
   })
 end
 
+-- ── The session map (sj-view) ──────────────────────────────
+
+--- Whether a browser can show a page served on this machine: the AI Dashboard's tab, a desktop - not a bare SSH
+function M.can_open()
+  local ok, aidash = pcall(require, "integrations.aidash")
+  if ok and aidash.active() then return true end
+  if vim.fn.has("mac") == 1 or vim.fn.has("win32") == 1 then return true end
+  return (vim.env.DISPLAY or "") ~= "" or (vim.env.WAYLAND_DISPLAY or "") ~= ""
+end
+
+--- The address where no browser can be opened from here: copied, with the tunnel to open first over SSH
+local function show_url(url, r)
+  pcall(vim.fn.setreg, "+", url)
+  notify(("Session map (address copied):\n%s%s"):format(url, r.ssh and ("\nover SSH, first: " .. r.ssh) or ""))
+end
+
+--- <leader>aM, :SjView [start|stop|status]: scrubjay's session map in the browser - every session as a card, what it
+--- changed, its milestones. Served here only while used: :SjView stop, its Stop button, or 30 minutes unused end it.
+--- `sid`: the map opens at that session (the session list's Ctrl+L).
+function M.view(action, sid)
+  local app = M.app()
+  if not app then return notify("scrubjay is not installed here", WARN) end
+  local script = app .. "/bin/sj-view.sh"
+  if vim.fn.filereadable(script) ~= 1 then return notify("This scrubjay has no session map yet (sj-view): update it", WARN) end
+  action = action or "start"
+  vim.system({ "bash", script, action, "--json" }, { text = true }, function(res)
+    vim.schedule(function()
+      local out = vim.split(res.stdout or "", "\n", { trimempty = true })
+      local ok, r = pcall(vim.json.decode, out[#out] or "")
+      if not ok or type(r) ~= "table" then
+        local said = vim.trim((res.stderr or "") .. "\n" .. (res.stdout or ""))
+        if said:find("unknown argument: --json", 1, true) then
+          return notify("This scrubjay is too old for GreyKnight (no sj-view --json): update it", WARN)
+        end
+        return notify("sj-view failed:\n" .. said, ERROR)
+      end
+      if not r.running then return notify(action == "stop" and "Session map stopped" or "Session map: not running") end
+      local url = r.url .. (sid and ("#sid=" .. sid) or "")
+      if action == "status" then return notify("Session map: " .. url) end
+      if not M.can_open() then return show_url(url, r) end
+      local _, err = vim.ui.open(url)
+      if err then show_url(url, r) end
+    end)
+  end)
+end
+
 --- Plug into the session list: the catalogue's sessions next to this machine's, loaded when the list opens
 function M.setup()
   if not M.app() then return end
@@ -291,6 +348,9 @@ function M.setup()
   sessions.refresh_extra = function(done) M.load(done) end
   vim.api.nvim_create_user_command("SjGrep", function(o) M.search(o.args ~= "" and o.args or nil) end,
     { nargs = "*", desc = "scrubjay: search every past session for words" })
+  vim.api.nvim_create_user_command("SjView", function(o) M.view(o.args ~= "" and o.args or nil) end,
+    { nargs = "?", complete = function() return { "start", "stop", "status" } end,
+      desc = "scrubjay: the session map in the browser (start, stop, status)" })
 end
 
 return M

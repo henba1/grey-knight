@@ -464,6 +464,10 @@ function M.pick(opts)
         p:close()
         vim.schedule(function() M.pick({ all = not all }) end)
       end,
+      gk_map = function(p, item) -- scrubjay's session map, at this session
+        p:close()
+        vim.schedule(function() require("integrations.scrubjay").view("start", item and item.sid or nil) end)
+      end,
     },
     win = {
       input = { keys = {
@@ -472,6 +476,7 @@ function M.pick(opts)
         ["<c-x>"] = { "gk_stop", mode = { "n", "i" }, desc = "End the running session" },
         ["<c-y>"] = { "gk_mention", mode = { "n", "i" }, desc = "Hand its conversation to the agent (@file)" },
         ["<c-a>"] = { "gk_all", mode = { "n", "i" }, desc = "All projects / this project" },
+        ["<c-l>"] = { "gk_map", mode = { "n", "i" }, desc = "It on scrubjay's session map (browser)" },
       } },
       list = { keys = { ["dd"] = { "gk_stop", desc = "End the running session" } } },
     },
