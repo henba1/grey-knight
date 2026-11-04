@@ -2250,7 +2250,7 @@ end)
 -- 2026-10-28: scrubjay's catalogue in the session list - every machine's and agent's sessions, tagged; resumed through
 -- sj-resume (staged: its own agent resumes it; another agent: a new session reads its rendered conversation); the
 -- archive searched with sj-grep. A stand-in scrubjay answers as the real one does (--json).
-test("scrubjay: other machines' sessions in the list (host, agent), the archive's copy previewed, resumed natively or carried over; sj-grep's hits", function()
+test("scrubjay: other machines' sessions in the list (host, agent), the archive's copy previewed, resumed natively or carried over; sj-grep's hits; the session map", function()
   linux_only("a stand-in scrubjay (bash)")
   local agent, sessions, sj = require("integrations.agent"), require("integrations.agent_sessions"), require("integrations.scrubjay")
   local root = vim.fn.tempname()
@@ -2268,7 +2268,8 @@ test("scrubjay: other machines' sessions in the list (host, agent), the archive'
   vim.fn.writefile({
     "#!/usr/bin/env bash",
     'if [ "$1" = --list ]; then',
-    ("  echo '%s'"):format(vim.json.encode({ ts = "2026-10-01 10:00", host = "laptop", sid = sid, cwd = work, topic = "Retry backoff", harness = "claude", here = false })),
+    ("  echo '%s'"):format(vim.json.encode({ ts = "2026-10-01 10:00", host = "laptop", sid = sid, cwd = work, topic = "Retry backoff", harness = "claude",
+      summary = "Made the retry back off exponentially.", here = false })),
     ("  echo '%s'"):format(vim.json.encode({ ts = "2026-09-01 10:00", host = "thishost", sid = "ses_bbbbbbbbXX", cwd = work, topic = "", harness = vim.NIL, here = true })),
     "  exit 0",
     "fi",
@@ -2282,6 +2283,11 @@ test("scrubjay: other machines' sessions in the list (host, agent), the archive'
   vim.fn.writefile({ "#!/usr/bin/env bash", ("echo '%s'"):format(vim.json.encode({ type = "session", sid = sid, harness = "claude", host = "laptop",
     topic = "Retry backoff", date = "2026-10-01", path = archive .. "/laptop/readable/widget/2026-10-01_retry-backoff__aaaaaaaa.md",
     snippets = { { turn = 1, line = 5, text = "make the retry back off" } } })), "echo '{\"type\":\"summary\"}'" }, app .. "/bin/sj-grep.sh")
+  -- sj-view: started on demand, stopped; --json says where (and, over SSH, the tunnel)
+  vim.fn.writefile({ "#!/usr/bin/env bash", 'echo "$*" >> ' .. vim.fn.shellescape(root .. "/view.calls"),
+    'case "$1" in stop) echo \'{"running":false}\' ;;',
+    '  *) echo \'{"running":true,"url":"http://127.0.0.1:7787/?t=tok","port":7787,"idle":30,"ssh":"ssh -L 7787:127.0.0.1:7787 thishost"}\' ;; esac' },
+    app .. "/bin/sj-view.sh")
   local fake = {}
   for _, id in ipairs({ "claude", "opencode" }) do
     fake[id] = root .. "/bin-" .. id
@@ -2289,7 +2295,7 @@ test("scrubjay: other machines' sessions in the list (host, agent), the archive'
     vim.fn.setfperm(fake[id], "rwx------")
   end
   local saved = { vim.g.greyknight_scrubjay, vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.g.greyknight_agent_link,
-    sessions.extra_items, sessions.refresh_extra, sj.state }
+    sessions.extra_items, sessions.refresh_extra, sj.state, sj.can_open, vim.ui.open }
   vim.g.greyknight_scrubjay, vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN = app, fake.claude, fake.opencode
   vim.env.CLAUDE_CONFIG_DIR, vim.g.greyknight_agent_link = root .. "/claude", false
   local function flat(buf) return (text(buf):gsub("\n", "")) end
@@ -2306,10 +2312,33 @@ test("scrubjay: other machines' sessions in the list (host, agent), the archive'
       if it.sid == "ses_bbbbbbbbXX" then here = it end
     end
     assert(other and other.host == "laptop" and other.harness == "claude" and other.title == "Retry backoff", "another machine's: " .. vim.inspect(other))
-    assert(here and here.host == nil and here.harness == "claude" and here.title == "(no topic)", "this machine's (no harness: claude): " .. vim.inspect(here))
+    assert(here and here.host == nil and here.harness == "opencode" and here.title == "(no topic)",
+      "this machine's (no harness, an OpenCode id: opencode): " .. vim.inspect(here))
     local lines
     sj.render(other, function(l) lines = l end)
     assert(lines and table.concat(lines, "\n"):find("Done: exponential.", 1, true), "the archive's copy: " .. vim.inspect(lines))
+    assert(lines[1] == "> Made the retry back off exponentially.", "its summary first: " .. vim.inspect(lines[1]))
+    sj.render(other, function(l) lines = l end, 100000)
+    assert(lines[1] ~= "> Made the retry back off exponentially.", "a carry-over gets the conversation alone")
+    -- the session map: opened where a browser can show it, at the session asked for
+    local opened
+    vim.ui.open = function(url) opened = url; return nil, nil end
+    sj.can_open = function() return true end
+    sj.view("start", sid)
+    assert(wait(5000, function() return opened end), "the map was not opened")
+    assert(opened == "http://127.0.0.1:7787/?t=tok#sid=" .. sid, opened)
+    -- over SSH with no browser here: nothing opened, the address copied and the tunnel named
+    opened = nil
+    sj.can_open = function() return false end
+    local said
+    local notify = vim.notify
+    vim.notify = function(msg) said = msg end
+    sj.view()
+    assert(wait(5000, function() return said end), "nothing said")
+    vim.notify = notify
+    assert(not opened and said:find("http://127.0.0.1:7787/?t=tok", 1, true) and said:find("ssh -L 7787", 1, true), said)
+    sj.view("stop")
+    assert(wait(5000, function() return table.concat(vim.fn.readfile(root .. "/view.calls"), "|"):find("stop --json", 1, true) end), "not stopped")
     -- in its own agent: staged by sj-resume, resumed natively in the folder it gave
     sessions.resume(other)
     local t
@@ -2330,7 +2359,7 @@ test("scrubjay: other machines' sessions in the list (host, agent), the archive'
   for name in pairs(agent.AGENTS) do if name:match("^s%d+$") then agent.AGENTS[name] = nil end end
   agent.active = "agent"
   vim.g.greyknight_scrubjay, vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.g.greyknight_agent_link = saved[1], saved[2], saved[3], saved[4], saved[5]
-  sessions.extra_items, sessions.refresh_extra, sj.state = saved[6], saved[7], saved[8]
+  sessions.extra_items, sessions.refresh_extra, sj.state, sj.can_open, vim.ui.open = saved[6], saved[7], saved[8], saved[9], saved[10]
   vim.cmd("stopinsert")
   vim.fn.delete(root, "rf")
   assert(ok, err)

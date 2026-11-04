@@ -59,8 +59,9 @@ keys: a click into the tree, then `Enter` or a double click opens a file - typin
 | `<leader>ae` | n | A new session with the chosen agent, next to the others |
 | `<leader>ac` | n | Back to the last session - none running: resume the newest past one of the project |
 | `<leader>ax` | n | End the session the pane shows (the pane shows the next) |
-| `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+E` new, `Ctrl+X` end, `Ctrl+Y` hand it to the agent, `Ctrl+A` all projects; with scrubjay every machine's too |
+| `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+E` new, `Ctrl+X` end, `Ctrl+Y` hand it to the agent, `Ctrl+A` all projects, `Ctrl+L` it on the session map; with scrubjay every machine's too |
 | `<leader>aS` | n | Search past sessions of every machine for words (scrubjay's sj-grep) - `Enter` read, `Ctrl+O` go on with it, `Ctrl+Y` hand it to the agent |
+| `<leader>aM` | n | Session map in the browser (scrubjay's sj-view): every session, what it changed, its milestones - `:SjView stop` ends it |
 | `<M-.>` / `<M-,>` | n, agent pane | Next / previous session in the agent's pane (its tabs; a click on a tab, middle click ends it) |
 | `<leader>aC` | n | New conversation in the session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
 | `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`, Claude Code: `/model`) |
@@ -460,7 +461,7 @@ the agent, help or quickfix.
 │   ├── agent_link.lua        ← agents reach into this Neovim: their settings, the servers attached, context
 │   ├── agent_server.lua      ← the MCP server agents start (nvim -l): relays to this Neovim
 │   ├── agent_sessions.lua    ← the agent's sessions: the pane's tabs, running + past ones (<leader>as)
-│   ├── scrubjay.lua          ← scrubjay: every machine's sessions in that list, the archive searched (<leader>aS)
+│   ├── scrubjay.lua          ← scrubjay: every machine's sessions in that list, the archive searched (<leader>aS), the map (<leader>aM)
 │   ├── agent_tools.lua       ← the agent's editor tools: file tree, open at a line, quickfix, LSP, diagnostics
 │   ├── agent_ide.lua         ← Qwen Code's IDE mode: its edits as diffs to accept / reject, the context
 │   ├── agent_changes.lua     ← what changed since the agent started (<leader>ad): diffs, take a file back

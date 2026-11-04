@@ -126,7 +126,7 @@ it has ended. `<leader>t1` … `t3` still open agents of their own below.
 With [scrubjay](https://github.com/henba1/scrubjay) installed (`~/.scrubjay/scrubjay`, or `$SCRUBJAY_APP`), the list
 also shows **the sessions of every machine and every agent** from its catalogue - tagged with the agent (Claude,
 OpenCode, Codex) and, when it is another machine's, that machine. The preview reads the archive's readable copy when
-this machine can read the archive (the NAS mounted, or the git clone).
+this machine can read the archive (the NAS mounted, or the git clone), under scrubjay's one-line summary of the session.
 
 - `Enter` on another machine's session: scrubjay's `sj-resume` stages it here - that machine's paths rewritten to
   this one's - and its agent resumes it in a new tab.
@@ -137,7 +137,13 @@ this machine can read the archive (the NAS mounted, or the git clone).
   preview: `Enter` reads it there, `Ctrl+O` goes on with that session (its agent or another), `Ctrl+Y` hands the
   conversation to the agent.
 
-Without scrubjay the list is this machine's, and `<leader>aS` says what is missing.
+- `<leader>aM` (`:SjView`): **the session map** in the browser - scrubjay's `sj-view`: a card per session, by project
+  and day, what each changed (repos, PRs, MRs, folders) and its milestones; a session's transcript, and how to go on
+  with it. `Ctrl+L` in the list opens the map at that session. The map is served here only while used: `:SjView stop`,
+  its Stop button, or 30 minutes unused end it. In the AI Dashboard it opens in the dashboard's tab, on a desktop in
+  the browser; over a bare SSH the address is copied (OSC 52) and the `ssh -L …` to open first is shown.
+
+Without scrubjay the list is this machine's, and `<leader>aS` and `<leader>aM` say what is missing.
 
 ## The agent in your editor
 

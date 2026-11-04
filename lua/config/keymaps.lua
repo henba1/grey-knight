@@ -209,6 +209,7 @@ map("n", "<leader>ax", function() local _, s = agent().pane(); agent().stop(s an
   { desc = "Agent: End the session the pane shows" })
 map("n", "<leader>as", function() sessions().pick() end, { desc = "Agent: Sessions - switch, resume, carry over (Ctrl+A: all projects)" })
 map("n", "<leader>aS", function() require("integrations.scrubjay").search() end, { desc = "Agent: Search past sessions of every machine (scrubjay)" })
+map("n", "<leader>aM", function() require("integrations.scrubjay").view() end, { desc = "Agent: Session map in the browser (scrubjay)" })
 map("n", "<M-.>", function() agent().cycle(1) end,       { desc = "Agent: Next session in the pane" })
 map("n", "<M-,>", function() agent().cycle(-1) end,      { desc = "Agent: Previous session in the pane" })
 map("n", "<leader>am", function() agent().model_info() end,  { desc = "Agent: Model running on the rig" })
