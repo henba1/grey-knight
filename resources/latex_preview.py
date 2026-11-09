@@ -12,7 +12,8 @@ it is new on the page whenever the file changes. A PDF also opens as itself in t
 
 Gentle on a small machine: one render at a time (all previews of a hub share it), at the lowest priority and with
 a memory cap; a few pages per pdftoppm run, so the first pages show while the rest render and a newer build stops
-an old one; a page is never bigger than --max-px. A page's address names its picture (p/3?h=<hash>), so the browser
+an old one; a page is never bigger than --max-px. The page view's pages come sharp on top: each one shown is
+rendered once more, alone, at the width the browser shows it (?w=, steps of 320 px) - only the pages looked at. A page's address names its picture (p/3?h=<hash>), so the browser
 keeps it until it changes - a build loads only the pages that changed - and it loads only the pages in view.
 
 Usage:  python3 latex_preview.py FILE [--port 8000] [--dpi 160]     (--port 0: a free one; the URL is printed)
@@ -29,6 +30,11 @@ BATCH = 8  # pages per pdftoppm run
 RENDER = threading.Lock()  # one pdftoppm at a time, for every preview of the process
 RENDER_MEM = 1536 << 20  # address space of a pdftoppm run: a broken or huge PDF fails instead of swapping the host
 RENDER_TIMEOUT = 300  # seconds for one run of BATCH pages
+# The page view's pages, sharp: rendered one at a time at the width the browser shows them (CSS width x device pixel
+# ratio), in steps of SHARP_STEP so the same view asks for the same picture, never wider than SHARP_MAX; only the pages
+# looked at, and the SHARP_KEEP last of them are kept. The pictures of a build stay at --dpi (the overview, a first
+# look); a slide at 160 dpi is 807 px wide, blurry as large as the window (2026-11-09).
+SHARP_STEP, SHARP_MAX, SHARP_KEEP = 320, 3840, 48
 
 PAGE = """<!doctype html><meta charset=utf-8><title>PDF preview</title>
 <style>
@@ -70,12 +76,29 @@ let ver=-1,build=0,pages=0,hashes=[],changed=new Set(),cur=1,timer=0,fails=0,fai
 const $=id=>document.getElementById(id),src=n=>'p/'+n+'?h='+(hashes[n-1]||'');
 function view(){return document.body.classList.contains('single')}
 // the page in view in the page view: the first one still visible below the bar
-const seen=new IntersectionObserver(()=>{if(!view())return;
+const seen=new IntersectionObserver(es=>{if(!view())return;
+  for(const e of es)if(e.isIntersecting)sharpen(e.target);
   for(const f of $('col').children){if(f.getBoundingClientRect().bottom>80){cur=+f.dataset.n;break}}mark()},{threshold:[0,.5,1]});
+// the page view's pages sharp: asked for at the width they are shown (x the screen's pixel ratio), in steps of 320 px,
+// once the build's picture is there - wider than it only. The server renders the page then; until it can (a build
+// under way) it answers with the build's picture (X-Sharp: 0) and the page asks again a little later.
+function want(im){return Math.min(3840,Math.ceil(im.clientWidth*(window.devicePixelRatio||1)/320)*320)}
+function sharpen(f,tries){if(!f||!view())return;const n=+f.dataset.n,im=f.querySelector('img');
+  if(!im.complete||!im.naturalWidth){im.addEventListener('load',()=>sharpen(f),{once:true});return}
+  if(!im.clientWidth||want(im)<=im.naturalWidth*1.1&&!im.dataset.sharp)return;
+  const base=im.dataset.base,u=base+'&w='+want(im);if(im.dataset.sharp===u||im.dataset.pending===u)return;
+  im.dataset.pending=u;
+  fetch(u).then(r=>{if(im.dataset.pending!==u||im.dataset.base!==base)return;
+    if(r.headers.get('X-Sharp')==='1'){im.dataset.pending='';im.dataset.sharp=u;im.src=u} // from the cache now
+    else{im.dataset.pending='';if((tries||0)<20)setTimeout(()=>sharpen(f,(tries||0)+1),1500)}})
+  .catch(()=>{im.dataset.pending=''})}
+let resized=0;addEventListener('resize',()=>{clearTimeout(resized);resized=setTimeout(()=>{
+  for(const f of $('col').children){const r=f.getBoundingClientRect();if(r.bottom>0&&r.top<innerHeight)sharpen(f)}},300)});
 function mark(){$('bo').classList.toggle('on',!view());$('bp').classList.toggle('on',view());
   for(const f of $('col').children)f.classList.toggle('cur',+f.dataset.n===cur);
   if(view())history.replaceState(null,'','#page-'+cur)}
-function go(n){if(!pages)return;cur=Math.min(Math.max(n,1),pages);const f=$('q'+cur);if(f)f.scrollIntoView({block:'start'});mark()}
+function go(n){if(!pages)return;cur=Math.min(Math.max(n,1),pages);const f=$('q'+cur);if(f)f.scrollIntoView({block:'start'});mark()
+  sharpen($('q'+(cur+1)))} // the next one ahead: sharp when you get there
 function single(n){cur=n||cur;document.body.classList.add('single');go(cur)}
 function overview(){document.body.classList.remove('single');history.replaceState(null,'','#');mark();
   const f=$('p'+cur);if(f)f.scrollIntoView({block:'center'})}
@@ -94,7 +117,9 @@ function fig(id,n,box){let f=$(id+n);
   if(!f){f=document.createElement('figure');f.id=id+n;f.dataset.n=n;
     f.innerHTML='<img alt="" loading=lazy decoding=async><figcaption></figcaption>';box.appendChild(f);
     if(id==='p')f.onclick=()=>single(n);else seen.observe(f)}
-  const im=f.querySelector('img'),s=src(n);if(im.getAttribute('src')!==s)im.src=s;
+  const im=f.querySelector('img'),s=src(n);
+  if(im.dataset.base!==s){im.dataset.base=s;im.dataset.sharp='';im.dataset.pending='';im.src=s;
+    if(id==='q'){const r=f.getBoundingClientRect();if(r.bottom>0&&r.top<innerHeight)sharpen(f)}}
   f.querySelector('figcaption').textContent=n;f.classList.toggle('changed',changed.has(n))}
 function later(ms){clearTimeout(timer);if(!gone)timer=setTimeout(tick,ms)}
 async function tick(){
@@ -172,6 +197,9 @@ def pdfinfo(path):
     return int(pages.group(1)), w, h
 
 
+SHARP_RE = re.compile(r"^([0-9a-f]+)-w\d+\.png$")
+
+
 class State:
     """One previewed file: a PDF rendered to pictures, or an image as it is."""
 
@@ -184,6 +212,8 @@ class State:
         self.done = []  # the hashes of the last complete build: what "changed" compares with
         self.image = b""  # an image: the bytes shown, as read when it changed
         self.aspect, self.rendering = None, None
+        self.base_px = 0  # the width of a build's pictures, px: a sharp one only when wider
+        self.sharpening = {}  # (hash, width) -> the lock of its render: two asks for one picture render it once
         self.version, self.build, self.sig, self.changed_at = 0, 0, None, None
         self.touched = time.time()  # the last view or change: a hub closes it after --ttl without either
         self.lock = threading.Lock()
@@ -216,6 +246,7 @@ class State:
             return False
         count, w, h = info
         dpi = max(1, min(self.dpi, int(self.max_px * 72 / max(w, h))))  # a poster: no 100-megapixel pages
+        base_px = int(w * dpi / 72)
         paths, hashes = [], []
         for first in range(1, count + 1, BATCH):
             last = min(count, first + BATCH - 1)
@@ -251,16 +282,66 @@ class State:
                 self.hashes = hashes + self.hashes[n:count]
                 self.changed = [i + 1 for i, d in enumerate(hashes) if self.done and (i >= len(self.done) or self.done[i] != d)]
                 self.aspect = round(w / h, 4)
+                self.base_px = base_px
                 self.rendering = None if n == count else (n, count)
                 self.version += 1
                 if n == count:
                     self.done = hashes
                     self.build += 1
-        keep = set(paths)
+        keep, shown = set(paths), set(hashes)
         for f in glob.glob(os.path.join(self.dir, "*.png")):  # the pictures no page shows any more
-            if f not in keep:
+            name = os.path.basename(f)
+            if f not in keep and not (SHARP_RE.match(name) and SHARP_RE.match(name).group(1) in shown):
                 os.remove(f)
         return True
+
+    def sharp(self, n, h, width):
+        """(bytes, type, True) of page n at `width` px (rounded up to SHARP_STEP), when that is wider than the build's
+        picture and h is the page as it is now - else None: the build's picture answers."""
+        width = min(SHARP_MAX, -(-width // SHARP_STEP) * SHARP_STEP)
+        with self.lock:
+            if self.kind != "pdf" or not 1 <= n <= len(self.hashes) or self.hashes[n - 1] != h \
+                    or self.rendering or width <= self.base_px * 1.1:
+                return None
+            sig = self.sig
+            gate = self.sharpening.setdefault((h, width), threading.Lock())
+        dest = os.path.join(self.dir, f"{h}-w{width}.png")
+        with gate:
+            if not os.path.exists(dest):
+                out = tempfile.mkdtemp(dir=self.dir)
+                try:
+                    with RENDER:  # after a build's batch under way, at the same low priority and memory cap
+                        if self.stopped.is_set() or self.signature() != sig:  # a newer build: its pages first
+                            return None
+                        proc = subprocess.Popen(
+                            ["pdftoppm", "-f", str(n), "-l", str(n), "-scale-to-x", str(width), "-scale-to-y", "-1",
+                             "-png", "-singlefile", self.path, out + "/p"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            preexec_fn=limit if os.name == "posix" else None)
+                        try:
+                            code = proc.wait(RENDER_TIMEOUT)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            code = proc.wait()
+                    if code != 0 or not os.path.exists(out + "/p.png"):
+                        return None
+                    os.replace(out + "/p.png", dest)
+                finally:
+                    shutil.rmtree(out, ignore_errors=True)
+                    with self.lock:
+                        self.sharpening.pop((h, width), None)
+                # the oldest sharp pictures go: a long document looked through page by page stays small on disk
+                kept = sorted(glob.glob(os.path.join(self.dir, "*-w*.png")), key=os.path.getmtime)
+                for f in kept[:-SHARP_KEEP]:
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+        try:
+            with open(dest, "rb") as f:
+                return f.read(), "image/png", True
+        except OSError:
+            return None
 
     def watch(self):
         fails, retry_at, failed = 0, 0, None
@@ -425,10 +506,15 @@ def handler(single=None, hub=None, index=""):
                 except OSError:
                     pass
             if sub.startswith("p/") and sub[2:].isdigit():
-                got = st.page(int(sub[2:]), query.get("h"))
+                # ?w=<px>: the page view's sharp picture - the build's when there is none (yet)
+                # (not kept by the browser under the sharp address: a later ask gets the sharp one)
+                w, n = query.get("w", ""), int(sub[2:])
+                got = w.isdigit() and st.sharp(n, query.get("h"), int(w))
+                fallback = not got and w != ""
+                got = got or st.page(n, query.get("h"))
                 if got:
                     body, ctype, same = got
-                    return self.send(body, ctype, cache=same)
+                    return self.send(body, ctype, cache=same and not fallback, extra={"X-Sharp": "0" if fallback else "1"})
             self.send_error(404)
 
         def do_GET(self):

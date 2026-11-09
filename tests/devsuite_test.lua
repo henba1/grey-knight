@@ -2942,6 +2942,18 @@ test("LaTeX: <leader>lw on an image or a PDF previews that file as it is - no bu
       assert(H.wait(15000, function() return state().version == 1 end), "no preview of the PDF: " .. vim.inspect(state()))
       assert(state().kind == "pdf" and state().pages == 1, vim.inspect(state()))
       assert(get("/raw"):find("application/pdf", 1, true), "/raw is not the PDF: " .. get("/raw"))
+      -- 2026-11-09: the page view's sharp page - at the width asked for, in steps of 320 px; not wider than the build's
+      -- picture: that one, and not kept under the sharp address; a stale hash: the build's picture
+      local function sharp(query)
+        return vim.trim(vim.fn.system({ require("devsuite.util").system_python(), "-c",
+          "import sys, struct, urllib.request; r = urllib.request.urlopen(sys.argv[1], timeout=20); b = r.read();"
+            .. " print(r.headers['X-Sharp'], struct.unpack('>I', b[16:20])[0], r.headers['Cache-Control'])",
+          latex.state.preview_url .. "p/1?" .. query }))
+      end
+      local h = state().hashes[1]
+      assert(sharp("h=" .. h .. "&w=1000") == "1 1280 max-age=31536000, immutable", "sharp: " .. sharp("h=" .. h .. "&w=1000"))
+      assert(sharp("h=" .. h .. "&w=300"):match("^0 %d+ no%-store$"), "narrow: " .. sharp("h=" .. h .. "&w=300"))
+      assert(sharp("h=stale&w=1000"):match("^0 "), "stale: " .. sharp("h=stale&w=1000"))
       latex.toggle_watch()
     end
   end)

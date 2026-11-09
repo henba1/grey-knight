@@ -133,7 +133,11 @@ one up to 8019, and the notification names the tunnel for it. Each build swaps t
 the scroll position stays; the pages that changed in it are outlined and listed in the bar at the top
 (**only changed** hides the rest). Two views: the **overview** of all pages, and the **pages** one after another - a
 slide as large as the window, a document page as wide as reads well - a click on a page or `P`; `←` `→` / Space
-jump page by page, `Esc` back. Gentle on a small machine: one render at a time for all previews, at the lowest
+jump page by page, `Esc` back. **Sharp in the page view:** a build's pictures are at 160 dpi - enough for the
+overview, but a slide is small on paper and was blurry as large as the window. The page view asks for each page it
+shows at the width it shows it (times the screen's pixel ratio), and the server renders just that page once - about
+half a second for a slide on a Pi 5 - while the build's picture stands in; the next page comes ahead. Only the pages
+you look at, and the last 48 of them are kept. Gentle on a small machine: one render at a time for all previews, at the lowest
 priority and with a memory cap, eight pages per run - the first pages show within seconds while the rest render,
 and a newer build stops an older one. The browser keeps each page's picture until it changes and loads only the
 pages in view, so a build sends only the pages that changed through the tunnel. With the server gone (a tab left
