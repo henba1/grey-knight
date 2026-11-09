@@ -94,8 +94,20 @@ the files you have not gone to yet keep the order you last used them in (Neovim'
 ## Terminal
 
 The `<leader>t*` keys above launch the coding agent (**Qwen Code** or OpenCode, see [AI Assistant](agent.md#ai-assistant-qwen-code)). For a Python or bash **REPL** use
-`<leader>ri` ([Running Scripts & REPL](run-debug.md#running-scripts-repl)). For a plain **shell** use
-`:2ToggleTerm`, and send shell lines straight into it with:
+`<leader>ri` ([Running Scripts & REPL](run-debug.md#running-scripts-repl)). For a **shell**: `Alt+T`
+([below](#terminal-mode-altt)).
+
+### Terminal mode (Alt+T)
+
+`Alt+T` puts a shell in the agent's pane, in its window - the layout stays. `Alt+T` again (in the shell) and the
+pane shows the agent once more; the shell keeps running, a `>_ Terminal` tab on the pane's bar next to the agent's
+sessions (a click shows it). It works from the code, from the agent and from the shell alike, in easy mode too. With
+no pane open the shell opens as one on the right. A shell that ends (`exit`, `Ctrl+D`) gives the pane back to the
+agent; the next `Alt+T` starts a new one. `<leader>ap` from the shell goes to the agent, `<leader>ax` there ends the
+shell. Another key, or another shell: `terminal` in [your settings](start.md#your-settings); `:GreyKnightTerminal`
+does the same.
+
+A second shell beside it, for sending lines from your notes, is `:2ToggleTerm`:
 
 | Key | Mode | Action |
 |-----|------|--------|

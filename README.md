@@ -47,6 +47,11 @@ A curated, agentic Neovim IDE built for security researchers and developers who 
   Shift+F11 lists them), the buffers in the order you used them (`<leader><Tab>`)
 - **Easy mode** — `Alt+N`: file windows as in a plain text editor - always typing, Ctrl+S / Z / Y / C / X / V,
   Shift+arrows select; `Esc` is Neovim's normal mode for one command ([easy mode](docs/start.md#easy-mode))
+- **Your settings in one file** — `~/.config/greyknight.lua` (`:GreyKnightConfig`): easy mode at the start, your keys
+  and options, the agent - and a **landing layout**: the file tree, the start page and a new agent session side by side
+  as `gk` starts ([your settings](docs/start.md#your-settings))
+- **Terminal mode** — `Alt+T` flips the agent's pane to a shell and back, the layout unchanged
+  ([terminal mode](docs/windows.md#terminal-mode-altt))
 - **Windows and terminals** — `Ctrl+H/J/K/L` between windows and terminals alike, `Ctrl+arrows` resize, a terminal
   takes your keys as soon as you go to it; sessions per project and git branch ([windows](docs/windows.md))
 - **Over SSH** — copies over OSC 52, PuTTY's keys understood ([remote](docs/ssh.md))
@@ -173,6 +178,9 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── style.lua           the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
 │   ├── winbar.lua          a bar per file window: its name, split right / below and close buttons
 │   ├── easymode.lua        easy mode (Alt+N): a plain text editor's keys in file windows - always typing
+│   ├── settings.lua        your settings: ~/.config/greyknight.lua over the defaults, your keys (:GreyKnightConfig)
+│   ├── landing.lua         the landing layout: tree, start page, agent as gk starts (:GreyKnightLanding)
+│   ├── terminal.lua        terminal mode (Alt+T): a shell in the agent's pane, again: the agent
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)

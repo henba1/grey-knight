@@ -3,7 +3,7 @@
 > The first launch, the start screen, the modes, tips - and what to do when something goes wrong.
 > [All topics](README.md) · every key on one page: [CHEATSHEET](../CHEATSHEET.md) · Leader = `Space`
 
-**In this file:** [First Launch](#first-launch) · [Dashboard](#dashboard) · [Mode Reference](#mode-reference) · [Easy Mode](#easy-mode) · [Reading These Docs in Neovim](#reading-these-docs-in-neovim) · [Which-key](#which-key) · [Centered Scrolling](#centered-scrolling) · [Quick Save](#quick-save) · [Recovering from Mistakes](#recovering-from-mistakes) · [When Something Goes Wrong](#when-something-goes-wrong)
+**In this file:** [First Launch](#first-launch) · [Your Settings](#your-settings) · [Dashboard](#dashboard) · [Mode Reference](#mode-reference) · [Easy Mode](#easy-mode) · [Reading These Docs in Neovim](#reading-these-docs-in-neovim) · [Which-key](#which-key) · [Centered Scrolling](#centered-scrolling) · [Quick Save](#quick-save) · [Recovering from Mistakes](#recovering-from-mistakes) · [When Something Goes Wrong](#when-something-goes-wrong)
 
 ## First Launch
 
@@ -22,6 +22,56 @@ Started in Neovim's own program folder - a Windows shortcut whose *Start in* is 
 double-click on `nvim.exe` - GreyKnight works in your home folder instead: terminals and agents start in Neovim's
 folder, and nobody works in that one. Open a project from there (`<leader>e`, `.` on its folder) before you start an
 agent, or `<leader>aC` afterwards ([the agent keeps its folder](agent.md#context)).
+
+---
+
+## Your Settings
+
+Your settings are one Lua file outside the repository - **`~/.config/greyknight.lua`**, beside the config folder
+(`$GREYKNIGHT_CONFIG` names another). `:GreyKnightConfig` opens it; the first time it writes a template with every
+setting, commented, as GreyKnight has it. Saved, options and keys apply at once; the rest with the next start. What
+the file leaves out stays as it was: `$GREYKNIGHT_AGENT`, `$GREYKNIGHT_STYLE`, the choices `:GreyKnightStyle` and the
+agents page keep. A setting GreyKnight does not know (a typo) or of the wrong type is a word at the start and left out.
+
+```lua
+return {
+  style = "oled",               -- the look: "oled" | "greyknight"
+  easymode = true,              -- easy mode (Alt+N) on from the start
+  agent = { backend = "claude", link = true },
+  -- the windows `gk` opens with when it starts without files
+  landing = {
+    enabled = true,
+    left = "explorer",          -- the file tree | false
+    right = "agent",            -- a new agent session | "terminal" (a shell) | false
+    right_width = 0.4,          -- a share of the screen, or columns
+    focus = "center",           -- "left" | "center" | "right"
+  },
+  terminal = { key = "<M-t>" }, -- the key of terminal mode; shell = "zsh" for another shell
+  options = { relativenumber = false },
+  keys = {                      -- over GreyKnight's, as in lazy.nvim
+    { "<C-t>", "terminal", mode = { "n", "t" } },                  -- an action by name
+    { "<C-p>", function() Snacks.picker.files() end, desc = "Files" },
+    { "<S-h>", false },                                            -- GreyKnight's key gone
+  },
+}
+```
+
+| Setting | |
+|---|---|
+| `style` | The look ([below](#the-look-oled-or-greyknight)); `:GreyKnightStyle` still switches for the session |
+| `easymode` | [Easy mode](#easy-mode) from the start |
+| `agent.backend` / `agent.link` | The agent new sessions start with, and whether they get Neovim's tools ([the agent](agent.md)) |
+| `landing` | The layout below |
+| `terminal.key` / `terminal.shell` | [Terminal mode](windows.md#terminal-mode-altt): its key (`false`: none) and its shell |
+| `options` | Neovim's options, over GreyKnight's (`:h option-list`) |
+| `keys` | `{ lhs, rhs, mode = "n", desc = "..." }`: `rhs` a function, keys, a command, `false`, or an action: `"terminal"`, `"landing"`, `"easymode"`, `"agent"`, `"explorer"`, `"dashboard"`, `"config"` |
+
+### The landing layout
+
+With `landing.enabled`, `gk` started without files opens with the file tree on the left, the start page in the
+middle and the agent's pane on the right - a new session. A file opened from the tree takes the start page's place;
+the start page's keys work as always. `:GreyKnightLanding` builds what of the layout is missing at any time - the
+tree, the pane - and leaves the windows you have. `gk file.py` opens the file as before.
 
 ---
 
@@ -57,7 +107,7 @@ command away:
 |-------------------|------|
 | `:GreyKnightStyle greyknight` / `:GreyKnightStyle oled` | Switch the look now (theme and start screen) and keep it for this machine (`greyknight-style` in Neovim's data folder) |
 | `:GreyKnightStyle` | Which look is on |
-| `vim.g.greyknight_style = "greyknight"` (in `init.lua`), `GREYKNIGHT_STYLE=greyknight` | Choose it before the kept choice - for every start, whatever `:GreyKnightStyle` kept |
+| `style = "greyknight"` in [your settings](#your-settings), `GREYKNIGHT_STYLE=greyknight` | Choose it before the kept choice - for every start, whatever `:GreyKnightStyle` kept |
 | `:CyberdreamToggleMode` | Light and back: cyberdream's own light look in either style |
 
 ---

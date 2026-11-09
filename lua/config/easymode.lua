@@ -201,7 +201,8 @@ local function after_one_command()
   end)
 end
 
-function M.enable()
+--- `opts.quiet`: no word about the keys (on from the start: the settings' easymode)
+function M.enable(opts)
   if M.enabled then return end
   M.enabled = true
   vim.g.greyknight_easymode = true
@@ -230,6 +231,7 @@ function M.enable()
     callback = function() replaced = select_tick ~= nil and vim.b.changedtick ~= select_tick end })
   if M.eligible() then vim.cmd("startinsert") end
   pcall(vim.cmd.redrawstatus, { bang = true })
+  if opts and opts.quiet then return end
   notify("Easy mode on: Ctrl+S save · Ctrl+Z / Y undo / redo · Shift+arrows select · Ctrl+C / X / V · Ctrl+F find"
     .. " · Esc: one normal-mode command · F1 all keys · Alt+N off")
 end
@@ -276,6 +278,10 @@ function M.setup()
     if arg == "on" then M.enable() elseif arg == "off" then M.disable() else M.toggle() end
   end, { nargs = "?", complete = function() return { "on", "off" } end, desc = "Easy mode: a plain text editor's keys (on / off)" })
   vim.keymap.set({ "n", "i", "v", "s" }, "<M-n>", M.toggle, { desc = "Easy mode: plain text editor keys (on / off)" })
+  -- on from the start: easymode = true in ~/.config/greyknight.lua
+  if require("config.settings").get("easymode") then
+    vim.api.nvim_create_autocmd("VimEnter", { once = true, callback = function() M.enable({ quiet = true }) end })
+  end
 end
 
 return M
