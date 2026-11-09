@@ -700,9 +700,11 @@ end)
 test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is installed", function()
   local agent = require("integrations.agent")
   local fake = fake_exe(vim.fn.tempname() .. "-qwen")
-  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT }
+  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, agent.FILE, vim.g.greyknight_agent }
   local ok, err = pcall(function()
     vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = fake, nil
+    -- not the machine's own choice on the agents page (kept in Neovim's data folder): "unset" is unset
+    agent.FILE, vim.g.greyknight_agent = vim.fn.tempname() .. "-no-kept-agent", nil
     assert(agent.backend_id() == "qwen", "unset: " .. agent.backend_id())
     vim.env.GREYKNIGHT_AGENT = "opencode"
     assert(agent.backend_id() == "opencode" and agent.backend().new_session == "/new", "opencode: " .. agent.backend_id())
@@ -711,7 +713,7 @@ test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is inst
     vim.env.GREYKNIGHT_AGENT = "claude"
     assert(agent.backend_id() == "claude" and agent.backend().new_session == "/clear", "claude: " .. agent.backend_id())
   end)
-  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2]
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, agent.FILE, vim.g.greyknight_agent = saved[1], saved[2], saved[3], saved[4]
   assert(ok, err)
 end)
 
