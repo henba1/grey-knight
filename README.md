@@ -181,6 +181,7 @@ init.lua                    entry point (+ the optional dashboard bridge)
 │   ├── settings.lua        your settings: ~/.config/greyknight.lua over the defaults, your keys (:GreyKnightConfig)
 │   ├── landing.lua         the landing layout: tree, start page, agent as gk starts (:GreyKnightLanding)
 │   ├── terminal.lua        terminal mode (Alt+T): a shell in the agent's pane, again: the agent
+│   ├── separators.lua      the borders between windows: a line, lit up under the mouse (drag to resize)
 │   └── errorlog.lua        warnings + errors of all sessions -> ~/.local/state/nvim/greyknight.log
 ├── lua/plugins/
 │   ├── ai.lua              toggleterm (Qwen Code agents, REPLs)

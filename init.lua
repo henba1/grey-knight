@@ -10,6 +10,7 @@ require("config.errorlog").setup() -- warnings + errors -> ~/.local/state/nvim/g
 require("config.keymaps")   -- after plugins are loaded
 require("config.autocmds")
 require("config.winbar").setup() -- a bar per file window: its name, split / close buttons
+require("config.separators").setup() -- the borders between windows: a line, lit under the mouse (drag to resize)
 require("integrations.agent_sessions").setup() -- the agent's sessions: the pane's tabs, <leader>as
 require("integrations.scrubjay").setup() -- with scrubjay: every machine's and agent's sessions in that list, <leader>aS
 require("config.easymode").setup() -- Alt+N: a plain text editor's keys in file windows (this session)

@@ -12,7 +12,7 @@ return {
       variant = "default",
       transparent = false,
       italic_comments = true,
-      hide_fillchars = true,
+      hide_fillchars = false, -- the borders between windows as a line, lit under the mouse (config/separators.lua)
       borderless_pickers = true,
       terminal_colors = true,
       -- no cache (2026-10-22): a start without its file - a new machine, an emptied ~/.cache, changed options -

@@ -59,6 +59,12 @@ In a terminal too - but not in an agent's window, where they are the agent's ([T
 `Alt+←` `Alt+→` `Alt+↑` `Alt+↓` (`<M-Left>` …) do the same in the editor - for a terminal that sends Ctrl+arrows as
 plain arrows, as PuTTY does by default ([Over SSH (PuTTY)](ssh.md#over-ssh-putty)). In a terminal they stay the shell's.
 
+**With the mouse:** drag the border between two windows. Each border is a thin line, and the one under the mouse
+lights up grey - that is where a drag resizes; it stays lit while you drag. In tmux this needs `set -g mouse on`.
+Lighting it up means Neovim follows every mouse move (`'mousemoveevent'`), and a move in the middle of a key
+sequence (`Space` then the mouse, then `f`) ends that sequence; `separators = { hover = false }` in
+[your settings](start.md#your-settings) turns the lighting off, the line stays.
+
 ### Closing
 
 | Key | Action |

@@ -33,6 +33,8 @@ M.DEFAULTS = {
     key = "<M-t>",
     shell = nil, -- the command (default: 'shell')
   },
+  -- The borders between windows: always a thin line; the one under the mouse lit up (false: no mouse tracking)
+  separators = { hover = true },
   options = {}, -- Neovim's options, e.g. { relativenumber = false, colorcolumn = "120" }
   -- Keys, as in lazy.nvim's specs: { lhs, rhs, mode = "n", desc = "..." }. rhs: a function, keys, a command, one of
   -- the actions (M.ACTIONS: "terminal", "landing", "easymode", "agent", "explorer", "dashboard", "config"), or false -
@@ -191,6 +193,10 @@ return {
   terminal = {
     key = "<M-t>",            -- false: no key
     -- shell = "zsh",         -- default: Neovim's 'shell'
+  },
+
+  separators = {
+    hover = true,             -- the border under the mouse lit up, where a drag resizes
   },
 
   options = {
