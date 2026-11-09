@@ -44,7 +44,7 @@ else `claude` on the `PATH`.
 | `<leader>al` | n | The agents page: choose the agent of new sessions, settings |
 | `<leader>ae` | n | A new session with the chosen agent, a tab of the pane |
 | `<leader>ac` | n | Back to the last session - none running: resume the newest past one of the project |
-| `<leader>ax` | n | End the session the pane shows |
+| `<leader>ax` | n | End the tab the pane shows - a session or the shell (also its `×`, `:GreyKnightPaneClose`) |
 | `<leader>aC` | n | Fresh conversation in the session the pane shows (`/clear`) |
 | `<leader>am` | n | Which model the rig runs right now: name and context size (several launchers share the port) |
 | `<leader>aa` | n | Ask about the current file (prompts for the question) |
@@ -100,7 +100,11 @@ else `claude` on the `PATH`.
 The agent's pane (`<leader>ap`) holds **several sessions as tabs** - a bar on top of it: `1 Claude fix the flaky
 test`, `2 OpenCode …`, `+` for a new one (of the chosen agent), `⚙ Claude` the chosen agent (a click: the agents page),
 `☰` for the list. A click on a tab shows that session in the pane (the others keep
-running), a middle click ends it. `Alt+.` / `Alt+,` go to the next / previous tab, also from inside the pane.
+running); its `×` (or a middle click) ends it - an agent's session can be resumed afterwards from the list
+(`<leader>as`), and the pane shows the next tab; closing the last one while the [shell](windows.md#terminal-mode-altt)
+runs puts the shell in the pane. `:GreyKnightPaneClose` does it by command: the tab shown, the n-th
+(`:GreyKnightPaneClose 2`), or the shell (`:GreyKnightPaneClose terminal`). `Alt+.` / `Alt+,` go to the next /
+previous tab, also from inside the pane.
 `<leader>ac` goes back to the session shown last - with none running, it resumes the newest past one of the project;
 `<leader>ae` starts a new one, `<leader>ax` ends the one shown.
 

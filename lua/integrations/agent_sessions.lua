@@ -30,6 +30,11 @@ function M.colors()
   for id, color in pairs(M.COLORS) do vim.api.nvim_set_hl(0, M.HL[id], { fg = color, bold = true }) end
   vim.api.nvim_set_hl(0, "GkAgentTab", { link = "TabLine", default = true })
   vim.api.nvim_set_hl(0, "GkAgentTabActive", { link = "TabLineSel", default = true })
+  -- a tab's ×: quiet on the others, there on the one shown
+  local tab = vim.api.nvim_get_hl(0, { name = "TabLine", link = false })
+  local sel = vim.api.nvim_get_hl(0, { name = "TabLineSel", link = false })
+  vim.api.nvim_set_hl(0, "GkAgentTabClose", { fg = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg, bg = tab.bg })
+  vim.api.nvim_set_hl(0, "GkAgentTabCloseActive", { fg = sel.fg, bg = sel.bg, bold = true })
 end
 
 -- ── Reading what the agents keep on disk ────────────────────
@@ -591,12 +596,15 @@ function M.tabline()
     parts[#parts + 1] = ("%%%d@v:lua.GkAgentTab@%%#%s# %d %%#%s#%s%%#%s# %s %%X"):format(s.term.id,
       active and "GkAgentTabActive" or "GkAgentTab", i, M.HL[s.term.gk_backend] or "Normal", backend.short,
       active and "GkAgentTabActive" or "GkAgentTab", title)
+      -- its × ends it (2026-11-09: a middle click alone was nowhere to be seen)
+      .. ("%%%d@v:lua.GkAgentTabClose@%%#%s#× %%X"):format(s.term.id, active and "GkAgentTabCloseActive" or "GkAgentTabClose")
   end
   -- the shell of terminal mode (Alt+T, config/terminal.lua), while it runs
   local shell = package.loaded["config.terminal"] and require("config.terminal").tab(shown)
   if shell then
     local hl = shell.active and "GkAgentTabActive" or "GkAgentTab"
-    parts[#parts + 1] = ("%%0@v:lua.GkPaneShell@%%#%s# >_ Terminal %%X"):format(hl)
+    parts[#parts + 1] = ("%%0@v:lua.GkPaneShell@%%#%s# >_ Terminal %%X%%0@v:lua.GkPaneShellClose@%%#%s#× %%X"):format(hl,
+      shell.active and "GkAgentTabCloseActive" or "GkAgentTabClose")
   end
   local chosen = agent.backend_id()
   parts[#parts + 1] = ("%%#GkAgentTab#%%0@v:lua.GkAgentNew@ + %%X%%=%%0@v:lua.GkAgentPage@%%#%s# ⚙ %s %%X%%#GkAgentTab#%%0@v:lua.GkAgentList@ ☰ %%X")
@@ -605,6 +613,26 @@ function M.tabline()
 end
 
 M.BAR = "%{%v:lua.require'integrations.agent_sessions'.tabline()%}"
+
+--- End a tab of the pane: `which` - a session's name, its number on the bar (1, 2 ...), "terminal" (the shell), or
+--- nil: the one the pane shows. An agent's session can be resumed afterwards (<leader>as); the pane shows the next tab.
+function M.close(which)
+  local list = agent.running()
+  if which == nil or which == "" then
+    local _, shown = agent.pane()
+    if not shown then return notify("No tab to close: the pane is not open", vim.log.levels.WARN) end
+    which = shown.shell and "terminal" or shown.name
+  end
+  if which == "terminal" then return require("config.terminal").stop() end
+  local n = tonumber(which)
+  local s = n and list[n] or nil
+  local name = s and s.name or which
+  local term = agent.term(name)
+  if not term then return notify(("No tab %s in the pane"):format(tostring(which)), vim.log.levels.WARN) end
+  local title = M.title(term)
+  agent.stop(name)
+  notify(("Ended: %s - <leader>as resumes it"):format(title))
+end
 
 --- The tabs on the pane's window `win`
 function M.decorate(win)
@@ -617,17 +645,33 @@ end
 _G.GkAgentTab = function(id, _, button)
   for _, s in ipairs(agent.running()) do
     if s.term.id == id then
-      if button == "m" then return agent.stop(s.name) end
+      if button == "m" then return vim.schedule(function() M.close(s.name) end) end
       return agent.switch(s.name)
     end
   end
 end
+_G.GkAgentTabClose = function(id)
+  vim.schedule(function()
+    for _, s in ipairs(agent.running()) do
+      if s.term.id == id then return M.close(s.name) end
+    end
+  end)
+end
+_G.GkPaneShellClose = function() vim.schedule(function() M.close("terminal") end) end
 _G.GkAgentNew = function() vim.schedule(function() M.new() end) end
 _G.GkAgentList = function() vim.schedule(function() M.pick() end) end
 _G.GkAgentPage = function() vim.schedule(function() M.page() end) end
 
 function M.setup()
   M.colors()
+  vim.api.nvim_create_user_command("GreyKnightPaneClose", function(o) M.close(o.args) end, {
+    nargs = "?", desc = "Agent pane: end a tab - the one shown, a number on the bar, or terminal",
+    complete = function()
+      local list = { "terminal" }
+      for i in ipairs(agent.running()) do list[#list + 1] = tostring(i) end
+      return list
+    end,
+  })
   local group = vim.api.nvim_create_augroup("greyknight.agent_sessions", { clear = true })
   vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = M.colors })
   -- a session that ends or starts: the tabs drawn again

@@ -60,11 +60,12 @@ keys: a click into the tree, then `Enter` or a double click opens a file - typin
 | `<leader>al` | n | **Agents page**: choose Claude Code, OpenCode or Qwen Code for new sessions (kept for this machine) - the pane goes over to it, the session it showed keeps running as a tab; settings (connect to Neovim) |
 | `<leader>ae` | n | A new session with the chosen agent, next to the others |
 | `<leader>ac` | n | Back to the last session - none running: resume the newest past one of the project |
-| `<leader>ax` | n | End the session the pane shows (the pane shows the next) |
+| `<leader>ax` | n | End the tab the pane shows - a session or the shell (the pane shows the next; also its `×`) |
 | `<leader>as` | n | Agent sessions: running (the pane's tabs) and past (Claude Code, OpenCode) - `Enter` switch / resume, `Ctrl+O` go on in another agent, `Ctrl+E` new, `Ctrl+X` end, `Ctrl+Y` hand it to the agent, `Ctrl+A` all projects, `Ctrl+L` it on the session map; with scrubjay every machine's too |
 | `<leader>aS` | n | Search past sessions of every machine for words (scrubjay's sj-grep) - `Enter` read, `Ctrl+O` go on with it, `Ctrl+Y` hand it to the agent |
 | `<leader>aM` | n | Session map in the browser (scrubjay's sj-view): every session, what it changed, its milestones - `:SjView stop` ends it |
-| `<M-.>` / `<M-,>` | n, agent pane | Next / previous session in the agent's pane (its tabs; a click on a tab, middle click ends it) |
+| `<M-.>` / `<M-,>` | n, agent pane | Next / previous session in the agent's pane (its tabs; a click on a tab, its `×` or a middle click ends it) |
+| `:GreyKnightPaneClose [n\|terminal]` | | End a tab of the agent's pane: the one shown, the n-th, or the shell |
 | `<leader>aC` | n | New conversation in the session (`/clear` in Qwen Code and Claude Code, `/new` in OpenCode) - an agent working in another folder (started before a `cd`) starts anew in Neovim's |
 | `<leader>am` | n | Which model the rig runs right now (Qwen Code; OpenCode: `/models`, Claude Code: `/model`) |
 | `<leader>aa` | n/v | Ask AI about the file / selection (asks for the question) |

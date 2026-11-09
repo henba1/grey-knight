@@ -2306,12 +2306,34 @@ test("Terminal mode: Alt+T flips the pane between agent and shell in one window;
     vim.fn.chansend(sh.job_id, "exit\r")
     assert(wait(5000, function() return terminal.term(false) == nil and vim.api.nvim_win_is_valid(pane)
       and vim.api.nvim_win_get_buf(pane) == agent_buf end), "after exit: " .. vim.inspect({ shown() }))
-    -- the landing layout: tree, the start page's window as where files open, the pane at its width
+    -- 2026-11-09: a × on every tab; closing the last session while the shell runs: the shell takes the pane;
+    -- :GreyKnightPaneClose terminal ends the shell
+    terminal.show()
+    agent.open_pane()
+    vim.g.statusline_winid = pane
+    local bar = sessions.tabline()
+    vim.g.statusline_winid = nil
+    assert(select(2, bar:gsub("×", "")) == 2, "a × per tab (the session, the shell): " .. bar)
+    sessions.close(1) -- by its number on the bar
+    assert(wait(3000, function() return #agent.running() == 0 end), "the session was not ended")
+    assert(vim.api.nvim_win_is_valid(pane) and terminal.is_shell(vim.api.nvim_win_get_buf(pane)),
+      "the shell did not take the pane")
+    vim.cmd("GreyKnightPaneClose terminal")
+    assert(wait(3000, function() return terminal.term(false) == nil end), "the shell runs on")
+    -- the landing layout: tree, the start page's window as where files open, the pane at its width - from one window
+    -- (windows earlier tests left leave no room for the pane's 30 columns in an 80-column Neovim)
     vim.api.nvim_set_current_win(code)
+    vim.cmd("silent! only")
     landing.open({ left = "explorer", right = "agent", right_width = 30, focus = "center" })
     assert(wait(3000, function() return landing.explorer() ~= nil end), "no tree")
     local pw = vim.api.nvim_win_get_width((agent.pane()))
-    assert(pw == 30, "the pane's width: " .. pw)
+    local wins = {}
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_config(w).relative == "" then
+        wins[#wins + 1] = w .. ":" .. vim.api.nvim_win_get_width(w) .. ":" .. vim.bo[vim.api.nvim_win_get_buf(w)].filetype
+      end
+    end
+    assert(pw == 30, "the pane's width: " .. pw .. " wins: " .. table.concat(wins, " ") .. " cols=" .. vim.o.columns)
     assert(wait(1000, function() return vim.api.nvim_get_current_win() == code end), "the cursor is not in the middle: "
       .. vim.bo.filetype)
     pcall(function() landing.explorer():close() end)
