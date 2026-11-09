@@ -741,6 +741,8 @@ function M.stop(name)
   if shown and others[1] then -- the pane stays, with another session in it
     M.active = others[1].name
     show(others[1].term, term.direction)
+  elseif shown and package.loaded["config.terminal"] and require("config.terminal").term(false) then
+    require("config.terminal").show() -- the last session: the shell of terminal mode takes the pane
   end
   pcall(term.shutdown, term)
   if M.active == name then M.active = others[1] and others[1].name or "agent" end

@@ -105,10 +105,15 @@ function M.exited(term)
   if shell == term then shell = nil end
 end
 
---- End the shell
+--- End the shell; shown in the pane, the pane goes back to the agent (none running: it closes)
 function M.stop()
   local term = shell
-  if term then pcall(term.shutdown, term) end
+  if not term then return end
+  local win = term.window
+  if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == term.bufnr and #agent().running() > 0 then
+    agent().switch(agent().current())
+  end
+  pcall(term.shutdown, term)
   shell = nil
 end
 
