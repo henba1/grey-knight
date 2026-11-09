@@ -82,6 +82,10 @@ o.autowrite   = false
 -- Behaviour
 o.hidden       = true
 o.errorbells   = false
+-- Every bell off but a terminal's: a coding agent in the agent pane rings it when it finishes a turn or asks for a
+-- permission (scrubjay's SCRUBJAY_NOTIFY), and Neovim passes it on to the terminal around it. "all" swallows it.
+o.belloff      = "backspace,cursor,complete,copy,ctrlg,error,esc,ex,hangul,insertmode,lang,mess,showmatch,"
+  .. "operator,register,shell,spell,wildmode"
 o.backspace    = "indent,eol,start"
 o.autochdir    = false
 o.iskeyword:append("-")
