@@ -700,9 +700,11 @@ end)
 test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is installed", function()
   local agent = require("integrations.agent")
   local fake = fake_exe(vim.fn.tempname() .. "-qwen")
-  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT }
+  local saved = { vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, agent.FILE, vim.g.greyknight_agent }
   local ok, err = pcall(function()
     vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = fake, nil
+    -- not the machine's own choice on the agents page (kept in Neovim's data folder): "unset" is unset
+    agent.FILE, vim.g.greyknight_agent = vim.fn.tempname() .. "-no-kept-agent", nil
     assert(agent.backend_id() == "qwen", "unset: " .. agent.backend_id())
     vim.env.GREYKNIGHT_AGENT = "opencode"
     assert(agent.backend_id() == "opencode" and agent.backend().new_session == "/new", "opencode: " .. agent.backend_id())
@@ -711,7 +713,7 @@ test("Agent: GREYKNIGHT_AGENT picks the agent; unset, Qwen Code where it is inst
     vim.env.GREYKNIGHT_AGENT = "claude"
     assert(agent.backend_id() == "claude" and agent.backend().new_session == "/clear", "claude: " .. agent.backend_id())
   end)
-  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2]
+  vim.env.QWEN_BIN, vim.env.GREYKNIGHT_AGENT, agent.FILE, vim.g.greyknight_agent = saved[1], saved[2], saved[3], saved[4]
   assert(ok, err)
 end)
 
@@ -2241,6 +2243,80 @@ test("Agents page: choosing an agent moves the pane to it (the other keeps runni
   vim.env.CLAUDE_BIN, vim.env.OPENCODE_BIN, vim.env.QWEN_BIN, vim.env.CLAUDE_CONFIG_DIR, vim.env.GREYKNIGHT_AGENT = saved[1], saved[2], saved[3], saved[4], saved[5]
   vim.g.greyknight_agent, vim.g.greyknight_agent_link, agent.FILE = saved[6], saved[7], saved[8]
   vim.fn.chdir(before)
+  if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
+  vim.cmd("stopinsert")
+  vim.fn.delete(root, "rf")
+  assert(ok, err)
+end)
+
+-- 2026-11-09: terminal mode - Alt+T flips the agent's pane between the agent and a shell, in the same window (the
+-- layout stays), from the code, the agent and the shell; the shell a tab on the pane's bar; a shell that ends gives
+-- the pane back to the agent. The landing layout: the tree, the start page (the window files open in), the pane.
+test("Terminal mode: Alt+T flips the pane between agent and shell in one window; exit gives it back; the landing layout", function()
+  linux_only("a stand-in agent (sh)")
+  local agent, sessions, terminal, landing = require("integrations.agent"), require("integrations.agent_sessions"),
+    require("config.terminal"), require("config.landing")
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root, "p")
+  local fake = root .. "/bin-claude"
+  vim.fn.writefile({ "#!/bin/sh", 'echo "ARGS:$*"', "exec cat" }, fake)
+  vim.fn.setfperm(fake, "rwx------")
+  local saved = { vim.env.CLAUDE_BIN, vim.g.greyknight_agent, vim.g.greyknight_agent_link }
+  vim.env.CLAUDE_BIN, vim.g.greyknight_agent, vim.g.greyknight_agent_link = fake, "claude", false
+  vim.cmd("enew") -- the code: a window with a file (an earlier test may leave a list or a terminal in it)
+  local code = vim.api.nvim_get_current_win()
+  local function shown() local w, s = agent.pane(); return w, s end
+  local ok, err = pcall(function()
+    assert(vim.fn.maparg("<M-t>", "t") ~= "" and vim.fn.maparg("<M-t>", "n") ~= "" and vim.fn.maparg("<M-t>", "i") ~= "",
+      "Alt+T is not mapped in every mode")
+    agent.open_pane()
+    local pane, s = shown()
+    assert(pane and s.name and not s.shell, "no agent in the pane")
+    local agent_buf = s.term.bufnr
+    -- the agent's window lets Alt+T through: no map of its own for it (every other terminal key is the agent's)
+    local own = vim.fn.maparg("<M-t>", "t", false, true)
+    vim.api.nvim_buf_call(agent_buf, function() own = vim.fn.maparg("<M-t>", "t", false, true) end)
+    assert(own.buffer ~= 1, "the agent's window takes Alt+T for itself")
+    -- from the code: the shell in the pane's window
+    vim.api.nvim_set_current_win(code)
+    terminal.toggle()
+    local w2, s2 = shown()
+    assert(w2 == pane and s2.shell and vim.api.nvim_get_current_win() == pane, "the shell is not in the pane's window")
+    assert(wait(3000, function() return terminal.term(false) ~= nil end), "the shell does not run")
+    vim.g.statusline_winid = pane
+    assert(sessions.tabline():find(">_ Terminal", 1, true), "no tab for the shell: " .. sessions.tabline())
+    vim.g.statusline_winid = nil
+    -- in the shell: back to the agent, same window
+    terminal.toggle()
+    w2, s2 = shown()
+    assert(w2 == pane and not s2.shell and vim.api.nvim_win_get_buf(pane) == agent_buf, "not back to the agent")
+    -- in the agent: the shell again - the same one, still running
+    local sh = terminal.term(false)
+    terminal.toggle()
+    assert(terminal.term(false) == sh and vim.api.nvim_win_get_buf(pane) == sh.bufnr, "a new shell instead of the running one")
+    -- <leader>ap from the shell: the agent
+    agent.open_pane()
+    assert(vim.api.nvim_win_get_buf(pane) == agent_buf, "ap stayed on the shell")
+    -- the shell ends while it shows: the pane goes back to the agent, in its window
+    terminal.toggle()
+    vim.fn.chansend(sh.job_id, "exit\r")
+    assert(wait(5000, function() return terminal.term(false) == nil and vim.api.nvim_win_is_valid(pane)
+      and vim.api.nvim_win_get_buf(pane) == agent_buf end), "after exit: " .. vim.inspect({ shown() }))
+    -- the landing layout: tree, the start page's window as where files open, the pane at its width
+    vim.api.nvim_set_current_win(code)
+    landing.open({ left = "explorer", right = "agent", right_width = 30, focus = "center" })
+    assert(wait(3000, function() return landing.explorer() ~= nil end), "no tree")
+    local pw = vim.api.nvim_win_get_width((agent.pane()))
+    assert(pw == 30, "the pane's width: " .. pw)
+    assert(wait(1000, function() return vim.api.nvim_get_current_win() == code end), "the cursor is not in the middle: "
+      .. vim.bo.filetype)
+    pcall(function() landing.explorer():close() end)
+  end)
+  terminal.stop()
+  for _, r in ipairs(agent.running()) do pcall(function() r.term:shutdown() end) end
+  for name in pairs(agent.AGENTS) do if name:match("^s%d+$") then agent.AGENTS[name] = nil end end
+  agent.active = "agent"
+  vim.env.CLAUDE_BIN, vim.g.greyknight_agent, vim.g.greyknight_agent_link = saved[1], saved[2], saved[3]
   if vim.api.nvim_win_is_valid(code) then vim.api.nvim_set_current_win(code) end
   vim.cmd("stopinsert")
   vim.fn.delete(root, "rf")

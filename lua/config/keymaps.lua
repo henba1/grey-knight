@@ -205,7 +205,11 @@ map("n", "<leader>ap", function() agent().open_pane() end,    { desc = "Agent: T
 map("n", "<leader>ac", function() sessions().resume_last() end, { desc = "Agent: Back to the last session (none running: resume the newest)" })
 map("n", "<leader>ae", function() sessions().new() end,       { desc = "Agent: New session with the chosen agent" })
 map("n", "<leader>al", function() sessions().page() end,      { desc = "Agent: Agents - choose Claude Code, OpenCode, Qwen Code; settings" })
-map("n", "<leader>ax", function() local _, s = agent().pane(); agent().stop(s and s.name or agent().current()) end,
+map("n", "<leader>ax", function()
+  local _, s = agent().pane()
+  if s and s.shell then return require("config.terminal").stop() end -- the pane shows the shell: that one ends
+  agent().stop(s and s.name or agent().current())
+end,
   { desc = "Agent: End the session the pane shows" })
 map("n", "<leader>as", function() sessions().pick() end, { desc = "Agent: Sessions - switch, resume, carry over (Ctrl+A: all projects)" })
 map("n", "<leader>aS", function() require("integrations.scrubjay").search() end, { desc = "Agent: Search past sessions of every machine (scrubjay)" })

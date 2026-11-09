@@ -260,6 +260,8 @@ function M.own_keys(buf)
   local opts = { buffer = buf, nowait = true, desc = "The agent's (not GreyKnight's)" }
   local leave = {}
   for _, k in ipairs(M.LEAVE_KEYS) do leave[vim.keycode(k)] = true end
+  -- the keys of terminal mode (Alt+T: the shell in the pane, config/terminal.lua) stay GreyKnight's here too
+  for _, k in ipairs(package.loaded["config.terminal"] and require("config.terminal").keys or {}) do leave[vim.keycode(k)] = true end
   for _, m in ipairs(vim.api.nvim_get_keymap("t")) do
     if not leave[vim.keycode(m.lhs)] then vim.keymap.set("t", m.lhs, m.lhs, opts) end
   end
@@ -389,10 +391,12 @@ local function agent(name, direction, first_prompt, spec)
   return term, true
 end
 
---- The window of the agent's pane: one that shows an agent session (not a float), the current window first
+--- The window of the agent's pane: one that shows an agent session (not a float), the current window first - or the
+--- shell of terminal mode in its place (config/terminal.lua): then { term = the shell, shell = true }, no name
 function M.pane()
   local wins = { vim.api.nvim_get_current_win() }
   vim.list_extend(wins, vim.api.nvim_tabpage_list_wins(0))
+  local shell = package.loaded["config.terminal"] and require("config.terminal")
   for _, win in ipairs(wins) do
     if vim.api.nvim_win_get_config(win).relative == "" then
       local buf = vim.api.nvim_win_get_buf(win)
@@ -400,6 +404,7 @@ function M.pane()
         local term = require("toggleterm.terminal").get(id, true)
         if term and term.gk_agent and term.bufnr == buf then return win, { name = name, term = term } end
       end
+      if shell and shell.is_shell(buf) then return win, { term = shell.current(), shell = true } end
     end
   end
 end
@@ -667,6 +672,7 @@ end
 --- running, a new one of the chosen agent
 function M.open_pane()
   local win, shown = M.pane()
+  if win and shown.shell then return M.launch(nil, "vertical") end -- the pane shows the shell: back to the agent
   if win then
     M.active = shown.name
     vim.api.nvim_set_current_win(win)

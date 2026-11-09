@@ -592,6 +592,12 @@ function M.tabline()
       active and "GkAgentTabActive" or "GkAgentTab", i, M.HL[s.term.gk_backend] or "Normal", backend.short,
       active and "GkAgentTabActive" or "GkAgentTab", title)
   end
+  -- the shell of terminal mode (Alt+T, config/terminal.lua), while it runs
+  local shell = package.loaded["config.terminal"] and require("config.terminal").tab(shown)
+  if shell then
+    local hl = shell.active and "GkAgentTabActive" or "GkAgentTab"
+    parts[#parts + 1] = ("%%0@v:lua.GkPaneShell@%%#%s# >_ Terminal %%X"):format(hl)
+  end
   local chosen = agent.backend_id()
   parts[#parts + 1] = ("%%#GkAgentTab#%%0@v:lua.GkAgentNew@ + %%X%%=%%0@v:lua.GkAgentPage@%%#%s# ⚙ %s %%X%%#GkAgentTab#%%0@v:lua.GkAgentList@ ☰ %%X")
     :format(M.HL[chosen] or "GkAgentTab", agent.BACKENDS[chosen].short)

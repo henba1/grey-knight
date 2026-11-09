@@ -34,6 +34,25 @@ key as itself out of the box and takes OSC 52 copies.
 
 ---
 
+## Keeping It Running: tmux
+
+Over SSH, Neovim ends with the connection - and the agents in it. Run **GreyKnight itself in tmux** and a dropped
+connection only detaches it: the editor, the agent's sessions and their link to Neovim (its tools, the diffs) go on,
+and `tmux attach` brings it all back. With [scrubjay](https://github.com/henba1/scrubjay) that is its keep-alive:
+
+```bash
+NVIM_APPNAME=greyknight ~/.scrubjay/scrubjay/bin/sj-keep.sh -- nvim   # SCRUBJAY_KEEP=ssh: over SSH in tmux session sj-nvim-<folder>
+tmux attach -t sj-nvim-<folder>                                         # back after a dropped connection
+```
+
+Not the agent alone in tmux inside Neovim: Claude Code's link to Neovim lives in Neovim's temp folder, so an agent that
+outlived Neovim would work on without its tools; inside tmux its scrollback is tmux's (`Ctrl-b [`), not the pane's.
+And within a GreyKnight that runs in tmux already, scrubjay leaves it alone (already inside tmux). For Neovim in tmux:
+`set -sg escape-time 10` (Esc at once), `set -g focus-events on`, `set -g set-clipboard on` (OSC 52 copies) and
+`set -as terminal-features ',*:RGB'` (the colors) in `~/.tmux.conf`.
+
+---
+
 ## Copy to System Clipboard
 Yank and paste use the system clipboard (`unnamedplus`). On your own machine Neovim picks the tool itself
 (wl-clipboard, xclip / xsel, the Windows clipboard). Over SSH a yank goes to the clipboard of the computer in

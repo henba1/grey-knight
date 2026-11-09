@@ -5270,4 +5270,89 @@ test("Easy mode: suggestions Tab / Esc / Enter as in VS Code, Ctrl+Z a word, Hom
   end)
 end)
 
+-- 2026-11-09: your settings in one file outside the repository (~/.config/greyknight.lua, $GREYKNIGHT_CONFIG): over
+-- GreyKnight's defaults; a typo or a wrong type is a word and left out; keys over GreyKnight's (an action by name,
+-- false: the key gone); the template :GreyKnightConfig writes is itself a valid file
+test("Settings: ~/.config/greyknight.lua over the defaults - typos and wrong types left out, keys (actions, false), the template", function()
+  local settings = require("config.settings")
+  local path = vim.fn.tempname() .. "-greyknight.lua"
+  local saved = { vim.env.GREYKNIGHT_CONFIG, vim.g.greyknight_agent, vim.g.greyknight_agent_link, vim.g.greyknight_style,
+    vim.deepcopy(settings.values), vim.o.colorcolumn }
+  local notify, words = vim.notify, {}
+  vim.notify = function(msg) words[#words + 1] = msg end
+  local ok, err = pcall(function()
+    vim.env.GREYKNIGHT_CONFIG = path
+    assert(settings.file() == path, "the file: " .. settings.file())
+    vim.fn.writefile(vim.split([[
+return {
+  easymode = true,
+  agent = { backend = "opencode", link = false },
+  landing = { enabled = true, right = "terminal", right_width = 50, lefft = "x" },
+  terminal = { key = false },
+  options = { colorcolumn = "120" },
+  colour = "red",
+  keys = {
+    { "<leader>zT", "terminal" },
+    { "<leader>zq", "<cmd>echo 1<cr>", desc = "mine" },
+    { "<S-h>", false },
+  },
+  easymode2 = 1,
+}]], "\n"), path)
+    local v = settings.load()
+    vim.wait(100, function() return #words > 0 end) -- the word is scheduled
+    assert(v.easymode == true and v.agent.backend == "opencode" and v.agent.link == false, vim.inspect(v.agent))
+    assert(v.landing.enabled and v.landing.right == "terminal" and v.landing.right_width == 50 and v.landing.left == "explorer"
+      and v.landing.lefft == nil, "landing: " .. vim.inspect(v.landing))
+    assert(v.terminal.key == false and v.colour == nil and v.easymode2 == nil, "left out: " .. vim.inspect(v))
+    assert(words[1] and words[1]:find("colour: no such setting", 1, true) and words[1]:find("landing.lefft", 1, true),
+      "no word about the typos: " .. vim.inspect(words))
+    assert(vim.g.greyknight_agent == "opencode" and vim.g.greyknight_agent_link == false, "vim.g not set")
+    assert(settings.get("landing.right") == "terminal" and settings.get("agent.nope") == nil, "get()")
+    -- a wrong type: a word, the default stands
+    words = {}
+    vim.fn.writefile({ "return { easymode = 'yes', landing = 3 }" }, path)
+    v = settings.load()
+    vim.wait(100, function() return #words > 0 end)
+    assert(v.easymode == false and type(v.landing) == "table", "wrong types taken: " .. vim.inspect(v))
+    assert(words[1] and words[1]:find("easymode: boolean, not string", 1, true), vim.inspect(words))
+    -- a file that does not load: the defaults
+    words = {}
+    vim.fn.writefile({ "return {" }, path)
+    v = settings.load()
+    vim.wait(100, function() return #words > 0 end)
+    assert(v.landing.enabled == false and words[1] and words[1]:find("did not load", 1, true), vim.inspect(words))
+    -- options and keys
+    vim.fn.writefile({ 'return { options = { colorcolumn = "120" }, keys = { { "<leader>zT", "terminal" },',
+      '{ "<leader>zq", "<cmd>echo 1<cr>", desc = "mine" }, { "<leader>zz", false } } }' }, path)
+    vim.keymap.set("n", "<leader>zz", "<Nop>")
+    settings.load()
+    settings.apply_options()
+    settings.apply_keys()
+    assert(vim.o.colorcolumn == "120", "option: " .. vim.o.colorcolumn)
+    local t = vim.fn.maparg("<leader>zT", "n", false, true)
+    assert(t.callback and t.desc:find("Terminal", 1, true), "the action: " .. vim.inspect(t))
+    assert(vim.tbl_contains(require("config.terminal").keys, "<leader>zT"), "the agent's window does not let it through")
+    assert(vim.fn.maparg("<leader>zq", "n", false, true).desc == "mine", "a key with keys")
+    assert(vim.fn.maparg("<leader>zz", "n") == "", "false: the key is still there")
+    -- the template: a valid file, nothing left out, GreyKnight's defaults
+    words = {}
+    vim.fn.writefile(vim.split(settings.TEMPLATE, "\n"), path)
+    v = settings.load()
+    vim.wait(50, function() return #words > 0 end)
+    assert(#words == 0, "the template: " .. vim.inspect(words))
+    assert(vim.deep_equal(v, settings.DEFAULTS), "the template is not the defaults: " .. vim.inspect(v))
+    for _, cmd in ipairs({ "GreyKnightConfig", "GreyKnightLanding", "GreyKnightTerminal" }) do
+      assert(vim.fn.exists(":" .. cmd) == 2, cmd .. " is missing")
+    end
+  end)
+  vim.notify = notify
+  for _, k in ipairs({ "<leader>zT", "<leader>zq", "<leader>zz" }) do pcall(vim.keymap.del, "n", k) end
+  local keys = require("config.terminal").keys
+  for i = #keys, 1, -1 do if keys[i] == "<leader>zT" then table.remove(keys, i) end end
+  vim.env.GREYKNIGHT_CONFIG, vim.g.greyknight_agent, vim.g.greyknight_agent_link, vim.g.greyknight_style = saved[1], saved[2], saved[3], saved[4]
+  settings.values, vim.o.colorcolumn = saved[5], saved[6]
+  os.remove(path)
+  assert(ok, err)
+end)
+
 H.report("Smoke Test Results")

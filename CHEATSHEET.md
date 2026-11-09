@@ -15,6 +15,8 @@
 | `<leader>;` | Dashboard |
 | `Alt+N` / `:EasyMode` | Easy mode on / off: a plain text editor's keys in file windows ([below](#easy-mode-altn)) |
 | `:GreyKnightStyle oled` / `greyknight` | The look: neon on true black (OLED) or on cyberdream's grey - kept for this machine |
+| `:GreyKnightConfig` | Your settings: `~/.config/greyknight.lua` - easy mode, the landing layout, keys, options ([settings](docs/start.md#your-settings)) |
+| `:GreyKnightLanding` | The landing layout: the tree, the start page, the agent's pane (what of it is missing) |
 | `<Esc>` | Clear the search highlight |
 | `<C-d>` / `<C-u>` | Half a page down / up, cursor centered |
 | `n` / `N` | Next / previous search hit, centered |
@@ -286,6 +288,7 @@ Python/bash REPL use `<leader>ri`).
 
 | Key | Action |
 |-----|--------|
+| `Alt+T` / `:GreyKnightTerminal` | Terminal mode: a shell in the agent's pane, again: the agent ([terminal mode](docs/windows.md#terminal-mode-altt)) |
 | `<leader>ts` | Send selection → shell term #2 (visual) |
 | `<leader>tl` | Send line → shell term #2 |
 
@@ -447,6 +450,9 @@ the agent, help or quickfix.
 │   ├── style.lua             ← the look: OLED (true black) or cyberdream's grey (:GreyKnightStyle)
 │   ├── winbar.lua            ← a bar per file window: its name, split right / below and close buttons
 │   ├── easymode.lua          ← easy mode (Alt+N): a plain text editor's keys in file windows
+│   ├── settings.lua          ← your settings (~/.config/greyknight.lua, :GreyKnightConfig): defaults, keys
+│   ├── landing.lua           ← the landing layout: tree, start page, agent (:GreyKnightLanding)
+│   ├── terminal.lua          ← terminal mode (Alt+T): a shell in the agent's pane
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest

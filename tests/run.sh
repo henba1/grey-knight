@@ -18,7 +18,10 @@ for suite in "${suites[@]}"; do
   mkdir -p "$run/tmp" "$run/state" "$run/cache"
   # report() exits; "cquit 2" only runs when the suite crashed before it (a crash is not a pass).
   # -i NONE: the user's ShaDa (history, recent files) neither read nor written (tests/harness.lua)
+  # GREYKNIGHT_CONFIG: a file that is not there - the user's ~/.config/greyknight.lua (easy mode, the landing, keys)
+  # stays out of the tests, which test GreyKnight's defaults
   GK_TEST_TRACE="$trace" GK_TEST_RUN_DIR="$run" TMPDIR="$run/tmp" XDG_STATE_HOME="$run/state" XDG_CACHE_HOME="$run/cache" \
+    GREYKNIGHT_CONFIG="$run/no-settings.lua" \
     timeout 900 nvim -i NONE --headless -c "luafile $suite" -c 'cquit 2'
   rc=$?
   rm -rf "$run"

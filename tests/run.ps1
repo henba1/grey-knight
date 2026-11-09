@@ -30,7 +30,7 @@ try {
     # Set for Neovim only: the report and the trace stay in the real temp folder.
     $run = Join-Path ([IO.Path]::GetTempPath()) ('greyknight-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 12))
     foreach ($d in 'tmp', 'state', 'cache') { $null = New-Item -ItemType Directory -Force -Path (Join-Path $run $d) }
-    $runEnv = @{ GK_TEST_RUN_DIR = $run; TEMP = "$run\tmp"; TMP = "$run\tmp"; XDG_STATE_HOME = "$run\state"; XDG_CACHE_HOME = "$run\cache" }
+    $runEnv = @{ GK_TEST_RUN_DIR = $run; TEMP = "$run\tmp"; TMP = "$run\tmp"; XDG_STATE_HOME = "$run\state"; XDG_CACHE_HOME = "$run\cache"; GREYKNIGHT_CONFIG = "$run\no-settings.lua" }
     $saved = @{}
     foreach ($k in $runEnv.Keys) {
       $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process')
