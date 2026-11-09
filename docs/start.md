@@ -63,6 +63,7 @@ return {
 | `agent.backend` / `agent.link` | The agent new sessions start with, and whether they get Neovim's tools ([the agent](agent.md)) |
 | `landing` | The layout below |
 | `terminal.key` / `terminal.shell` | [Terminal mode](windows.md#terminal-mode-altt): its key (`false`: none) and its shell |
+| `separators.hover` | The border between windows under the mouse lit up, where a drag resizes ([resizing](windows.md#resizing-windows)) |
 | `options` | Neovim's options, over GreyKnight's (`:h option-list`) |
 | `keys` | `{ lhs, rhs, mode = "n", desc = "..." }`: `rhs` a function, keys, a command, `false`, or an action: `"terminal"`, `"landing"`, `"easymode"`, `"agent"`, `"explorer"`, `"dashboard"`, `"config"` |
 

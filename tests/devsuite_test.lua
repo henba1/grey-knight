@@ -2263,6 +2263,10 @@ test("Terminal mode: Alt+T flips the pane between agent and shell in one window;
   vim.fn.setfperm(fake, "rwx------")
   local saved = { vim.env.CLAUDE_BIN, vim.g.greyknight_agent, vim.g.greyknight_agent_link }
   vim.env.CLAUDE_BIN, vim.g.greyknight_agent, vim.g.greyknight_agent_link = fake, "claude", false
+  -- a plain shell: the user's interactive one (a slow .zshrc) could take the "exit" below before it was ready
+  local settings = require("config.settings")
+  local shell_before = settings.values.terminal.shell
+  settings.values.terminal.shell = "/bin/sh"
   vim.cmd("enew") -- the code: a window with a file (an earlier test may leave a list or a terminal in it)
   local code = vim.api.nvim_get_current_win()
   local function shown() local w, s = agent.pane(); return w, s end
@@ -2313,6 +2317,7 @@ test("Terminal mode: Alt+T flips the pane between agent and shell in one window;
     pcall(function() landing.explorer():close() end)
   end)
   terminal.stop()
+  settings.values.terminal.shell = shell_before
   for _, r in ipairs(agent.running()) do pcall(function() r.term:shutdown() end) end
   for name in pairs(agent.AGENTS) do if name:match("^s%d+$") then agent.AGENTS[name] = nil end end
   agent.active = "agent"

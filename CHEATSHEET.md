@@ -453,6 +453,7 @@ the agent, help or quickfix.
 │   ├── settings.lua          ← your settings (~/.config/greyknight.lua, :GreyKnightConfig): defaults, keys
 │   ├── landing.lua           ← the landing layout: tree, start page, agent (:GreyKnightLanding)
 │   ├── terminal.lua          ← terminal mode (Alt+T): a shell in the agent's pane
+│   ├── separators.lua        ← the borders between windows: a line, lit up under the mouse
 │   └── errorlog.lua          ← error log (<leader>ue)
 ├── lua/devsuite/             ← bash + python dev suite
 │   ├── runner.lua            ← what to run: file / args / sudo / project scripts / cell / pytest
