@@ -3870,6 +3870,14 @@ test("Quickfix: :Cfilter /re/ keeps the entries whose file or text matches, :Cfi
   assert(ok, err)
 end)
 
+test("Bells: a terminal's bell gets through - an agent's, when it finishes a turn - and Neovim's own stay off", function()
+  local off = "," .. vim.o.belloff .. ","
+  assert(not off:find(",all,") and not off:find(",term,"), "'belloff' swallows a terminal's bell: " .. vim.o.belloff)
+  for _, own in ipairs({ "error", "esc", "backspace", "cursor" }) do
+    assert(off:find("," .. own .. ","), "'belloff' lets Neovim's own bell ring: " .. own)
+  end
+end)
+
 test("Editing: undo outlives the buffer - :w, wipe it, open the file again, u brings the old text back", function()
   assert(vim.o.undofile, "'undofile' is off")
   local file = H.file("undo.txt", { "first" })
